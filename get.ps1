@@ -29,13 +29,21 @@ if ($env:NEXUS_RELAY_SOURCE) {
     $source = (Resolve-Path -LiteralPath $env:NEXUS_RELAY_SOURCE).Path
     Write-Host "Installing NexusRelay from $source..."
 } else {
-    $release = Invoke-RestMethod -UseBasicParsing 'https://api.github.com/repos/pironjulien/NexusRelay/releases/latest'
-    Write-Host "Downloading NexusRelay $($release.tag_name)..."
+    # Latest tag from the releases/latest redirect (no GitHub API, so no rate limit).
+    $request = [Net.WebRequest]::Create('https://github.com/pironjulien/NexusRelay/releases/latest')
+    $request.Method = 'HEAD'
+    $request.AllowAutoRedirect = $false
+    try { $response = $request.GetResponse() } catch [Net.WebException] { $response = $_.Exception.Response }
+    $location = if ($response) { [string]$response.Headers['Location'] } else { '' }
+    if ($response) { $response.Close() }
+    $tag = ($location -split '/tag/')[-1]
+    if ($tag -notmatch '^v\d+\.\d+\.\d+$') { throw "Latest NexusRelay release not found (redirect: '$location')." }
+    Write-Host "Downloading NexusRelay $tag..."
     $download = Join-Path $root 'download'
     if (Test-Path -LiteralPath $download) { Remove-Item -LiteralPath $download -Recurse -Force }
     New-Item -ItemType Directory -Force $download | Out-Null
     $zip = Join-Path $download 'NexusRelay.zip'
-    Invoke-WebRequest -UseBasicParsing "https://github.com/pironjulien/NexusRelay/archive/refs/tags/$($release.tag_name).zip" -OutFile $zip
+    Invoke-WebRequest -UseBasicParsing "https://github.com/pironjulien/NexusRelay/archive/refs/tags/$tag.zip" -OutFile $zip
     Expand-Archive -LiteralPath $zip -DestinationPath $download
     $source = (Get-ChildItem -LiteralPath $download -Directory | Select-Object -First 1).FullName
 }

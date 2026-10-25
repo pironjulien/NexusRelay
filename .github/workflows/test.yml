@@ -118,6 +118,13 @@ jobs:
             try { $state = Invoke-RestMethod -UseBasicParsing $api -Headers $headers } catch { continue }
             if ($state.state -in 'done', 'failed') { break }
           }
-          Get-Content "$HOME\.nexus\nexus-relay\update.log" -Tail 20 -ErrorAction SilentlyContinue
-          if ($state.state -ne 'done' -or [version]$state.version -ne $latest) { throw "self-update: $($state | ConvertTo-Json)" }
+          if ($state.state -ne 'done' -or [version]$state.version -ne $latest) {
+            Write-Host '--- update.log'; Get-Content "$HOME\.nexus\nexus-relay\update.log" -ErrorAction SilentlyContinue
+            Write-Host '--- daemon.log'; Get-Content "$HOME\.nexus\nexus-relay\daemon.log" -Tail 30 -ErrorAction SilentlyContinue
+            Write-Host '--- update.json'; Get-Content "$HOME\.nexus\nexus-relay\update.json" -ErrorAction SilentlyContinue
+            Write-Host '--- processes'
+            Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match 'nexus_relay|get\.ps1|install\.ps1|robocopy|uv' } |
+              ForEach-Object { "$($_.ProcessId) $($_.ParentProcessId) $($_.CommandLine)" }
+            throw "self-update: $($state | ConvertTo-Json)"
+          }
           Write-Host "self-update OK: 0.0.1 -> $($state.version)"

@@ -6,6 +6,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-10-26
+
+### Fixed
+
+- `get.ps1` reads the latest release from the `releases/latest` redirect instead of the GitHub API, whose
+  unauthenticated rate limit could stop an install or a self-update.
+
 ## [1.3.0] - 2026-10-26
 
 ### Added
@@ -51,7 +58,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - English tool descriptions with titles and MCP annotations; `reply` accepts `done`/`refused`/`failed` and
   `agree`/`disagree`.
 
-[Unreleased]: https://github.com/pironjulien/NexusRelay/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/pironjulien/NexusRelay/compare/v1.3.1...HEAD
+[1.3.1]: https://github.com/pironjulien/NexusRelay/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/pironjulien/NexusRelay/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/pironjulien/NexusRelay/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/pironjulien/NexusRelay/releases/tag/v1.1.0
