@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `get.ps1` reads the latest release from the `releases/latest` redirect instead of the GitHub API, whose
   unauthenticated rate limit could stop an install or a self-update.
+- Self-update and the Codex router's script launcher start PowerShell in a new process group instead of
+  `DETACHED_PROCESS`, under which PowerShell runs nothing and exits with code 0.
 
 ## [1.3.0] - 2026-10-26
 

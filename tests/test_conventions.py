@@ -109,3 +109,10 @@ def test_scripts_lus_par_windows_powershell_51():
     (accents illisibles, vu en CI le 25/10) ; get.ps1, téléchargé par irm, reste en ASCII."""
     assert (ROOT / "install.ps1").read_bytes().startswith(b"\xef\xbb\xbf")
     assert (ROOT / "get.ps1").read_bytes().isascii()
+
+
+def test_jamais_de_powershell_detache():
+    """Un PowerShell (pwsh ou Windows PowerShell) lancé avec DETACHED_PROCESS n'exécute rien et sort en 0 (essais du
+    26/10) : seule l'appli graphique lancée réduite (cdp.py, sans console) garde DETACHED_PROCESS."""
+    uses = {p.name: p.read_text(encoding="utf-8").count('"DETACHED_PROCESS"') for p in SOURCES}
+    assert {name: n for name, n in uses.items() if n} == {"cdp.py": 1}, uses

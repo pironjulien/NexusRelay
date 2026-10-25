@@ -269,7 +269,8 @@ def ensure_router(timeout_s: float = 60.0) -> bool:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             close_fds=True,
-            creationflags=NO_WINDOW | getattr(subprocess, "DETACHED_PROCESS", 0),
+            # nouveau groupe, pas DETACHED_PROCESS : un PowerShell détaché n'exécute rien et sort en 0 (vu le 26/10)
+            creationflags=NO_WINDOW | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
         )
     except OSError:
         return False

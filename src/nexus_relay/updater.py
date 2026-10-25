@@ -35,7 +35,8 @@ PRODUCT = "relay"
 REPO = "pironjulien/NexusRelay"
 CHECK_EVERY_S = 24 * 3600
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-DETACHED = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+# Nouveau groupe, jamais DETACHED_PROCESS : Windows PowerShell détaché n'exécute rien et sort en 0 (CI du 26/10)
+NEW_GROUP = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
 BREAKAWAY = 0x01000000  # CREATE_BREAKAWAY_FROM_JOB : survit à l'arrêt du démon pour relance
 _LOCK = threading.Lock()
 
@@ -198,7 +199,7 @@ def start(fetch: Any = fetch_latest, root: Path | None = None) -> tuple[int, dic
                 stdin=subprocess.DEVNULL,
                 stdout=out,
                 stderr=out,
-                creationflags=NO_WINDOW | DETACHED | BREAKAWAY,
+                creationflags=NO_WINDOW | NEW_GROUP | BREAKAWAY,
             )
         except OSError:  # tâche sans droit de sortir de son job : lancé dedans
             proc = subprocess.Popen(
@@ -207,7 +208,7 @@ def start(fetch: Any = fetch_latest, root: Path | None = None) -> tuple[int, dic
                 stdin=subprocess.DEVNULL,
                 stdout=out,
                 stderr=out,
-                creationflags=NO_WINDOW | DETACHED,
+                creationflags=NO_WINDOW | NEW_GROUP,
             )
     marker = {"target": latest, "started_at": now_iso(), "pid": proc.pid}
     marker_path().write_text(json.dumps(marker), encoding="utf-8")

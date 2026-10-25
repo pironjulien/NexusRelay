@@ -358,8 +358,9 @@ def test_routeur_lance_detache_sans_attendre_sa_fin(monkeypatch: pytest.MonkeyPa
     (spawn,) = launched
     assert spawn["args"][-1] == str(script) and "-NonInteractive" in spawn["args"]
     assert spawn["stdin"] == spawn["stdout"] == spawn["stderr"] == subprocess.DEVNULL
-    detached = getattr(subprocess, "DETACHED_PROCESS", 0)
-    assert spawn["creationflags"] & cdp.NO_WINDOW == cdp.NO_WINDOW and spawn["creationflags"] & detached == detached
+    group = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+    assert spawn["creationflags"] & cdp.NO_WINDOW == cdp.NO_WINDOW and spawn["creationflags"] & group == group
+    assert not spawn["creationflags"] & getattr(subprocess, "DETACHED_PROCESS", 0)  # pwsh détaché : rien exécuté
 
 
 def _wake_setup(
