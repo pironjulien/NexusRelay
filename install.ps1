@@ -1,7 +1,8 @@
 ﻿# Installe Nexus Relay sur ce PC (idempotent : à relancer sans risque après une mise à jour du dépôt).
 #  - environnement Python hors du dépôt : ~\.nexus\nexus-relay\venv (caches dans ~\.nexus\nexus-relay\cache)
 #  - boîte aux lettres : ~\.nexus\relay (hors de tout dossier synchronisé)
-#  - réglages du poste : ~\.nexus\nexus-relay\settings.json (facultatif, hors dépôt), voir README :
+#  - réglages du poste : ~\.nexus\nexus-relay\settings.json (ce PC), puis settings.local.json à la racine du dépôt
+#    (partagé par les PC d'une installation synchronisée), valeurs en %VARIABLES% (nexus_relay\settings.py), voir README :
 #      token_file          fichier du jeton du démon (32 caractères au moins) ; sinon -TokenFile ou NEXUS_MCP_TOKEN_FILE
 #      vaults              dossiers de secrets jamais joints à un message (NEXUS_RELAY_VAULTS)
 #      codex_router        adresse de santé d'un routeur local devant Codex (NEXUS_RELAY_CODEX_ROUTER)
@@ -95,7 +96,9 @@ $serverArgs = @('-B', '-m', 'nexus_relay.server')
 #     Chaque client le joint par URL avec son agent (?agent=…) et le jeton du poste.
 $port = 16181
 $settingsPath = Join-Path $state 'settings.json'
-$settings = if (Test-Path $settingsPath) { [IO.File]::ReadAllText($settingsPath) | ConvertFrom-Json } else { [pscustomobject]@{} }
+# Réglages effectifs (fichier de ce PC, puis celui du dépôt ; variables développées) : une seule lecture, celle du démon.
+$settings = (& $python -B -m nexus_relay.settings) | ConvertFrom-Json
+if ($LASTEXITCODE) { throw 'Lecture des réglages du poste : échec (nexus_relay.settings).' }
 $tokenFile = @($TokenFile, $settings.token_file, $env:NEXUS_MCP_TOKEN_FILE) | Where-Object { $_ } | Select-Object -First 1
 # Jeton partagé entre plusieurs PC (poste réglé) : jamais créé ici, un installeur lancé avant la synchro du fichier en
 # créait un autre, qui cassait l'autre PC. Installation publique (-Register) sans aucun réglage : jeton propre à ce PC.
@@ -107,8 +110,9 @@ if ($Register -and -not $tokenFile) {
         [IO.File]::WriteAllText($tokenFile, (-join ($bytes | ForEach-Object { $_.ToString('x2') })), $utf8)
         Write-Host "Jeton du démon créé : $tokenFile"
     }
-    $settings | Add-Member -NotePropertyName token_file -NotePropertyValue $tokenFile -Force
-    [IO.File]::WriteAllText($settingsPath, ($settings | ConvertTo-Json -Depth 5), $utf8)
+    $local = if (Test-Path $settingsPath) { [IO.File]::ReadAllText($settingsPath) | ConvertFrom-Json } else { [pscustomobject]@{} }
+    $local | Add-Member -NotePropertyName token_file -NotePropertyValue $tokenFile -Force
+    [IO.File]::WriteAllText($settingsPath, ($local | ConvertTo-Json -Depth 5), $utf8)
 }
 if (-not $tokenFile -or -not (Test-Path $tokenFile)) {
     throw "Jeton absent ($tokenFile) : régler token_file dans $settingsPath, -TokenFile ou NEXUS_MCP_TOKEN_FILE."

@@ -159,6 +159,11 @@ Every tool carries MCP annotations (`readOnlyHint`, `destructiveHint`, …).
 
 ## Settings
 
+Read from `~\.nexus\nexus-relay\settings.json` (this PC), then from `settings.local.json` at the root of the
+installed folder (shared by the PCs of a synced install), key by key; values may use environment variables
+(`%LOCALAPPDATA%`, `%USERPROFILE%`...), and a list keeps the first existing `token_file`. Variables already set in
+the daemon's environment win.
+
 | Variable (daemon) | `settings.json` key | Default | Purpose |
 |---|---|---|---|
 | `NEXUS_MCP_TOKEN` / `NEXUS_MCP_TOKEN_FILE` | `token_file` | — (required) | Bearer token of the local daemon |

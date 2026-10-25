@@ -1376,6 +1376,9 @@ def _serve_http(port: int) -> None:
 
 
 def main() -> None:
+    from . import settings
+
+    settings.apply()  # réglages du poste absents de l'environnement (coffres, routeur de Codex, jeton)
     if "--http" in sys.argv:
         i = sys.argv.index("--http")
         _serve_http(int(sys.argv[i + 1]) if len(sys.argv) > i + 1 else 16181)

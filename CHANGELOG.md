@@ -6,6 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Settings may also come from `settings.local.json` at the root of the installed folder (shared by the PCs of a
+  synced install), with environment variables in values; the daemon reads them at start (`nexus_relay.settings`).
+
 ## [1.2.0] - 2026-10-25
 
 ### Added
