@@ -6,6 +6,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-25
+
+### Added
+
+- One-line install: `irm https://raw.githubusercontent.com/pironjulien/NexusRelay/main/get.ps1 | iex` (uv if missing,
+  latest release in `%LOCALAPPDATA%\NexusRelay\app`, then `install.ps1 -Register`).
+- `install.ps1 -Register`: creates a local token when none is configured, sets the user variable `NEXUS_MCP_TOKEN`,
+  and declares the server to Claude Code (`~/.claude.json` or `claude mcp add-json`) and Codex (`config.toml`,
+  `bearer_token_env_var`); the token is never written in their files. An existing entry of the user is kept.
+- Nexus pack contract: with `NEXUS_PACK=1`, no question nor window and a last `NEXUS_PACK_RESULT ...` line.
+- CI job `install-windows`: the one-line install on a clean Windows runner (Windows PowerShell 5.1, pack mode).
+
+### Changed
+
+- `install.ps1` runs under Windows PowerShell 5.1 as well as PowerShell 7.
+
 ## [1.1.0] - 2026-10-25
 
 ### Added
@@ -23,5 +39,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - English tool descriptions with titles and MCP annotations; `reply` accepts `done`/`refused`/`failed` and
   `agree`/`disagree`.
 
-[Unreleased]: https://github.com/pironjulien/NexusRelay/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/pironjulien/NexusRelay/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/pironjulien/NexusRelay/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/pironjulien/NexusRelay/releases/tag/v1.1.0

@@ -15,8 +15,12 @@
 #  - Codex : dossier du projet « Nexus Relay » (~\.nexus\relay\codex-projet) ; le projet lui-même s'ajoute une fois
 #    dans l'appli Codex (« Ajouter un projet »), voir README
 #  - tests hors ligne (sauf -SkipTests)
-# Usage : pwsh -NoProfile -File install.ps1 [-SkipTests] [-TokenFile <chemin>]
-param([switch]$SkipTests, [string]$TokenFile)
+#  - -Register (installation publique, get.ps1) : jeton créé s'il n'y en a aucun (~\.nexus\nexus-relay\token.txt, noté
+#    dans settings.json), variable utilisateur NEXUS_MCP_TOKEN posée, serveur déclaré à Claude Code et Codex
+#    (scripts\register_clients.py) ; NEXUS_PACK=1 (pack Nexus) : aucune question ni fenêtre, ligne NEXUS_PACK_RESULT
+# Windows PowerShell 5.1 ou PowerShell 7.
+# Usage : powershell -NoProfile -File install.ps1 [-SkipTests] [-TokenFile <chemin>] [-Register]
+param([switch]$SkipTests, [string]$TokenFile, [switch]$Register)
 $ErrorActionPreference = 'Stop'
 
 $project = $PSScriptRoot
@@ -91,10 +95,21 @@ $serverArgs = @('-B', '-m', 'nexus_relay.server')
 #     Chaque client le joint par URL avec son agent (?agent=…) et le jeton du poste.
 $port = 16181
 $settingsPath = Join-Path $state 'settings.json'
-$settings = if (Test-Path $settingsPath) { Get-Content $settingsPath -Raw | ConvertFrom-Json -AsHashtable } else { @{} }
-$tokenFile = @($TokenFile, $settings['token_file'], $env:NEXUS_MCP_TOKEN_FILE) | Where-Object { $_ } | Select-Object -First 1
-# Jeton jamais créé ici : partagé entre plusieurs PC, un installeur lancé avant la synchro du fichier en créait un
-# autre, qui cassait l'autre PC.
+$settings = if (Test-Path $settingsPath) { [IO.File]::ReadAllText($settingsPath) | ConvertFrom-Json } else { [pscustomobject]@{} }
+$tokenFile = @($TokenFile, $settings.token_file, $env:NEXUS_MCP_TOKEN_FILE) | Where-Object { $_ } | Select-Object -First 1
+# Jeton partagé entre plusieurs PC (poste réglé) : jamais créé ici, un installeur lancé avant la synchro du fichier en
+# créait un autre, qui cassait l'autre PC. Installation publique (-Register) sans aucun réglage : jeton propre à ce PC.
+if ($Register -and -not $tokenFile) {
+    $tokenFile = Join-Path $state 'token.txt'
+    if (-not (Test-Path $tokenFile)) {
+        $bytes = New-Object byte[] 32
+        [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
+        [IO.File]::WriteAllText($tokenFile, (-join ($bytes | ForEach-Object { $_.ToString('x2') })), $utf8)
+        Write-Host "Jeton du démon créé : $tokenFile"
+    }
+    $settings | Add-Member -NotePropertyName token_file -NotePropertyValue $tokenFile -Force
+    [IO.File]::WriteAllText($settingsPath, ($settings | ConvertTo-Json -Depth 5), $utf8)
+}
 if (-not $tokenFile -or -not (Test-Path $tokenFile)) {
     throw "Jeton absent ($tokenFile) : régler token_file dans $settingsPath, -TokenFile ou NEXUS_MCP_TOKEN_FILE."
 }
@@ -104,9 +119,9 @@ $daemonEnv = Get-ServerEnv ''
 $daemonEnv.Remove('NEXUS_RELAY_AGENT')
 $daemonEnv.NEXUS_MCP_TOKEN_FILE = (Resolve-Path $tokenFile).Path  # lu par le démon (NEXUS_MCP_TOKEN_FILE)
 # Réglages du poste passés au démon (absents : pas de coffre, pas de routeur devant Codex)
-if ($settings['vaults']) { $daemonEnv.NEXUS_RELAY_VAULTS = @($settings['vaults']) -join [IO.Path]::PathSeparator }
-if ($settings['codex_router']) { $daemonEnv.NEXUS_RELAY_CODEX_ROUTER = [string]$settings['codex_router'] }
-if ($settings['codex_router_start']) { $daemonEnv.NEXUS_RELAY_CODEX_ROUTER_START = @($settings['codex_router_start']) -join ';' }
+if ($settings.vaults) { $daemonEnv.NEXUS_RELAY_VAULTS = @($settings.vaults) -join [IO.Path]::PathSeparator }
+if ($settings.codex_router) { $daemonEnv.NEXUS_RELAY_CODEX_ROUTER = [string]$settings.codex_router }
+if ($settings.codex_router_start) { $daemonEnv.NEXUS_RELAY_CODEX_ROUTER_START = @($settings.codex_router_start) -join ';' }
 $spec = [ordered]@{ port = $port; python = $python; args = $serverArgs; env = $daemonEnv }
 $specChanged = Write-IfChanged (Join-Path $HOME '.nexus\daemons\specs\nexus-relay.json') ($spec | ConvertTo-Json -Depth 5)
 # Nouveau code : demande de relance au démon, jamais d'arrêt forcé. Il ne se relance que si son code a changé, une fois
@@ -126,10 +141,10 @@ Stop-Legacy 'nexus_relay\.sidecar' 'sidecar'
 # Réglages du démon changés (Python, arguments, environnement) : relance forcée, le code seul ne le dirait pas.
 $daemonRequest = Join-Path $mailbox 'daemon-restart.request'
 $forced = $specChanged -or "$(Get-Content $daemonRequest -Raw -ErrorAction SilentlyContinue)".StartsWith('force')  # tour 6
-Set-Content $daemonRequest "$(if ($forced) { 'force' } else { 'code' }) $(Get-Date -Format o)" -Encoding utf8NoBOM
+[IO.File]::WriteAllText($daemonRequest, "$(if ($forced) { 'force' } else { 'code' }) $(Get-Date -Format o)", $utf8)
 # Pareil pour le sidecar d'Antigravity : il sort entre deux livraisons si son code a changé, Antigravity le relance
 # (restart_policy « always »). Tour 5 : l'arrêt forcé ici laissait une livraison en cours « incertaine », jamais rejouée.
-Set-Content (Join-Path $mailbox 'sidecar-restart.request') "code $(Get-Date -Format o)" -Encoding utf8NoBOM
+[IO.File]::WriteAllText((Join-Path $mailbox 'sidecar-restart.request'), "code $(Get-Date -Format o)", $utf8)
 # Sans superviseur des démons Nexus : tâche « Nexus Relay » à l'ouverture de session, qui lance le petit superviseur du
 # relais (nexus_relay.daemon : lit la spec ci-dessus, relance le démon quand il s'arrête), puis lancée tout de suite.
 if (-not (Get-ScheduledTask -TaskName 'Nexus MCP Daemons' -ErrorAction SilentlyContinue)) {
@@ -154,6 +169,7 @@ if (-not (Get-ScheduledTask -TaskName 'Nexus MCP Daemons' -ErrorAction SilentlyC
 $agyRoot = Join-Path $HOME '.gemini\config'
 if (-not (Test-Path $agyRoot)) {
     Write-Warning 'Antigravity absent de ce PC : plugin non installé.'
+    $agyResult = ''
 } else {
     $plugin = Join-Path $agyRoot 'plugins\nexus-relay'
     $copied = Copy-Tree (Join-Path $project 'plugins\nexus-relay') $plugin
@@ -170,6 +186,7 @@ if (-not (Test-Path $agyRoot)) {
     }
     if (Write-IfChanged (Join-Path $plugin 'sidecars\relay\sidecar.json') ($sidecar | ConvertTo-Json -Depth 10)) { $copied++ }
     Write-Host "Antigravity : plugin nexus-relay $(if ($copied) { "installé ($copied fichier(s))" } else { 'déjà à jour' }) dans $plugin."
+    $agyResult = "plugin installed in $plugin"
 
     # Projet où agentapi crée les conversations : « Nexus Relay » (l'utilisateur, 20/10), à part des conversations de l'utilisateur
     # dans « Documents », sur un dossier vide hors de tout dossier synchronisé ; créé ici s'il manque (fichier de projet d'Antigravity,
@@ -225,10 +242,24 @@ if (-not (Test-Path $agyRoot)) {
 # --- Codex : serveur par un plugin perso de Codex (.mcp.json : url http://127.0.0.1:16181/mcp?agent=codex,
 #     bearer_token_env_var NEXUS_MCP_TOKEN), voir README ; plus de table [mcp_servers] ici.
 if (-not $SkipTests) {
-    & pwsh -NoProfile -File (Join-Path $project 'test.ps1')
+    & (Get-Process -Id $PID).Path -NoProfile -File (Join-Path $project 'test.ps1')
     if ($LASTEXITCODE) { throw 'test.ps1 échoue : installation incomplète.' }
 }
 
 $stamp = (Get-FileHash (Join-Path $project 'uv.lock')).Hash + ' ' + (Get-FileHash (Join-Path $project 'install.ps1')).Hash
-Set-Content (Join-Path $state 'installed.stamp') $stamp -Encoding utf8NoBOM
-Write-Host 'Nexus Relay installé avec succès.'
+[IO.File]::WriteAllText((Join-Path $state 'installed.stamp'), $stamp, $utf8)
+
+# --- Installation publique : jeton dans la variable utilisateur NEXUS_MCP_TOKEN (lue par Claude Code et Codex, jamais
+#     écrite dans leurs fichiers), puis serveur déclaré aux clients trouvés.
+if ($Register) {
+    if ([Environment]::GetEnvironmentVariable('NEXUS_MCP_TOKEN', 'User') -ne $token) {
+        [Environment]::SetEnvironmentVariable('NEXUS_MCP_TOKEN', $token, 'User')
+        Write-Host 'Variable utilisateur NEXUS_MCP_TOKEN posée (redémarrer Claude Code et Codex pour la voir).'
+    }
+    $env:NEXUS_MCP_TOKEN = $token
+    $agyArgs = if ($agyResult) { @('--antigravity', $agyResult) } else { @() }  # 5.1 : un argument vide disparaît
+    & $python -B (Join-Path $project 'scripts\register_clients.py') --port $port --backups $backups @agyArgs
+    if ($LASTEXITCODE) { throw 'Déclaration aux clients incomplète (voir ci-dessus).' }
+}
+# pack Nexus : la ligne NEXUS_PACK_RESULT reste la dernière
+if (-not ($Register -and $env:NEXUS_PACK -eq '1')) { Write-Host 'Nexus Relay installé avec succès.' }

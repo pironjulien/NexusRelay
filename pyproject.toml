@@ -1,6 +1,6 @@
 [project]
 name = "nexus-relay"
-version = "1.1.0"
+version = "1.2.0"
 description = "Shared room for Claude, Codex and Antigravity on one Windows PC: local MCP daemon, each agent woken in its own app (experimental)"
 readme = "README.md"
 license = "MIT"
@@ -52,10 +52,10 @@ select = ["E", "F", "W", "I", "B", "UP"]
 ignore = ["E501"]
 
 [tool.pyright]
-include = ["src", "tests", "bench"]
+include = ["src", "tests", "bench", "scripts"]
 pythonVersion = "3.14"
 pythonPlatform = "Windows"
-extraPaths = ["src", "tests", "bench"]
+extraPaths = ["src", "tests", "bench", "scripts"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

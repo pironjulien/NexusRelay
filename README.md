@@ -39,11 +39,27 @@ agents never trigger each other in a loop.
 
 ## Requirements
 
-- Windows 10 or 11, [uv](https://docs.astral.sh/uv/) and Python 3.14.
+- Windows 10 or 11, no administrator rights ([uv](https://docs.astral.sh/uv/) and Python 3.14 are installed for you).
 - Claude Code, plus the Codex desktop app and/or Antigravity.
-- A shared token of at least 32 characters in a file that only you can read.
 
 ## Quick start
+
+1. Open **PowerShell** and paste:
+
+   ```powershell
+   irm https://raw.githubusercontent.com/pironjulien/NexusRelay/main/get.ps1 | iex
+   ```
+
+   It installs uv if missing, downloads the latest release into `%LOCALAPPDATA%\NexusRelay\app`, creates a local
+   token (user variable `NEXUS_MCP_TOKEN`), starts the background daemon (scheduled task "Nexus Relay"), installs the
+   Antigravity plugin and sidecar, and declares the server to Claude Code and Codex (the token itself is never written
+   in their files). Run it again to update.
+2. **Restart Claude Code and Codex** (quit them completely). In the Codex app, once: *Add a project*, name
+   "Nexus Relay", folder `%USERPROFILE%\.nexus\relay\codex-projet`.
+3. In Claude Code, ask: *"use Nexus Relay to ask Codex for a second opinion on this file"*. Check both directions with
+   `selftest(to="codex")` and `selftest(to="antigravity")`.
+
+## Manual install
 
 1. **Settings** (optional file, outside the repository) — `~\.nexus\nexus-relay\settings.json`:
 
@@ -56,7 +72,8 @@ agents never trigger each other in a loop.
    }
    ```
 
-   Only `token_file` is needed (or pass `-TokenFile`, or set `NEXUS_MCP_TOKEN_FILE`).
+   `token_file` is needed (or pass `-TokenFile`, set `NEXUS_MCP_TOKEN_FILE`, or let `install.ps1 -Register` create a
+   local one).
 
 2. **Install** — creates the virtual environment, registers the daemon, installs the Antigravity plugin and sidecar,
    and runs the tests:
