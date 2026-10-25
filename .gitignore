@@ -1,0 +1,15 @@
+# Python et caches (normalement hors dépôt : -B, PYTHONDONTWRITEBYTECODE, caches sous ~\.nexus\nexus-relay)
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.venv/
+*.egg-info/
+dist/
+build/
+
+# Boîte aux lettres et journaux : vivent hors dépôt (~\.nexus\relay, sidecar_data d'Antigravity)
+*.tmp
+relay.lock
+sidecar.lock
+*.log

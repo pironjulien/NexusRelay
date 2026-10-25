@@ -1,0 +1,43 @@
+name: test
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+# A newer push makes the running check pointless: cancel it (Windows minutes count double on private repositories).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  test:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      # Actions pinned by commit SHA (a moved tag cannot change what runs); updated by hand with Dependabot's Tuesday pass.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e  # v10.3.2
+        with:
+          python-version: "3.14"
+      - name: test.ps1 (contrôle complet hors ligne du projet)
+        shell: pwsh
+        run: ./test.ps1
+
+  startup-linux:
+    # What MCP directories (Glama) check in a Linux container: the server starts and lists its tools.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e  # v10.3.2
+        with:
+          python-version: "3.14"
+      - name: initialize + tools/list over stdio
+        run: |
+          uv sync --frozen --quiet
+          uv run --frozen pytest -q --noconftest -p no:cacheprovider tests/test_startup.py
