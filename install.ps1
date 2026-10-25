@@ -1,4 +1,4 @@
-# Installe Nexus Relay sur ce PC (idempotent : à relancer sans risque après une mise à jour du dépôt).
+﻿# Installe Nexus Relay sur ce PC (idempotent : à relancer sans risque après une mise à jour du dépôt).
 #  - environnement Python hors du dépôt : ~\.nexus\nexus-relay\venv (caches dans ~\.nexus\nexus-relay\cache)
 #  - boîte aux lettres : ~\.nexus\relay (hors de tout dossier synchronisé)
 #  - réglages du poste : ~\.nexus\nexus-relay\settings.json (facultatif, hors dépôt), voir README :

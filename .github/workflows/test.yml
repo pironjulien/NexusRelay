@@ -83,7 +83,7 @@ jobs:
           if ($code -ne 401) { Get-Content "$HOME\.nexus\nexus-relay\daemon.log" -ErrorAction SilentlyContinue; throw "daemon: $code" }
           foreach ($file in "$HOME\.claude.json", "$HOME\.codex\config.toml") {
             $text = [IO.File]::ReadAllText($file)
-            if ($text -notmatch 'nexus-relay') { throw "$file: no nexus-relay entry" }
-            if ($text.Contains($token)) { throw "$file: token written in clear" }
+            if ($text -notmatch 'nexus-relay') { throw "${file}: no nexus-relay entry" }
+            if ($text.Contains($token)) { throw "${file}: token written in clear" }
           }
           if ((Get-ScheduledTask -TaskName 'Nexus Relay').State -ne 'Running') { throw 'scheduled task not running' }

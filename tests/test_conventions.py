@@ -102,3 +102,10 @@ def test_arret_sur_erreur_seulement_sur_une_etape_d_erreur(tmp_path, monkeypatch
             (b"*\nAgent execution terminated due to error.\x12\x0dmodel missing!",),
         )
     assert paths.agy_error(conversation) == ("model missing", None)  # longueur annoncée 13 : « ! » hors du champ
+
+
+def test_scripts_lus_par_windows_powershell_51():
+    """get.ps1 lance install.ps1 sous Windows PowerShell 5.1 (pack Nexus) : sans BOM, il lit l'UTF-8 comme de l'ANSI
+    (accents illisibles, vu en CI le 25/10) ; get.ps1, téléchargé par irm, reste en ASCII."""
+    assert (ROOT / "install.ps1").read_bytes().startswith(b"\xef\xbb\xbf")
+    assert (ROOT / "get.ps1").read_bytes().isascii()
