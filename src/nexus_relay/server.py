@@ -1343,9 +1343,28 @@ def http_app(token: str) -> Any:
             )
             await send({"type": "http.response.body", "body": "Jeton refusé".encode()})
             return
+        if scope["type"] == "http" and scope.get("path") == "/api/update":
+            await _update_route(scope, send)
+            return
         await app(scope, receive, send)
 
     return guarded
+
+
+async def _update_route(scope: Any, send: Any) -> None:
+    """API de mise à jour (appli Nexus du Store) : GET = état, POST = mise à jour par le démon lui-même (202)."""
+    from . import updater
+
+    method = scope.get("method")
+    if method == "GET":
+        status, body = 200, await asyncio.to_thread(updater.write_status)
+    elif method == "POST":
+        status, body = await asyncio.to_thread(updater.start)
+    else:
+        status, body = 405, {"error": "GET or POST"}
+    payload = json.dumps(body, ensure_ascii=False).encode()
+    await send({"type": "http.response.start", "status": status, "headers": [(b"content-type", b"application/json")]})
+    await send({"type": "http.response.body", "body": payload})
 
 
 def _serve_http(port: int) -> None:
@@ -1363,6 +1382,10 @@ def _serve_http(port: int) -> None:
     recovered = bell(_box()).recover()
     bell(_box()).start()  # fils de sonnette et de rangement dès le démarrage, même sans message en attente (tour 2)
     cartes.watch()  # nouvelle version de Codex ou d'Antigravity : nouveau relevé de son interface
+    from . import updater
+
+    updater.resume()  # issue d'une mise à jour lancée avant cette relance ; état écrit pour l'appli Nexus
+    updater.watch_latest()  # dernière version publiée, au plus une fois par jour
     print(
         f"nexus-relay {__version__} : démon sur 127.0.0.1:{port}, {recovered} réveil(s) repris",
         file=sys.stderr,

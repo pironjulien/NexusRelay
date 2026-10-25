@@ -6,8 +6,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-10-26
+
 ### Added
 
+- Self-update: `POST /api/update` on the daemon's local API (bearer token) answers `202` and the daemon runs its
+  own `get.ps1` (`-File`, no window), then restarts on the new release; `GET /api/update` and
+  `~\.nexus\status\relay.json` give `{product, version, latest, state, checked_at, message}`. Latest version
+  read from the `releases/latest` redirect at most once a day (`NEXUS_RELAY_UPDATE_CHECK=0` turns it off).
+  Only installs made by `get.ps1` update themselves (a git checkout answers `409`).
 - Settings may also come from `settings.local.json` at the root of the installed folder (shared by the PCs of a
   synced install), with environment variables in values; the daemon reads them at start (`nexus_relay.settings`).
 
@@ -44,6 +51,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - English tool descriptions with titles and MCP annotations; `reply` accepts `done`/`refused`/`failed` and
   `agree`/`disagree`.
 
-[Unreleased]: https://github.com/pironjulien/NexusRelay/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/pironjulien/NexusRelay/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/pironjulien/NexusRelay/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/pironjulien/NexusRelay/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/pironjulien/NexusRelay/releases/tag/v1.1.0

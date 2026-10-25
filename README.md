@@ -173,6 +173,21 @@ the daemon's environment win.
 | `NEXUS_RELAY_HOME` | — | `~\.nexus\relay` | Room location |
 | `NEXUS_RELAY_CODEX_PORT`, `NEXUS_RELAY_AGY_PORT` | — | `9223`, `9227` | Debugging ports of Codex and Antigravity |
 | `NEXUS_JOURNAL_HOME` | — | `%LOCALAPPDATA%\NexusJournal` | Action log |
+| `NEXUS_RELAY_UPDATE_CHECK` | — | on | `0`: never look up the latest version |
+
+## Updates
+
+The daemon updates itself: `POST /api/update` on its local API (same bearer token as `/mcp`) answers `202` and the
+daemon runs its own `get.ps1` (`powershell -File`, no window), which installs the latest release; the daemon then
+restarts on it. `GET /api/update` returns the state, also written to `~\.nexus\status\relay.json`:
+
+```json
+{"product": "relay", "version": "1.3.0", "latest": "1.3.0", "state": "idle", "checked_at": "2026-10-26T10:00:00Z", "message": null}
+```
+
+`state` is `idle`, `updating`, `done` or `failed` (the previous version stays in place and `message` says why). Only an
+install made by the one-line installer (`%LOCALAPPDATA%\NexusRelay\app`) updates itself; a git checkout answers
+`409`. Running `get.ps1` again also updates.
 
 ## Safeguards
 
@@ -192,8 +207,10 @@ the daemon's environment win.
 - **What is read**: the messages agents post, the files they explicitly attach, the Codex and Antigravity windows
   (through their local debugging ports, to open a chat, check delivery and archive relay conversations), Codex's local
   session logs (to know when a relay chat's turn is over, and its quota) and Antigravity's settings page (quota).
-- **Where it goes**: nowhere off the machine. The relay only talks to 127.0.0.1 (its daemon, the apps' debugging
-  ports, Antigravity's sidecar API and, if configured, your Codex router).
+- **Where it goes**: no message, file or setting leaves the machine. The relay talks to 127.0.0.1 (its daemon,
+  the apps' debugging ports, Antigravity's sidecar API and, if configured, your Codex router), and at most once a
+  day sends one anonymous request to `https://github.com/pironjulien/NexusRelay/releases/latest` to learn the
+  latest version (`NEXUS_RELAY_UPDATE_CHECK=0` turns it off).
 - **What is stored**: messages and attachments in `~\.nexus\relay\v1` (plain JSON, readable by your user account),
   interface maps of both apps in `~\.nexus\relay\v1\cartes` (element roles and visible labels, which can include
   conversation titles shown on screen), and one line per action in `%LOCALAPPDATA%\NexusJournal\relay` (never a message's text).
