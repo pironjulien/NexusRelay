@@ -20,7 +20,12 @@ def isolated(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setenv("USERPROFILE", str(home))
     monkeypatch.setenv("HOME", str(home))
     # réglages du poste ignorés : ni vrai coffre, ni vrai routeur de Codex
-    for name in ("NEXUS_RELAY_VAULTS", "NEXUS_RELAY_CODEX_ROUTER", "NEXUS_RELAY_CODEX_ROUTER_START"):
+    for name in (
+        "NEXUS_RELAY_VAULTS",
+        "NEXUS_RELAY_CODEX_ROUTER",
+        "NEXUS_RELAY_CODEX_ROUTER_START",
+        "NEXUS_RELAY_HOST",
+    ):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("NEXUS_RELAY_HOME", str(tmp_path / "relay"))
     monkeypatch.setenv("NEXUS_RELAY_GEMINI_HOME", str(tmp_path / "gemini"))

@@ -6,6 +6,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-10-26
+
+### Added
+
+- Configurable host: one agent opens the exchanges and is never woken; Claude by default, otherwise the `host`
+  setting (`NEXUS_RELAY_HOST`): `claude`, `codex` or `antigravity`. `install.ps1 -Register` picks it when unset:
+  `NEXUS_PACK_HOST`, else the first agent found among the chosen ones (Claude Code, Codex, Antigravity). `status()`
+  shows `host`; `state/peers.json` carries `host` only when it is not Claude. NexusRelay now works without Claude Code.
+
 ## [1.3.2] - 2026-10-26
 
 ### Added
@@ -73,7 +82,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - English tool descriptions with titles and MCP annotations; `reply` accepts `done`/`refused`/`failed` and
   `agree`/`disagree`.
 
-[Unreleased]: https://github.com/pironjulien/NexusRelay/compare/v1.3.2...HEAD
+[Unreleased]: https://github.com/pironjulien/NexusRelay/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/pironjulien/NexusRelay/compare/v1.3.2...v1.4.0
 [1.3.2]: https://github.com/pironjulien/NexusRelay/compare/v1.3.1...v1.3.2
 [1.3.1]: https://github.com/pironjulien/NexusRelay/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/pironjulien/NexusRelay/compare/v1.2.0...v1.3.0

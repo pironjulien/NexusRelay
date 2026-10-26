@@ -21,6 +21,8 @@
 #    (scripts\register_clients.py) ; NEXUS_PACK=1 (pack Nexus) : aucune question ni fenêtre, ligne NEXUS_PACK_RESULT
 #  - NEXUS_PACK_TARGETS (pack Nexus) : IA à configurer (claude-code, codex, antigravity…, séparées par des
 #    virgules) ; présente, toute IA absente de la liste n'est pas touchée ; absente, toutes celles trouvées
+#  - hôte du relais (le seul qui ouvre un échange) : réglage `host`, Claude par défaut ; avec -Register et sans réglage,
+#    NEXUS_PACK_HOST, sinon le premier agent présent parmi les IA choisies (Claude Code, Codex, Antigravity)
 # Windows PowerShell 5.1 ou PowerShell 7.
 # Usage : powershell -NoProfile -File install.ps1 [-SkipTests] [-TokenFile <chemin>] [-Register]
 param([switch]$SkipTests, [string]$TokenFile, [switch]$Register)
@@ -116,6 +118,28 @@ if ($Register -and -not $tokenFile) {
     $local | Add-Member -NotePropertyName token_file -NotePropertyValue $tokenFile -Force
     [IO.File]::WriteAllText($settingsPath, ($local | ConvertTo-Json -Depth 5), $utf8)
 }
+# Périmètre du pack Nexus : IA choisies par l'utilisateur ; les autres ne sont jamais touchées.
+$packTargets = if ($null -ne $env:NEXUS_PACK_TARGETS) { @($env:NEXUS_PACK_TARGETS -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ }) } else { $null }
+# Hôte (installation publique seulement, et seulement s'il n'est pas déjà réglé : un choix de l'utilisateur reste) :
+# celui que donne le pack, sinon le premier agent présent dans l'ordre Claude Code, Codex, Antigravity.
+if ($Register -and -not $settings.host) {
+    $present = [ordered]@{
+        'claude-code' = [bool](Get-Command claude -ErrorAction SilentlyContinue) -or (Test-Path (Join-Path $HOME '.claude'))
+        'codex'       = [bool](Get-Command codex -ErrorAction SilentlyContinue) -or (Test-Path (Join-Path $HOME '.codex'))
+        'antigravity' = Test-Path (Join-Path $HOME '.gemini')
+    }
+    $agentOf = @{ 'claude-code' = 'claude'; 'claude' = 'claude'; 'codex' = 'codex'; 'antigravity' = 'antigravity' }
+    $chosenHost = if ($env:NEXUS_PACK_HOST -and $agentOf.ContainsKey($env:NEXUS_PACK_HOST.Trim())) { $agentOf[$env:NEXUS_PACK_HOST.Trim()] } else {
+        @($present.Keys | Where-Object { $present[$_] -and ($null -eq $packTargets -or $packTargets -contains $_) } | ForEach-Object { $agentOf[$_] }) | Select-Object -First 1
+    }
+    if ($chosenHost) {
+        $local = if (Test-Path $settingsPath) { [IO.File]::ReadAllText($settingsPath) | ConvertFrom-Json } else { [pscustomobject]@{} }
+        $local | Add-Member -NotePropertyName host -NotePropertyValue $chosenHost -Force
+        [IO.File]::WriteAllText($settingsPath, ($local | ConvertTo-Json -Depth 5), $utf8)
+        $settings | Add-Member -NotePropertyName host -NotePropertyValue $chosenHost -Force
+        Write-Host "Hôte du relais : $chosenHost (seul à ouvrir un échange ; réglage host de $settingsPath)."
+    }
+}
 if (-not $tokenFile -or -not (Test-Path $tokenFile)) {
     throw "Jeton absent ($tokenFile) : régler token_file dans $settingsPath, -TokenFile ou NEXUS_MCP_TOKEN_FILE."
 }
@@ -128,6 +152,7 @@ $daemonEnv.NEXUS_MCP_TOKEN_FILE = (Resolve-Path $tokenFile).Path  # lu par le d�
 if ($settings.vaults) { $daemonEnv.NEXUS_RELAY_VAULTS = @($settings.vaults) -join [IO.Path]::PathSeparator }
 if ($settings.codex_router) { $daemonEnv.NEXUS_RELAY_CODEX_ROUTER = [string]$settings.codex_router }
 if ($settings.codex_router_start) { $daemonEnv.NEXUS_RELAY_CODEX_ROUTER_START = @($settings.codex_router_start) -join ';' }
+if ($settings.host) { $daemonEnv.NEXUS_RELAY_HOST = [string]$settings.host }
 $spec = [ordered]@{ port = $port; python = $python; args = $serverArgs; env = $daemonEnv }
 $specChanged = Write-IfChanged (Join-Path $HOME '.nexus\daemons\specs\nexus-relay.json') ($spec | ConvertTo-Json -Depth 5)
 # Nouveau code : demande de relance au démon, jamais d'arrêt forcé. Il ne se relance que si son code a changé, une fois
@@ -173,8 +198,6 @@ if (-not (Get-ScheduledTask -TaskName 'Nexus MCP Daemons' -ErrorAction SilentlyC
 
 # --- Antigravity : plugin nexus-relay (serveur MCP, skill, sidecar) et activation du sidecar
 $agyRoot = Join-Path $HOME '.gemini\config'
-# Périmètre du pack Nexus : IA choisies par l'utilisateur ; les autres ne sont jamais touchées.
-$packTargets = if ($null -ne $env:NEXUS_PACK_TARGETS) { @($env:NEXUS_PACK_TARGETS -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ }) } else { $null }
 if ($null -ne $packTargets -and $packTargets -notcontains 'antigravity') {
     Write-Host 'Antigravity : hors du périmètre choisi (NEXUS_PACK_TARGETS), non touché.'
     $agyResult = ''

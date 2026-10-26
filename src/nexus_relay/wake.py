@@ -28,7 +28,7 @@ from typing import Any
 from . import journal
 from .box import Box, Message, now_iso, pid_alive
 
-WAKEABLE = ("codex", "antigravity")
+WAKEABLE = ("codex", "antigravity")  # ceux qu'une appli permet de réveiller (Claude Code : aucune)
 GROUP_S = 2.0
 RETRY_S = 20.0
 RETRY_MAX_S = 300.0
@@ -159,9 +159,17 @@ def unless_awaited(question_id: str, action: Callable[[], object]) -> bool:
         return True
 
 
+def wakeable() -> tuple[str, ...]:
+    """Agents sonnés pour un message : les réveillables, sauf l'hôte (il attend ses réponses par wait_reply)."""
+    from .paths import relay_host
+
+    host = relay_host()
+    return tuple(agent for agent in WAKEABLE if agent != host)
+
+
 def needs_wake(message: Message) -> bool:
     return (
-        message.to in WAKEABLE and message.sender != message.to and not message.info and not awaited(message.reply_to)
+        message.to in wakeable() and message.sender != message.to and not message.info and not awaited(message.reply_to)
     )
 
 
@@ -224,7 +232,18 @@ def peers_verdict(box: Box) -> dict[str, Any]:
     )
     agy_alive = sidecar_alive(box)
     agy_why = credits.availability(box, "antigravity") or (None if agy_alive else "sidecar muet")
-    return {"at": now_iso(), "codex": card(codex_why is None, codex_why), "antigravity": card(agy_why is None, agy_why)}
+    verdict = {
+        "at": now_iso(),
+        "codex": card(codex_why is None, codex_why),
+        "antigravity": card(agy_why is None, agy_why),
+    }
+    from .paths import DEFAULT_HOST, relay_host
+
+    if (
+        relay_host() != DEFAULT_HOST
+    ):  # par défaut, fichier inchangé (barre et pad) ; sinon le pad sait qui est au centre
+        verdict["host"] = relay_host()
+    return verdict
 
 
 def retry_delay(state: dict[str, Any]) -> float:

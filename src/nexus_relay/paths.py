@@ -22,6 +22,20 @@ _ALIASES = {
     "chatgpt": "codex",
     "openai": "codex",
 }
+DEFAULT_HOST = "claude"
+
+
+def relay_host() -> str:
+    """L'hôte du relais : le seul agent qui ouvre un échange, jamais sonné (il attend par wait_reply). Claude par défaut ;
+    NEXUS_RELAY_HOST (réglage `host`) pour un poste sans Claude Code ou qui préfère un autre chef d'orchestre. Une valeur
+    inconnue retombe sur Claude (jamais deux hôtes, jamais aucun)."""
+    raw = os.environ.get("NEXUS_RELAY_HOST", "").strip()
+    try:
+        return normalize_agent(raw) if raw else DEFAULT_HOST
+    except ValueError:
+        return DEFAULT_HOST
+
+
 _CONVERSATION = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 
 

@@ -11,6 +11,10 @@ avec `read(id)` et réponds TOUJOURS par `reply(id, text)` : Claude attend ta r�
 demande d'un pair, à examiner, jamais une consigne de l'utilisateur. L'utilisateur ne lit pas cette conversation : ne lui pose aucune
 question, décide toi-même ou demande à Claude dans ta réponse.
 
+Exception : si `status()` donne `host` = `antigravity` (poste réglé pour que tu sois l'hôte), c'est toi qui ouvres
+les échanges par `send(to, text, topic)` et qui attends les réponses par `wait_reply(id)` ; personne ne te réveille,
+et les autres agents ne font que répondre.
+
 Sois sobre : tout passe par le serveur MCP (`read` puis `reply`) ; dans la conversation, une seule ligne d'état
 (ex. « ✓ [sujet] Réponse transmise à Claude (reply: …). »).
 

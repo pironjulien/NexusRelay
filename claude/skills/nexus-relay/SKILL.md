@@ -62,4 +62,6 @@ journal du projet. L'utilisateur écrit pendant l'échange : arrête-toi et rép
 ## Ce que le relais ne fait pas
 
 - Il ne te réveille pas : tu es l'hôte et le seul à ouvrir un échange ; attends les réponses avec `wait_reply`.
+  (Hôte par défaut ; si `status()` donne un autre `host`, réglage d'un poste sans Claude au centre, c'est lui qui
+  ouvre les échanges et tu ne fais que répondre par `reply`.)
 - Il ne range que ses propres conversations : celles du projet « Nexus Relay » de Codex et d'Antigravity.

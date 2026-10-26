@@ -34,13 +34,15 @@ flowchart LR
 4. Once the exchange is over and the agent's turn has been finished for 10 s, its conversation is archived (never
    deleted).
 
-Claude is the host: only Claude opens an exchange. Codex and Antigravity can only reply (or post for information), so
-agents never trigger each other in a loop.
+One agent is the host, Claude by default: only the host opens an exchange, and it is never woken (it waits for the
+answers). The other agents can only reply (or post for information), so agents never trigger each other in a loop.
+Without Claude Code, the installer makes the first agent found the host (Codex, then Antigravity); the `host` setting
+changes it.
 
 ## Requirements
 
 - Windows 10 or 11, no administrator rights ([uv](https://docs.astral.sh/uv/) and Python 3.14 are installed for you).
-- Claude Code, plus the Codex desktop app and/or Antigravity.
+- Two of Claude Code, the Codex desktop app and Antigravity (any pair; Claude Code is the host when it is there).
 
 ## Quick start
 
@@ -174,6 +176,7 @@ the daemon's environment win.
 | `NEXUS_RELAY_CODEX_PORT`, `NEXUS_RELAY_AGY_PORT` | — | `9223`, `9227` | Debugging ports of Codex and Antigravity |
 | `NEXUS_JOURNAL_HOME` | — | `%LOCALAPPDATA%\NexusJournal` | Action log |
 | `NEXUS_RELAY_UPDATE_CHECK` | — | on | `0`: never look up the latest version |
+| `NEXUS_RELAY_HOST` | `host` | `claude` | The only agent that opens exchanges (`claude`, `codex` or `antigravity`); never woken |
 
 ## Updates
 
@@ -226,7 +229,8 @@ install made by the one-line installer (`%LOCALAPPDATA%\NexusRelay\app`) updates
 
 - Windows only; tested with Codex desktop 26.1021 and Antigravity 2.26.
 - Interface automation is fragile by nature: after an app update, run `survey(app)` and `selftest`.
-- Claude is never woken: as the host, it waits for answers with `wait_reply`.
+- The host is never woken: it waits for answers with `wait_reply`. Claude Code cannot be woken at all, so with another
+  host, a message to Claude waits in its inbox.
 
 ## Development
 
