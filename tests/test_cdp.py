@@ -1159,7 +1159,9 @@ def test_chat_du_sujet_envoi_prouve_par_le_tour_demarre(monkeypatch: pytest.Monk
         assert result["status"] == expected
 
 
-@pytest.mark.parametrize(("running", "said"), [(True, "n'écoute pas : le relancer"), (False, "fermé ou page absente")])
+@pytest.mark.parametrize(
+    ("running", "said"), [(True, "n'écoute pas : le relais le relance"), (False, "fermé ou page absente")]
+)
 def test_reperes_antigravity_ouvert_sans_son_port(monkeypatch: pytest.MonkeyPatch, running: bool, said: str):
     # vu le 22/10 : relancé par sa mise à jour, Antigravity tournait sans son port ; le dire, au lieu de « fermé »
     monkeypatch.setattr(cdp, "page_url", lambda port=0, url="": None)

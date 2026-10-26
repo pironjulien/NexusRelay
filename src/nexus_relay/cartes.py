@@ -27,6 +27,7 @@ from typing import Any
 
 from . import cdp, wake
 from .box import now_iso
+from .lang import tr
 from .paths import relay_home
 
 APPS = ("codex", "antigravity")
@@ -889,6 +890,10 @@ def _where(item: dict[str, Any]) -> str:
     return " > ".join(item.get("path") or []) or "?"
 
 
+# repère disparu : marque reconnue dans les deux langues (alertes de save)
+GONE_EN, GONE_FR = "LANDMARK GONE", "REPÈRE DISPARU"
+
+
 def diff(old: dict[str, Any], new: dict[str, Any]) -> dict[str, Any]:
     """Ajouts, retraits et déplacements d'éléments ; repères disparus ou déplacés. Lisible par l'utilisateur."""
 
@@ -900,7 +905,7 @@ def diff(old: dict[str, Any], new: dict[str, Any]) -> dict[str, Any]:
 
     def describe(identity: str) -> str:
         role, label, _ = json.loads(identity)
-        return f"{role or 'élément'} « {label} »"
+        return tr(f'{role or "element"} "{label}"', f"{role or 'élément'} « {label} »")
 
     a, b = index(old), index(new)
     added = sorted(describe(i) + " (" + ", ".join(sorted(b[i])) + ")" for i in b.keys() - a.keys() if json.loads(i)[1])
@@ -920,18 +925,35 @@ def diff(old: dict[str, Any], new: dict[str, Any]) -> dict[str, Any]:
             before = None  # non vérifiable avant : rien à comparer
         if after and "path" not in after:
             if before:
-                landmarks.append(f"repère {name} {after['unverified']} (était : {before['path']})")
+                landmarks.append(
+                    tr(
+                        f"landmark {name} {after['unverified']} (was: {before['path']})",
+                        f"repère {name} {after['unverified']} (était : {before['path']})",
+                    )
+                )
             continue
         if before and not after:
-            landmarks.append(f"REPÈRE DISPARU {name} (était : {before['path']})")
+            landmarks.append(
+                tr(f"{GONE_EN} {name} (was: {before['path']})", f"{GONE_FR} {name} (était : {before['path']})")
+            )
         elif after and not before:
-            landmarks.append(f"repère {name} trouvé : {after['path']}")
+            landmarks.append(tr(f"landmark {name} found: {after['path']}", f"repère {name} trouvé : {after['path']}"))
         elif before and after:
             was, now = set(before.get("paths") or [before["path"]]), set(after.get("paths") or [after["path"]])
             if now - was:
-                landmarks.append(f"repère {name} maintenant aussi : {', '.join(sorted(now - was))}")
+                landmarks.append(
+                    tr(
+                        f"landmark {name} now also: {', '.join(sorted(now - was))}",
+                        f"repère {name} maintenant aussi : {', '.join(sorted(now - was))}",
+                    )
+                )
             if was - now:
-                landmarks.append(f"repère {name} n'est plus : {', '.join(sorted(was - now))}")
+                landmarks.append(
+                    tr(
+                        f"landmark {name} no longer: {', '.join(sorted(was - now))}",
+                        f"repère {name} n'est plus : {', '.join(sorted(was - now))}",
+                    )
+                )
     labels_old, labels_new = old.get("index") or {}, new.get("index") or {}
     changed = sorted(
         f"{k} : « {labels_old[k]} » → « {labels_new[k]} »"
@@ -956,12 +978,17 @@ def diff(old: dict[str, Any], new: dict[str, Any]) -> dict[str, Any]:
 def summary(change: dict[str, Any]) -> str:
     """Quelques lignes en mots simples."""
     lines = [f"{change['from']} → {change['to']}"]
-    lines += change["landmarks"] or ["repères du relais : inchangés"]
-    lines += [f"déplacé : {m}" for m in change["moved"][:20]]
-    lines.append(f"{len(change['added'])} éléments apparus, {len(change['removed'])} disparus")
+    lines += change["landmarks"] or [tr("relay landmarks: unchanged", "repères du relais : inchangés")]
+    lines += [tr(f"moved: {m}", f"déplacé : {m}") for m in change["moved"][:20]]
+    added, removed = len(change["added"]), len(change["removed"])
+    lines.append(tr(f"{added} elements appeared, {removed} gone", f"{added} éléments apparus, {removed} disparus"))
     labels = change["labels"]
+    new, gone, changed = labels["added"], len(labels["removed"]), len(labels["changed"])
     lines.append(
-        f"libellés : {labels['added']} nouveaux, {len(labels['removed'])} retirés, {len(labels['changed'])} changés"
+        tr(
+            f"labels: {new} new, {gone} removed, {changed} changed",
+            f"libellés : {new} nouveaux, {gone} retirés, {changed} changés",
+        )
     )
     return "\n".join(lines)
 
@@ -1031,7 +1058,9 @@ def save(card: dict[str, Any]) -> dict[str, Any]:
         diff_file = path.with_name(path.stem + ".diff.json")
         diff_file.write_text(json.dumps(change, ensure_ascii=False, indent=1), encoding="utf-8")
         result.update(
-            diff=str(diff_file), summary=summary(change), alerts=[x for x in change["landmarks"] if "DISPARU" in x]
+            diff=str(diff_file),
+            summary=summary(change),
+            alerts=[x for x in change["landmarks"] if x.startswith((GONE_EN, GONE_FR))],
         )
     path.write_text(json.dumps(card, ensure_ascii=False, indent=1), encoding="utf-8")
     card_path(app, version, partial=True).unlink(missing_ok=True)  # essai interrompu de la même version : remplacé
@@ -1042,21 +1071,36 @@ def save(card: dict[str, Any]) -> dict[str, Any]:
 _LOCK = threading.Lock()
 
 
+def _unknown_app(app: str) -> str:
+    return tr(f"unknown app: {app!r} ({', '.join(APPS)})", f"appli inconnue : {app!r} ({', '.join(APPS)})")
+
+
 def survey(app: str, live: bool = True) -> dict[str, Any]:
     """Relevé de `app` : index des libellés (paquet) et, avec `live`, relevé par le port (seulement si l'utilisateur n'est pas
     dans l'appli). Rend le résumé ; la carte est rangée dans ~\\.nexus\\relay\\v1\\cartes."""
     if app not in SPECS:
-        raise ValueError(f"appli inconnue : {app!r} ({', '.join(APPS)})")
+        raise ValueError(_unknown_app(app))
     if not _LOCK.acquire(blocking=False):
-        return {"status": "deferred", "reason": "un relevé est déjà en cours"}
+        return {"status": "deferred", "reason": tr("a survey is already running", "un relevé est déjà en cours")}
     try:
         spec = SPECS[app]
         version = VERSIONS[app]()
         if not version:
-            return {"status": "failed", "reason": f"version de {app} introuvable (appli installée ?)"}
+            return {
+                "status": "failed",
+                "reason": tr(
+                    f"{app} version not found (app installed?)", f"version de {app} introuvable (appli installée ?)"
+                ),
+            }
         card: dict[str, Any] = {"app": app, "version": version, "surveyed_at": now_iso(), "elements": []}
         if live and not cdp.UI_LOCKS[app].acquire(timeout=UI_WAIT_S):  # un réveil en cours : on le laisse finir
-            return {"status": "deferred", "reason": "un réveil ou un rangement tient le port : relevé reporté"}
+            return {
+                "status": "deferred",
+                "reason": tr(
+                    "a wake or a tidy-up holds the port: survey postponed",
+                    "un réveil ou un rangement tient le port : relevé reporté",
+                ),
+            }
         try:
             return _survey(app, spec, version, card, live)
         finally:
@@ -1153,7 +1197,7 @@ def overview() -> dict[str, Any]:
     for app in APPS:
         card = latest(app)
         if card is None:
-            out[app] = {"status": "pas encore de carte"}
+            out[app] = {"status": tr("no map yet", "pas encore de carte")}
             continue
         marks = card.get("landmarks") or {}
         out[app] = {
@@ -1193,9 +1237,13 @@ def how_to_reach(item: dict[str, Any], elements: list[dict[str, Any]]) -> list[d
             ),
             None,
         )
-        gesture = "survol (Input.dispatchMouseEvent mouseMoved)" if kind == "sous-menu" else "clic émulé (cdp._press)"
+        gesture = (
+            tr("hover (Input.dispatchMouseEvent mouseMoved)", "survol (Input.dispatchMouseEvent mouseMoved)")
+            if kind == "sous-menu"
+            else tr("emulated click (cdp._press)", "clic émulé (cdp._press)")
+        )
         steps.append({"step": step, "gesture": gesture, "locator": locator_of(source) if source else {"text": name}})
-    steps.append({"step": "élément", "locator": locator_of(item)})
+    steps.append({"step": tr("element", "élément"), "locator": locator_of(item)})
     return steps
 
 
@@ -1234,10 +1282,13 @@ def where(app: str, what: str, limit: int = 5) -> dict[str, Any]:
     """Cherche `what` (libellé, aria-label, attribut data-*, clé de traduction ou nom de repère) dans la dernière carte ;
     pas vu (aucun chat affiché ce jour-là…) : dans les cartes précédentes, la plus récente d'abord, en le disant."""
     if app not in SPECS:
-        raise ValueError(f"appli inconnue : {app!r} ({', '.join(APPS)})")
+        raise ValueError(_unknown_app(app))
     found = [load(p) for p in reversed(cards(app))]
     if not found:
-        return {"status": "error", "error": f"pas encore de carte pour {app} : lancer un relevé"}
+        return {
+            "status": "error",
+            "error": tr(f"no map yet for {app}: run a survey", f"pas encore de carte pour {app} : lancer un relevé"),
+        }
     card = found[0]
     hits = _search(app, card, what, limit)
     result: dict[str, Any] = {
@@ -1250,9 +1301,8 @@ def where(app: str, what: str, limit: int = 5) -> dict[str, Any]:
     for older in found[1:] if not hits else []:
         if hits := _search(app, older, what, limit):
             result["found"] = hits
-            result["from_older_card"] = (
-                f"{older.get('version')} ({older.get('surveyed_at')}) : pas vu au dernier relevé"
-            )
+            seen = f"{older.get('version')} ({older.get('surveyed_at')})"
+            result["from_older_card"] = tr(f"{seen}: not seen in the last survey", f"{seen} : pas vu au dernier relevé")
             break
     query = _norm(what)
     known = [
@@ -1263,8 +1313,13 @@ def where(app: str, what: str, limit: int = 5) -> dict[str, Any]:
     if known:
         result["labels"] = known  # dans le paquet de l'appli : existe, même si le relevé ne l'a pas vu
     if not result["found"]:
-        result["note"] = "pas vu au relevé" + (
-            " ; libellé connu de l'appli (index), page ou menu non parcourus" if known else ""
+        result["note"] = tr("not seen in the survey", "pas vu au relevé") + (
+            tr(
+                "; label known to the app (index), page or menu not visited",
+                " ; libellé connu de l'appli (index), page ou menu non parcourus",
+            )
+            if known
+            else ""
         )
     return result
 

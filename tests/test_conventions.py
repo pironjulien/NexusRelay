@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -116,3 +117,21 @@ def test_jamais_de_powershell_detache():
     26/10) : seule l'appli graphique lancée réduite (cdp.py, sans console) garde DETACHED_PROCESS."""
     uses = {p.name: p.read_text(encoding="utf-8").count('"DETACHED_PROCESS"') for p in SOURCES}
     assert {name: n for name, n in uses.items() if n} == {"cdp.py": 1}, uses
+
+
+def test_consignes_en_deux_langues():
+    r"""26/10 (l'utilisateur) : consignes publiques en anglais, copie française dans fr\ ; même jeu de fichiers, mêmes
+    versions des plugins."""
+    from nexus_relay import __version__
+
+    for path in (ROOT / "fr").rglob("*"):
+        if path.is_file():
+            assert (ROOT / path.relative_to(ROOT / "fr")).is_file(), path
+    for plugin in (
+        "plugins/nexus-relay/plugin.json",
+        "fr/plugins/nexus-relay/plugin.json",
+        "codex/.codex-plugin/plugin.json",
+    ):
+        assert json.loads((ROOT / plugin).read_text(encoding="utf-8"))["version"] == __version__, plugin
+    for name in ("claude/skills/nexus-relay/SKILL.md", "plugins/nexus-relay/skills/nexus-relay/SKILL.md"):
+        assert "é" not in (ROOT / name).read_text(encoding="utf-8"), name  # anglais pour le public

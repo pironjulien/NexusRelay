@@ -19,6 +19,8 @@ from collections.abc import Callable
 from ctypes import wintypes as w
 from pathlib import Path
 
+from .lang import tr
+
 LOCK_FILE = Path.home() / ".nexus" / "foreground.lock"
 DEFAULT_TIMEOUT_S = 8.0
 POLL_S = 0.05
@@ -178,8 +180,12 @@ class ForegroundLock:
         if not self.acquire():
             who = holder() or {}
             raise TimeoutError(
-                f"{who.get('owner') or 'un autre agent'} tient la souris et le premier plan "
-                f"({who.get('purpose') or 'action physique'}) : action reportée, rien n'a été fait"
+                tr(
+                    f"{who.get('owner') or 'another agent'} holds the mouse and the foreground "
+                    f"({who.get('purpose') or 'physical action'}): action postponed, nothing was done",
+                    f"{who.get('owner') or 'un autre agent'} tient la souris et le premier plan "
+                    f"({who.get('purpose') or 'action physique'}) : action reportée, rien n'a été fait",
+                )
             )
         return self
 

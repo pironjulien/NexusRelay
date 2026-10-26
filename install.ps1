@@ -61,8 +61,6 @@ $pythonw = Join-Path $venv 'Scripts\pythonw.exe'
 if (-not (Test-Path $pythonw)) { throw "pythonw.exe absent de $venv : environnement à recréer." }
 $utf8 = [Text.UTF8Encoding]::new($false)
 New-Item -ItemType Directory -Force (Join-Path $HOME '.nexus\relay\codex-projet') | Out-Null  # dossier du projet Codex du relais
-# Consignes des chats du relais, lues par Codex dans ce dossier : jamais de question à l'utilisateur, qui ne les lit pas.
-Copy-Item -Force (Join-Path $PSScriptRoot 'codex-projet\AGENTS.md') (Join-Path $HOME '.nexus\relay\codex-projet\AGENTS.md')
 $stampTime = Get-Date -Format 'yyyyMMdd-HHmmss'
 
 function Save-Backup([string]$path, [string]$name) {
@@ -103,6 +101,16 @@ $settingsPath = Join-Path $state 'settings.json'
 # Réglages effectifs (fichier de ce PC, puis celui du dépôt ; variables développées) : une seule lecture, celle du démon.
 $settings = (& $python -B -m nexus_relay.settings) | ConvertFrom-Json
 if ($LASTEXITCODE) { throw 'Lecture des réglages du poste : échec (nexus_relay.settings).' }
+# Langue des consignes déployées (réglage `lang`) : anglais par défaut ; `fr` prend la copie française du dossier fr\
+# du dépôt quand elle existe (skill d'Antigravity, consignes des chats de Codex).
+$french = ([string]$settings.lang).Trim().ToLower().StartsWith('fr')
+function Get-Localized([string]$relative) {
+    $fr = Join-Path $project "fr\$relative"
+    if ($french -and (Test-Path $fr)) { return $fr }
+    return Join-Path $project $relative
+}
+# Consignes des chats du relais, lues par Codex dans ce dossier : jamais de question à l'utilisateur, qui ne les lit pas.
+Copy-Item -Force (Get-Localized 'codex-projet\AGENTS.md') (Join-Path $HOME '.nexus\relay\codex-projet\AGENTS.md')
 $tokenFile = @($TokenFile, $settings.token_file, $env:NEXUS_MCP_TOKEN_FILE) | Where-Object { $_ } | Select-Object -First 1
 # Jeton partagé entre plusieurs PC (poste réglé) : jamais créé ici, un installeur lancé avant la synchro du fichier en
 # créait un autre, qui cassait l'autre PC. Installation publique (-Register) sans aucun réglage : jeton propre à ce PC.
@@ -153,6 +161,7 @@ if ($settings.vaults) { $daemonEnv.NEXUS_RELAY_VAULTS = @($settings.vaults) -joi
 if ($settings.codex_router) { $daemonEnv.NEXUS_RELAY_CODEX_ROUTER = [string]$settings.codex_router }
 if ($settings.codex_router_start) { $daemonEnv.NEXUS_RELAY_CODEX_ROUTER_START = @($settings.codex_router_start) -join ';' }
 if ($settings.host) { $daemonEnv.NEXUS_RELAY_HOST = [string]$settings.host }
+if ($settings.lang) { $daemonEnv.NEXUS_RELAY_LANG = [string]$settings.lang }
 $spec = [ordered]@{ port = $port; python = $python; args = $serverArgs; env = $daemonEnv }
 $specChanged = Write-IfChanged (Join-Path $HOME '.nexus\daemons\specs\nexus-relay.json') ($spec | ConvertTo-Json -Depth 5)
 # Nouveau code : demande de relance au démon, jamais d'arrêt forcé. Il ne se relance que si son code a changé, une fois
@@ -207,6 +216,9 @@ if ($null -ne $packTargets -and $packTargets -notcontains 'antigravity') {
 } else {
     $plugin = Join-Path $agyRoot 'plugins\nexus-relay'
     $copied = Copy-Tree (Join-Path $project 'plugins\nexus-relay') $plugin
+    if ($french -and (Test-Path (Join-Path $project 'fr\plugins\nexus-relay'))) {
+        $copied += Copy-Tree (Join-Path $project 'fr\plugins\nexus-relay') $plugin  # copie française par-dessus
+    }
     $mcp = [ordered]@{ mcpServers = [ordered]@{ 'nexus-relay' = [ordered]@{
         serverUrl = (Get-Url 'antigravity'); headers = [ordered]@{ Authorization = "Bearer $token" } } } }
     if (Write-IfChanged (Join-Path $plugin 'mcp_config.json') ($mcp | ConvertTo-Json -Depth 10)) { $copied++ }

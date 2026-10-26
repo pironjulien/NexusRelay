@@ -34,6 +34,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+from .lang import tr
 from .paths import USER, normalize_party, relay_home
 
 TOPIC = re.compile(r"^[a-z0-9][a-z0-9-]{0,47}$")
@@ -62,7 +63,12 @@ def new_id() -> str:
 def check_topic(topic: str | None) -> str:
     topic = (topic or "").strip().lower()
     if not TOPIC.match(topic):
-        raise RelayError("sujet obligatoire : minuscules, chiffres et tirets (ex. « nexuswindows », « relais »)")
+        raise RelayError(
+            tr(
+                "topic required: lowercase letters, digits and hyphens (e.g. “nexuswindows”, “relais”)",
+                "sujet obligatoire : minuscules, chiffres et tirets (ex. « nexuswindows », « relais »)",
+            )
+        )
     return topic
 
 
@@ -70,7 +76,7 @@ def write_new(path: Path, data: dict[str, Any]) -> None:
     """Crée `path` d'un coup ; refuse s'il existe déjà (un message ne se réécrit jamais)."""
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.exists():
-        raise RelayError(f"{path.name} existe déjà")
+        raise RelayError(tr(f"{path.name} already exists", f"{path.name} existe déjà"))
     tmp = path.with_name(f".{path.name}.{secrets.token_hex(4)}.tmp")
     tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
     os.replace(tmp, path)
@@ -148,7 +154,7 @@ def _opened_path(fd: int) -> str:
     buffer = ctypes.create_unicode_buffer(32768)
     size = kernel.GetFinalPathNameByHandleW(msvcrt.get_osfhandle(fd), buffer, len(buffer), 0)
     if not size or size >= len(buffer):
-        raise RelayError("pièce jointe : chemin réel illisible")
+        raise RelayError(tr("attachment: real path unreadable", "pièce jointe : chemin réel illisible"))
     return buffer.value
 
 
@@ -156,12 +162,14 @@ def check_files(files: list[str]) -> list[Path]:
     """Noms des fichiers joints : chemins absolus, en nombre borné. Le reste (fichier ordinaire, hors coffre, taille)
     se contrôle sur le fichier ouvert, par read_attachment."""
     if len(files) > MAX_ATTACHMENTS:
-        raise RelayError(f"pièces jointes : {MAX_ATTACHMENTS} au plus")
+        raise RelayError(tr(f"attachments: {MAX_ATTACHMENTS} at most", f"pièces jointes : {MAX_ATTACHMENTS} au plus"))
     paths = []
     for name in files:
         path = Path(name).expanduser()
         if not path.is_absolute():
-            raise RelayError(f"pièce jointe : chemin absolu attendu ({name})")
+            raise RelayError(
+                tr(f"attachment: absolute path expected ({name})", f"pièce jointe : chemin absolu attendu ({name})")
+            )
         paths.append(path)
     return paths
 
@@ -173,21 +181,46 @@ def read_attachment(path: Path, budget: int) -> bytes:
     try:
         fd = os.open(path, flags)
     except OSError as error:
-        raise RelayError(f"pièce jointe introuvable ou illisible : {path} ({error.strerror})") from None
+        raise RelayError(
+            tr(
+                f"attachment not found or unreadable: {path} ({error.strerror})",
+                f"pièce jointe introuvable ou illisible : {path} ({error.strerror})",
+            )
+        ) from None
     try:
         info = os.fstat(fd)
         if not stat.S_ISREG(info.st_mode):
-            raise RelayError(f"pièce jointe : pas un fichier ordinaire ({path.name})")
+            raise RelayError(
+                tr(
+                    f"attachment: not a regular file ({path.name})",
+                    f"pièce jointe : pas un fichier ordinaire ({path.name})",
+                )
+            )
         if info.st_nlink > 1:
-            raise RelayError(f"pièce jointe refusée : fichier à plusieurs noms (lien dur) ({path.name})")
+            raise RelayError(
+                tr(
+                    f"attachment refused: file with several names (hard link) ({path.name})",
+                    f"pièce jointe refusée : fichier à plusieurs noms (lien dur) ({path.name})",
+                )
+            )
         opened = _opened_path(fd)
         if opened.startswith("\\\\?\\UNC\\") or (opened.startswith("\\\\") and not opened.startswith("\\\\?\\")):
             # \\localhost\C$\… mène au coffre sans lettre de lecteur (relecture d'Antigravity du 24/10) ; les trois
             # agents sont sur ce PC : aucune pièce jointe ne vient d'un partage
-            raise RelayError(f"pièce jointe refusée : partage réseau ({path.name})")
+            raise RelayError(
+                tr(
+                    f"attachment refused: network share ({path.name})",
+                    f"pièce jointe refusée : partage réseau ({path.name})",
+                )
+            )
         real = _plain(opened)
         if any(real == vault or real.startswith(vault + os.sep) for vault in _vaults()):
-            raise RelayError(f"pièce jointe refusée : coffre de secrets ({path.name})")
+            raise RelayError(
+                tr(
+                    f"attachment refused: secrets vault ({path.name})",
+                    f"pièce jointe refusée : coffre de secrets ({path.name})",
+                )
+            )
         limit = min(MAX_ATTACHMENT, budget)
         chunks, read = [], 0
         while chunk := os.read(fd, min(1 << 20, limit + 1 - read)):
@@ -195,8 +228,18 @@ def read_attachment(path: Path, budget: int) -> bytes:
             read += len(chunk)
             if read > limit:
                 if limit < MAX_ATTACHMENT:
-                    raise RelayError(f"pièces jointes trop grosses ensemble ({MAX_ATTACHMENTS_TOTAL} octets au plus)")
-                raise RelayError(f"pièce jointe trop grosse : {path.name} ({MAX_ATTACHMENT} octets au plus)")
+                    raise RelayError(
+                        tr(
+                            f"attachments too large together ({MAX_ATTACHMENTS_TOTAL} bytes at most)",
+                            f"pièces jointes trop grosses ensemble ({MAX_ATTACHMENTS_TOTAL} octets au plus)",
+                        )
+                    )
+                raise RelayError(
+                    tr(
+                        f"attachment too large: {path.name} ({MAX_ATTACHMENT} bytes at most)",
+                        f"pièce jointe trop grosse : {path.name} ({MAX_ATTACHMENT} octets au plus)",
+                    )
+                )
         return b"".join(chunks)
     finally:
         os.close(fd)
@@ -254,7 +297,9 @@ class Box:
 
     def _find(self, message_id: str) -> Path | None:
         if not MESSAGE_ID.match(message_id):
-            raise RelayError(f"identifiant de message invalide : {message_id!r}")
+            raise RelayError(
+                tr(f"invalid message id: {message_id!r}", f"identifiant de message invalide : {message_id!r}")
+            )
         return next(iter(self._folder().glob(f"{message_id}.*.json")), None)
 
     def _load(self, paths: list[Path]) -> list[Message]:
@@ -274,15 +319,18 @@ class Box:
     ) -> Message:
         sender, to, topic = normalize_party(sender), normalize_party(to), check_topic(topic)
         if sender == to:
-            raise RelayError("on n'écrit pas à soi-même")
+            raise RelayError(tr("you cannot write to yourself", "on n'écrit pas à soi-même"))
         if not text.strip():
-            raise RelayError("message vide")
+            raise RelayError(tr("empty message", "message vide"))
         if len(text) > MAX_TEXT:
             raise RelayError(
-                f"message trop long ({len(text)} caractères, {MAX_TEXT} au plus) : mets le détail dans un fichier"
+                tr(
+                    f"message too long ({len(text)} characters, {MAX_TEXT} at most): put the details in a file",
+                    f"message trop long ({len(text)} caractères, {MAX_TEXT} au plus) : mets le détail dans un fichier",
+                )
             )
         if vote is not None and vote not in VOTES:
-            raise RelayError(f"vote : {' ou '.join(VOTES)}")
+            raise RelayError(tr(f"vote: {' or '.join(VOTES)}", f"vote : {' ou '.join(VOTES)}"))
         sources = check_files(files or [])
         contents, budget = [], MAX_ATTACHMENTS_TOTAL
         for path in sources:  # tout est lu et contrôlé AVANT d'écrire quoi que ce soit
@@ -471,7 +519,9 @@ class Box:
     # --- voie propriétaire vers Antigravity (point G du 20/10) : sidecar OU port, jamais les deux pour une livraison
     def _claim_path(self, message_id: str, attempt: int) -> Path:
         if not MESSAGE_ID.match(message_id):
-            raise RelayError(f"identifiant de message invalide : {message_id!r}")
+            raise RelayError(
+                tr(f"invalid message id: {message_id!r}", f"identifiant de message invalide : {message_id!r}")
+            )
         return self.root / "claims" / message_id / f"{int(attempt)}.json"
 
     def claim(self, message_id: str, attempt: int, owner: str, **data: Any) -> bool:
@@ -499,7 +549,12 @@ class Box:
         """Le propriétaire (et lui seul) note la phase : submitting (injection en cours), delivered, uncertain."""
         current = self.claim_of(message_id, attempt) or {}
         if current.get("owner") != owner:
-            raise RelayError(f"livraison {message_id}/{attempt} : {owner} n'en est pas propriétaire")
+            raise RelayError(
+                tr(
+                    f"delivery {message_id}/{attempt}: {owner} does not own it",
+                    f"livraison {message_id}/{attempt} : {owner} n'en est pas propriétaire",
+                )
+            )
         write_state(self._claim_path(message_id, attempt), {**current, **data, "phase": phase, "updated": now_iso()})
 
     def release(self, message_id: str, attempt: int, owner: str) -> None:

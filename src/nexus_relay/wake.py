@@ -27,6 +27,7 @@ from typing import Any
 
 from . import journal
 from .box import Box, Message, now_iso, pid_alive
+from .lang import tr
 
 WAKEABLE = ("codex", "antigravity")  # ceux qu'une appli permet de réveiller (Claude Code : aucune)
 GROUP_S = 2.0
@@ -194,7 +195,10 @@ def _antigravity(ids: list[str]) -> dict[str, Any]:
     from .credits import exhausted
 
     if reason := exhausted("antigravity", Box().state("antigravity-usage")):
-        return {"status": "deferred", "reason": f"quota épuisé, livraison en pause : {reason}"}
+        return {
+            "status": "deferred",
+            "reason": tr(f"quota exhausted, delivery paused: {reason}", f"quota épuisé, livraison en pause : {reason}"),
+        }
     # Figé (fenêtre « ne répond pas ») : le sidecar peut battre encore, mais agentapi ne livrerait rien (21/10, l'utilisateur :
     # relancer une IA qui ne répond plus, jamais pendant qu'il s'en sert).
     frozen = cdp.hung_for("antigravity", cdp.app_hung(cdp.AGY_PROCESS))
@@ -205,16 +209,35 @@ def _antigravity(ids: list[str]) -> dict[str, Any]:
             "status": "started",
             "via": "sidecar",
             "confirmed": False,
-            "note": "confié au sidecar (livraison : track)",
+            "note": tr("handed to the sidecar (delivery: track)", "confié au sidecar (livraison : track)"),
         }
     if cdp.targets(cdp.AGY_PORT):
-        return {"status": "deferred", "reason": "Antigravity ouvert mais sidecar muet : il redémarre seul, réessai"}
+        return {
+            "status": "deferred",
+            "reason": tr(
+                "Antigravity open but sidecar silent: it restarts by itself, retrying",
+                "Antigravity ouvert mais sidecar muet : il redémarre seul, réessai",
+            ),
+        }
     if cdp.user_in_agy():
-        return {"status": "deferred", "reason": "Antigravity sans sidecar ni port, l'utilisateur y travaille"}
+        return {
+            "status": "deferred",
+            "reason": tr(
+                "Antigravity without sidecar or port, the user is working in it",
+                "Antigravity sans sidecar ni port, l'utilisateur y travaille",
+            ),
+        }
     return cdp.start_antigravity()
 
 
 WAKERS: dict[str, Waker] = {"codex": _codex, "antigravity": _antigravity}
+
+
+def _agy_port() -> None:
+    """Antigravity ouvert sans son port : relancé avec, encadré (cdp.restart_portless_antigravity)."""
+    from . import cdp
+
+    cdp.restart_portless_antigravity()
 
 
 def peers_verdict(box: Box) -> dict[str, Any]:
@@ -306,6 +329,7 @@ class Bell:
                     ("rangement Codex", lambda: tidy_codex(self.box)),
                     ("rangement Antigravity", lambda: tidy_antigravity(self.box)),
                     ("verdict des pairs", lambda: self.box.set_state("peers", peers_verdict(self.box))),
+                    ("port d'Antigravity", _agy_port),
                 ):
                     try:
                         _counted(tidy, label)
@@ -356,7 +380,11 @@ class Bell:
             with self._lock:
                 self._watch[agent].pop(message_id, None)
             if int(ring.get("attempt") or 0) >= MAX_RINGS:
-                self._incident(message_id, ring, f"non lu après {MAX_RINGS} réveils : prise en charge non confirmée")
+                why = tr(
+                    f"unread after {MAX_RINGS} wakes: pickup not confirmed",
+                    f"non lu après {MAX_RINGS} réveils : prise en charge non confirmée",
+                )
+                self._incident(message_id, ring, why)
                 continue
             self.box.event(message_id, "nouvelle sonnette", attempt=int(ring.get("attempt") or 0) + 1)
             with self._lock:
@@ -407,7 +435,10 @@ class Bell:
         if now - oldest > GIVE_UP_S:
             result: dict[str, Any] = {
                 "status": "abandoned",
-                "reason": "pas de réveil en 1 h : message laissé dans la boîte (non livré)",
+                "reason": tr(
+                    "no wake in 1 h: message left in the mailbox (not delivered)",
+                    "pas de réveil en 1 h : message laissé dans la boîte (non livré)",
+                ),
             }
         else:
             tried_at = time.time()  # heure réelle avant le réveil : un tour commencé pendant ce réveil reste « après »
@@ -604,9 +635,10 @@ def watch_codex(box: Box, now: float | None = None) -> list[str]:
         if turn is None:
             continue
         if turn["ended"] and now - float(turn["at"] or now) >= CODEX_END_GRACE_S:
-            reason = turn["error"] or "tour fini sans réponse"
+            reason = turn["error"] or tr("turn ended without a reply", "tour fini sans réponse")
         elif not turn["ended"] and turn["last"] is not None and now - turn["last"] > CODEX_SILENT_S:
-            reason = f"tour muet depuis {int((now - turn['last']) // 60)} min (appli figée ?)"
+            silent = int((now - turn["last"]) // 60)
+            reason = tr(f"turn silent for {silent} min (app frozen?)", f"tour muet depuis {silent} min (appli figée ?)")
         else:
             continue
         # revalidé juste avant d'écrire (relecture de Codex : un progress, une réponse ou un nouveau réveil arrivés
@@ -624,7 +656,7 @@ def watch_codex(box: Box, now: float | None = None) -> list[str]:
             {
                 **ring,
                 "agent": "codex",
-                "incident": f"codex s'est arrêté : {reason}",
+                "incident": tr(f"codex stopped: {reason}", f"codex s'est arrêté : {reason}"),
                 "incident_at": now_iso(),
                 "halt": True,
             },

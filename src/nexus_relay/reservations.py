@@ -27,6 +27,7 @@ import time
 from typing import Any
 
 from .box import Box, RelayError, read_json, write_state
+from .lang import tr
 from .paths import normalize_party
 
 MAX_PATHS = 32
@@ -57,7 +58,9 @@ def _split(path: str) -> tuple[str, list[str], bool]:
     elif extended:
         path = path[4:]
     if not ntpath.isabs(path):
-        raise RelayError(f"réservation : chemin absolu attendu ({path})")
+        raise RelayError(
+            tr(f"reservation: absolute path expected ({path})", f"réservation : chemin absolu attendu ({path})")
+        )
     drive, rest = ntpath.splitdrive(ntpath.normpath(path))
     parts = [p for p in rest.split("\\") if p]
     if not extended:
@@ -144,11 +147,13 @@ def reserve(
 ) -> dict[str, Any]:
     agent = normalize_party(agent)
     if not paths or len(paths) > MAX_PATHS:
-        raise RelayError(f"réservation : de 1 à {MAX_PATHS} chemins")
+        raise RelayError(tr(f"reservation: 1 to {MAX_PATHS} paths", f"réservation : de 1 à {MAX_PATHS} chemins"))
     if not reason.strip():
-        raise RelayError("réservation : dis pourquoi (reason)")
+        raise RelayError(tr("reservation: say why (reason)", "réservation : dis pourquoi (reason)"))
     if not TTL_MIN <= int(ttl_min) <= TTL_MAX:
-        raise RelayError(f"réservation : ttl_min de {TTL_MIN} à {TTL_MAX}")
+        raise RelayError(
+            tr(f"reservation: ttl_min from {TTL_MIN} to {TTL_MAX}", f"réservation : ttl_min de {TTL_MIN} à {TTL_MAX}")
+        )
     wanted = sorted({norm(p): clean(p) for p in paths}.values(), key=norm)
     with _LOCK:
         return _reserve(box, agent, wanted, reason, ttl_min, exclusive)
@@ -157,10 +162,13 @@ def reserve(
 def _reserve(box: Box, agent: str, wanted: list[str], reason: str, ttl_min: int, exclusive: bool) -> dict[str, Any]:
     if clash := _conflicts(box, agent, wanted, exclusive):
         lines = [
-            f"{mine} recouvre {theirs}, réservé par {held['agent']} ({held['reason']}) jusqu'à {held['expires']}"
+            tr(
+                f"{mine} overlaps {theirs}, reserved by {held['agent']} ({held['reason']}) until {held['expires']}",
+                f"{mine} recouvre {theirs}, réservé par {held['agent']} ({held['reason']}) jusqu'à {held['expires']}",
+            )
             for held, mine, theirs in clash[:5]
         ]
-        raise RelayError("réservation refusée : " + " ; ".join(lines))
+        raise RelayError(tr("reservation refused: ", "réservation refusée : ") + tr("; ", " ; ").join(lines))
     at = now()
     # même agent, mêmes chemins : la réservation existante est prolongée, pas doublée
     key = [norm(p) for p in wanted]
@@ -193,9 +201,19 @@ def _release(box: Box, agent: str, reservation: str | None) -> list[str]:
     if reservation:
         target = next((r for r in held if r["id"] == reservation), None)
         if target is None:
-            raise RelayError(f"réservation {reservation} introuvable ou déjà finie")
+            raise RelayError(
+                tr(
+                    f"reservation {reservation} not found or already ended",
+                    f"réservation {reservation} introuvable ou déjà finie",
+                )
+            )
         if target["agent"] != agent:
-            raise RelayError(f"réservation {reservation} : pas à toi ({target['agent']})")
+            raise RelayError(
+                tr(
+                    f"reservation {reservation}: not yours ({target['agent']})",
+                    f"réservation {reservation} : pas à toi ({target['agent']})",
+                )
+            )
         held = [target]
     done = []
     for record in (r for r in held if r["agent"] == agent):
@@ -224,7 +242,11 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     hits = blocking(args.agent, args.files)
     for hit in hits:
-        print(f"{hit['file']} : réservé par {hit['agent']} ({hit['reason']}) jusqu'à {hit['expires']}", file=sys.stderr)
+        line = tr(
+            f"{hit['file']}: reserved by {hit['agent']} ({hit['reason']}) until {hit['expires']}",
+            f"{hit['file']} : réservé par {hit['agent']} ({hit['reason']}) jusqu'à {hit['expires']}",
+        )
+        print(line, file=sys.stderr)
     return 1 if hits else 0
 
 

@@ -12,6 +12,7 @@ import unicodedata
 from typing import Any
 
 from .box import Box, Message
+from .lang import tr
 
 SNIPPET = 89  # caractères de part et d'autre du premier mot trouvé
 PREVIEW = 233
@@ -53,7 +54,7 @@ def search(box: Box, query: str, topic: str | None = None, sender: str | None = 
     """(message, score, extrait) de tous les messages contenant chaque mot, plus pertinent puis plus récent d'abord."""
     wanted = terms(query)
     if not wanted:
-        raise ValueError("recherche vide : donne au moins un mot")
+        raise ValueError(tr("empty search: give at least one word", "recherche vide : donne au moins un mot"))
     pool = box.topic_messages(topic) if topic else box.all()
     hits = []
     for message in pool:
@@ -75,7 +76,7 @@ def summary(box: Box, topic: str) -> dict[str, Any]:
     Les textes rendus sont des `Message` ; l'appelant les encadre (⟦relay:…⟧)."""
     messages = sorted(box.topic_messages(topic), key=lambda m: m.id)
     if not messages:
-        raise ValueError(f"sujet « {topic} » inconnu (aucun message)")
+        raise ValueError(tr(f"unknown topic “{topic}” (no message)", f"sujet « {topic} » inconnu (aucun message)"))
     participants: dict[str, int] = {}
     for message in messages:
         participants[message.sender] = participants.get(message.sender, 0) + 1

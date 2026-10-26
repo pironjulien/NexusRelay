@@ -10,6 +10,7 @@ et `codex_router_start` gardent toutes les valeurs.
     codex_router        adresse de santé du routeur devant Codex        → NEXUS_RELAY_CODEX_ROUTER
     codex_router_start  commandes qui le lancent, dans l'ordre          → NEXUS_RELAY_CODEX_ROUTER_START (séparées par ;)
     host                agent hôte (claude par défaut, codex, antigravity) → NEXUS_RELAY_HOST
+    lang                langue des textes rendus aux agents (en par défaut, fr) → NEXUS_RELAY_LANG
 
 `apply()` (démarrage du serveur) pose ces variables quand l'environnement ne les donne pas déjà ; `python -m
 nexus_relay.settings` rend les réglages effectifs en JSON (lu par install.ps1).
@@ -25,13 +26,14 @@ from collections.abc import MutableMapping
 from pathlib import Path
 from typing import Any
 
-KEYS = ("token_file", "vaults", "codex_router", "codex_router_start", "host")
+KEYS = ("token_file", "vaults", "codex_router", "codex_router_start", "host", "lang")
 ENV = {
     "token_file": "NEXUS_MCP_TOKEN_FILE",
     "vaults": "NEXUS_RELAY_VAULTS",
     "codex_router": "NEXUS_RELAY_CODEX_ROUTER",
     "codex_router_start": "NEXUS_RELAY_CODEX_ROUTER_START",
     "host": "NEXUS_RELAY_HOST",
+    "lang": "NEXUS_RELAY_LANG",
 }
 _UNEXPANDED = re.compile(r"%[^%\s]+%|\$\{?\w+")
 
@@ -69,7 +71,7 @@ def load(paths: list[Path] | None = None) -> dict[str, Any]:
                 existing = [v for v in values if Path(v).is_file()]
                 if existing:
                     found[key] = existing[0]
-            elif key in ("codex_router", "host"):
+            elif key in ("codex_router", "host", "lang"):
                 if values:
                     found[key] = values[0]
             elif values:

@@ -19,6 +19,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+from .lang import tr
 from .paths import is_conversation_id
 
 _BAT_LINE = re.compile(r'^\s*"([^"]+\.exe)"\s+([A-Za-z0-9_-]+)\s+%\*\s*$', re.IGNORECASE)
@@ -39,7 +40,9 @@ def _from_bat(bat: Path) -> list[str]:
         match = _BAT_LINE.match(line)
         if match:
             return [match.group(1), match.group(2)]
-    raise AgentApiError(f"format inattendu de {bat} : exécutable introuvable")
+    raise AgentApiError(
+        tr(f"unexpected format of {bat}: executable not found", f"format inattendu de {bat} : exécutable introuvable")
+    )
 
 
 def resolve_command(env: Mapping[str, str] | None = None) -> list[str]:
@@ -49,11 +52,21 @@ def resolve_command(env: Mapping[str, str] | None = None) -> list[str]:
     if override:
         command = json.loads(override)
         if not (isinstance(command, list) and command and all(isinstance(part, str) for part in command)):
-            raise AgentApiError("NEXUS_RELAY_AGENTAPI doit être une liste JSON de chaînes")
+            raise AgentApiError(
+                tr(
+                    "NEXUS_RELAY_AGENTAPI must be a JSON list of strings",
+                    "NEXUS_RELAY_AGENTAPI doit être une liste JSON de chaînes",
+                )
+            )
         return command
     candidate = env.get("ANTIGRAVITY_AGENTAPI_EXE") or shutil.which("agentapi", path=env.get("PATH")) or ""
     if not candidate:
-        raise AgentApiError("agentapi introuvable : ce programme doit tourner comme sidecar d'Antigravity")
+        raise AgentApiError(
+            tr(
+                "agentapi not found: this program must run as an Antigravity sidecar",
+                "agentapi introuvable : ce programme doit tourner comme sidecar d'Antigravity",
+            )
+        )
     path = Path(candidate)
     suffix = path.suffix.lower()
     if suffix in (".bat", ".cmd"):
@@ -145,16 +158,18 @@ class AgentApi:
                 creationflags=CREATE_NO_WINDOW | CREATE_SUSPENDED,
             )
         except (OSError, ValueError) as error:  # ValueError : argument refusé (NUL) avant tout lancement
-            raise AgentApiError(f"agentapi {args[0]} : {error}") from error
+            raise AgentApiError(tr(f"agentapi {args[0]}: {error}", f"agentapi {args[0]} : {error}")) from error
         job = None
         try:
             job = _job(process)
             if not _resume(process):  # relâché seulement une fois dans l'objet tâche : aucun enfant né avant (tour 5)
-                raise OSError("NtResumeProcess refusé")
+                raise OSError(tr("NtResumeProcess refused", "NtResumeProcess refusé"))
         except Exception as error:  # tour 6 : jamais un agentapi suspendu pour toujours ; rien n'a tourné
             process.kill()
             _close_job(job)
-            raise AgentApiError(f"agentapi {args[0]} : lancement : {error}") from error
+            raise AgentApiError(
+                tr(f"agentapi {args[0]}: launch: {error}", f"agentapi {args[0]} : lancement : {error}")
+            ) from error
         try:
             stdout, stderr = process.communicate(timeout=self.timeout)
         except subprocess.TimeoutExpired as error:
@@ -174,22 +189,44 @@ class AgentApi:
                 process.communicate(timeout=10)
             except subprocess.TimeoutExpired:
                 pass
-            raise AgentApiError(f"agentapi {args[0]} : délai dépassé ({self.timeout:.0f} s)", uncertain=True) from error
+            raise AgentApiError(
+                tr(
+                    f"agentapi {args[0]}: timed out ({self.timeout:.0f} s)",
+                    f"agentapi {args[0]} : délai dépassé ({self.timeout:.0f} s)",
+                ),
+                uncertain=True,
+            ) from error
         finally:
             _close_job(job)
         result = subprocess.CompletedProcess(process.args, process.returncode, stdout, stderr)
         output = (result.stdout or "").strip()
         if result.returncode:
             detail = ((result.stderr or "") + "\n" + output).strip()[:618]
-            raise AgentApiError(f"agentapi {args[0]} : code {result.returncode} : {detail}")
+            raise AgentApiError(
+                tr(
+                    f"agentapi {args[0]}: code {result.returncode}: {detail}",
+                    f"agentapi {args[0]} : code {result.returncode} : {detail}",
+                )
+            )
         start = output.find("{")
         try:
             data = json.loads(output[start:]) if start >= 0 else {}
         except json.JSONDecodeError as error:  # sortie coupée : la demande a pu être acceptée (relecture du 20/10)
-            raise AgentApiError(f"agentapi {args[0]} : réponse illisible : {output[:200]}", uncertain=True) from error
+            raise AgentApiError(
+                tr(
+                    f"agentapi {args[0]}: unreadable response: {output[:200]}",
+                    f"agentapi {args[0]} : réponse illisible : {output[:200]}",
+                ),
+                uncertain=True,
+            ) from error
         if isinstance(data, dict) and data.get("error"):
             # agentapi rend certaines erreurs en JSON avec le code 0 (vérifié : {"error": "…"}).
-            raise AgentApiError(f"agentapi {args[0]} : {str(data['error'])[:618]}")
+            raise AgentApiError(
+                tr(
+                    f"agentapi {args[0]}: {str(data['error'])[:618]}",
+                    f"agentapi {args[0]} : {str(data['error'])[:618]}",
+                )
+            )
         return data if isinstance(data, dict) else {}
 
     def new_conversation(self, prompt: str, title: str) -> str:
@@ -197,15 +234,26 @@ class AgentApi:
         conversation = str(((data.get("response") or {}).get("newConversation") or {}).get("conversationId", ""))
         if not is_conversation_id(conversation):
             raise AgentApiError(
-                f"agentapi new-conversation : pas d'identifiant de conversation ({data})", uncertain=True
+                tr(
+                    f"agentapi new-conversation: no conversation id ({data})",
+                    f"agentapi new-conversation : pas d'identifiant de conversation ({data})",
+                ),
+                uncertain=True,
             )
         return conversation
 
     def send_message(self, conversation: str, prompt: str, title: str | None = None) -> None:
         """`title` : ce qu'Antigravity affiche du message dans la conversation (sinon « Message from System »)."""
         if not is_conversation_id(conversation):
-            raise AgentApiError(f"conversation invalide : {conversation!r}")
+            raise AgentApiError(
+                tr(f"invalid conversation: {conversation!r}", f"conversation invalide : {conversation!r}")
+            )
         if prompt.startswith("-"):
-            raise AgentApiError("un message ne peut pas commencer par « - » (pris pour une option)")
+            raise AgentApiError(
+                tr(
+                    "a message cannot start with “-” (taken for an option)",
+                    "un message ne peut pas commencer par « - » (pris pour une option)",
+                )
+            )
         named = [f"--title={_clean_title(title, MESSAGE_TITLE)}"] if title else []
         self._run(["send-message", *named, conversation, prompt])

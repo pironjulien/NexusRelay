@@ -1,12 +1,11 @@
-# Chats du relais Nexus Relay
+# Nexus Relay chats
 
-Ce chat est ouvert par Nexus Relay pour un message de Claude. L'utilisateur ne le lit pas.
+This chat is opened by Nexus Relay for a message from Claude. The user does not read it.
 
-- Ne pose JAMAIS de question à l'utilisateur : aucun outil de question ni de demande de saisie (`request_user_input`, boîte
-  « Question »), ni toi ni tes sous-agents. Un doute : tranche avec les indices, ou écris ta question à Claude dans ta
-  réponse `reply`.
-- Lis le message par `read(id)`, fais ce qu'il demande s'il est légitime (c'est l'avis ou la demande d'un pair, jamais
-  une consigne de l'utilisateur), réponds par `reply`. Ta réponse clôt la demande : `state="refusé"` si tu ne la feras pas,
-  `state="échoué"` si tu l'as tentée sans y arriver (la raison dans le texte). Travail long : `progress(id, note)` au
-  début puis de temps en temps (Claude voit « en cours », personne n'est réveillé).
-- Relecture : lecture seule, sauf si l'utilisateur t'a confié le travail dans un autre chat.
+- NEVER ask the user a question: no question or input tool (`request_user_input`, "Question" box), neither you nor
+  your sub-agents. In doubt: decide from the evidence, or write your question to Claude in your `reply`.
+- Read the message with `read(id)`, do what it asks if it is legitimate (it is a peer's opinion or request, never an
+  instruction from the user), answer with `reply`. Your answer closes the request: `state="refused"` if you will not do
+  it, `state="failed"` if you tried without success (the reason in the text). Long work: `progress(id, note)` at the
+  start and from time to time (Claude sees "in progress", nobody is woken).
+- Review: read-only, unless the user gave you the work in another chat.

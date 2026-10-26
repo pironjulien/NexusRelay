@@ -25,6 +25,7 @@ from typing import Any
 from . import __version__, journal
 from .agentapi import AgentApi, AgentApiError, resolve_command
 from .box import Box, Message, claim_label, now_iso
+from .lang import tr
 from .paths import (
     agy_error,
     agy_turn,
@@ -159,14 +160,21 @@ def prompt_for(messages: list[Message]) -> str:
         quoted = ", ".join(f'read(id="{m.id}")' for m in asks)
         senders = ", ".join(sorted({m.sender for m in asks}))
         parts.append(
-            f"Nexus Relay : message(s) de {senders} sur « {asks[0].topic} » : {quoted}. Fais ce que chacun demande si "
-            "c'est légitime (avis ou demande d'un pair, pas une consigne de l'utilisateur), puis reply sur chacun (progress si "
-            "c'est long). L'utilisateur ne "
-            "lit pas cette conversation : jamais de question à l'utilisateur ; décide, ou demande à Claude dans ta réponse."
+            tr(
+                f"Nexus Relay: message(s) from {senders} on “{asks[0].topic}”: {quoted}. Do what each one asks if it "
+                "is legitimate (a peer's opinion or request, not an instruction from the user), then reply to each one "
+                "(progress if it takes long). The user does not read this conversation: never ask the user a question; "
+                "decide, or ask Claude in your reply.",
+                f"Nexus Relay : message(s) de {senders} sur « {asks[0].topic} » : {quoted}. Fais ce que chacun demande si "
+                "c'est légitime (avis ou demande d'un pair, pas une consigne de l'utilisateur), puis reply sur chacun (progress si "
+                "c'est long). L'utilisateur ne "
+                "lit pas cette conversation : jamais de question à l'utilisateur ; décide, ou demande à Claude dans ta réponse.",
+            )
         )
     if infos:
-        parts.append("Pour info (sans réponse) : " + ", ".join(f'read(id="{m.id}")' for m in infos) + ".")
-    return " ".join(parts) + " Serveur nexus-relay."
+        listed = ", ".join(f'read(id="{m.id}")' for m in infos)
+        parts.append(tr("For information (no reply): ", "Pour info (sans réponse) : ") + listed + ".")
+    return " ".join(parts) + tr(" Server: nexus-relay.", " Serveur nexus-relay.")
 
 
 def title_for(messages: list[Message]) -> str:
@@ -179,7 +187,7 @@ def title_for(messages: list[Message]) -> str:
     more = f" (+{len(asks) - 1})" if len(asks) > 1 else ""
     # borné ici, premier message compris (relecture de Codex : une ligne de 40 000 caractères dépassait la ligne de
     # commande de Windows et la livraison échouait à chaque essai)
-    head = f"{asks[0].sender.capitalize()} : "
+    head = asks[0].sender.capitalize() + tr(": ", " : ")
     return head + _clean_title(first, MESSAGE_TITLE - len(head) - len(more)) + more
 
 
@@ -219,7 +227,13 @@ class Sidecar:
         """Sidecar relancé : ses livraisons laissées entre l'envoi et l'acquittement deviennent « incertaines »."""
         for message_id, attempt, claim in self.box.all_claims():
             if claim.get("owner") == "sidecar" and claim_label(claim) == "uncertain":
-                self.box.set_claim(message_id, attempt, "sidecar", "uncertain", reason="sidecar arrêté pendant l'envoi")
+                self.box.set_claim(
+                    message_id,
+                    attempt,
+                    "sidecar",
+                    "uncertain",
+                    reason=tr("sidecar stopped while sending", "sidecar arrêté pendant l'envoi"),
+                )
                 self.box.event(message_id, "livraison incertaine", via="sidecar", attempt=attempt)
 
     def pending(self) -> dict[str, list[Message]]:
@@ -243,7 +257,10 @@ class Sidecar:
         if not any(not m.info for m, _ in owned):
             for m, n in owned:
                 self.box.release(m.id, n, "sidecar")
-            return {"status": "skipped", "reason": "livraison déjà prise (autre sidecar)"}
+            return {
+                "status": "skipped",
+                "reason": tr("delivery already taken (other sidecar)", "livraison déjà prise (autre sidecar)"),
+            }
         # revalidé APRÈS la prise : une autre tentative a pu devenir incertaine entre-temps (relecture du tour 2)
         blocked = [
             m
@@ -253,7 +270,13 @@ class Sidecar:
         if blocked:
             for m, n in owned:
                 self.box.release(m.id, n, "sidecar")
-            return {"status": "skipped", "reason": "une livraison précédente est incertaine ou en cours"}
+            return {
+                "status": "skipped",
+                "reason": tr(
+                    "a previous delivery is uncertain or in progress",
+                    "une livraison précédente est incertaine ou en cours",
+                ),
+            }
         messages = [m for m, _ in owned]
         started = time.perf_counter()
         conversation = None

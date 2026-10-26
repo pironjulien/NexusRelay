@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from .box import Box
+from .lang import tr
 
 EXHAUSTED_USED_PCT = 95.0
 SPENT_USED_PCT = 100.0  # quota vide : seul seuil qui dit qu'un pair NE répondra PAS (attente en cours)
@@ -137,8 +138,12 @@ def exhausted(
         for name, window in (usage.get("windows") or {}).items():
             used = window.get("used_pct")
             if window.get("current") and isinstance(used, int | float) and used >= used_pct:
-                label = "5 h" if name == "primary" else "semaine"
-                return f"Codex : {used:.0f} % utilisés ({label}), remise à zéro à {window.get('resets_at')}"
+                label = "5 h" if name == "primary" else tr("week", "semaine")
+                resets = window.get("resets_at")
+                return tr(
+                    f"Codex: {used:.0f} % used ({label}), reset at {resets}",
+                    f"Codex : {used:.0f} % utilisés ({label}), remise à zéro à {resets}",
+                )
         return None
     if agent == "antigravity":
         if usage.get("status") != "success" or now - _epoch(str(usage.get("read_at") or "")) > 6 * 3600:
@@ -147,7 +152,11 @@ def exhausted(
             remaining = limit.get("remaining_pct")
             family = str(limit.get("family") or "")
             if "Gemini" in family and isinstance(remaining, int | float) and remaining <= 100 - used_pct:
-                return f"Antigravity : {remaining:.0f} % restants ({family}, {limit.get('limit')})"
+                cap = limit.get("limit")
+                return tr(
+                    f"Antigravity: {remaining:.0f} % left ({family}, {cap})",
+                    f"Antigravity : {remaining:.0f} % restants ({family}, {cap})",
+                )
         return None
     return None
 
@@ -161,6 +170,6 @@ def availability(box: Box, agent: str, used_pct: float = EXHAUSTED_USED_PCT) -> 
         from . import cdp, wake
 
         if not wake.sidecar_alive(box) and not cdp.agy_page_url() and cdp.agy_exe() is None:
-            return "Antigravity fermé et introuvable sur ce PC"
+            return tr("Antigravity closed and not found on this PC", "Antigravity fermé et introuvable sur ce PC")
         return exhausted("antigravity", box.state("antigravity-usage"), used_pct=used_pct)
     return None

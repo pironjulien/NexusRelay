@@ -32,21 +32,34 @@ _WRITER: threading.Thread | None = None
 _WRITER_LOCK = threading.Lock()
 
 _CUT = re.compile(r"[«\"“'’(\[:{]")
-# causes connues, de la plus précise à la plus générale (raisons rendues par les réveils et la surveillance des tours)
+# causes connues, de la plus précise à la plus générale (raisons rendues par les réveils et la surveillance des tours),
+# en français ou en anglais (réglage lang) ; le libellé, valeur du journal, reste le même
 CAUSES = (
     (re.compile(r"flagged|filtre|content policy|cybersecurity", re.IGNORECASE), "filtre"),
-    (re.compile(r"quota|utilisés|épuisé|usage limit|rate limit", re.IGNORECASE), "quota"),
+    (re.compile(r"quota|utilisés|épuisé|% used|exhausted|usage limit|rate limit", re.IGNORECASE), "quota"),
     # essai réel du 24/10 : « l'interface … » coupé à l'apostrophe donnait « l » ; « sidecar muet » n'est pas figé
-    (re.compile(r"déjà pilotée|interface .*occupée", re.IGNORECASE), "interface occupée"),
-    (re.compile(r"sidecar muet|sidecar mort", re.IGNORECASE), "sidecar muet"),
-    (re.compile(r"jeton|premier plan tenu", re.IGNORECASE), "jeton pris"),
-    (re.compile(r"routeur", re.IGNORECASE), "routeur arrêté"),
-    (re.compile(r"projet absent|projet .*introuvable|chat du sujet", re.IGNORECASE), "chat introuvable"),
-    (re.compile(r"délai dépassé|timeout", re.IGNORECASE), "délai dépassé"),
-    (re.compile(r"figé|muet|ne répond pas|not responding|hung", re.IGNORECASE), "appli figée"),
-    (re.compile(r"fermée?\b|port .*fermé|introuvable sur ce PC", re.IGNORECASE), "appli fermée"),
-    (re.compile(r"utilisateur", re.IGNORECASE), "L'utilisateur actif"),
-    (re.compile(r"sans réponse", re.IGNORECASE), "tour fini sans réponse"),
+    (
+        re.compile(r"déjà pilotée|interface .*occupée|already driven|interface .*busy", re.IGNORECASE),
+        "interface occupée",
+    ),
+    (re.compile(r"sidecar muet|sidecar mort|sidecar silent|sidecar dead", re.IGNORECASE), "sidecar muet"),
+    (re.compile(r"jeton|premier plan tenu|foreground held|holds the mouse", re.IGNORECASE), "jeton pris"),
+    (re.compile(r"routeur|router", re.IGNORECASE), "routeur arrêté"),
+    (
+        re.compile(
+            r"projet absent|projet .*introuvable|chat du sujet|project missing|project .*not found|topic chat",
+            re.IGNORECASE,
+        ),
+        "chat introuvable",
+    ),
+    (re.compile(r"délai dépassé|timeout|timed out", re.IGNORECASE), "délai dépassé"),
+    (re.compile(r"figé|muet|ne répond pas|frozen|silent|not responding|hung", re.IGNORECASE), "appli figée"),
+    (
+        re.compile(r"fermée?\b|port .*fermé|introuvable sur ce PC|\bclosed\b|not found on this PC", re.IGNORECASE),
+        "appli fermée",
+    ),
+    (re.compile(r"utilisateur|\buser\b", re.IGNORECASE), "L'utilisateur actif"),
+    (re.compile(r"sans réponse|without a reply", re.IGNORECASE), "tour fini sans réponse"),
 )
 
 

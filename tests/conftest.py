@@ -31,6 +31,7 @@ def isolated(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setenv("NEXUS_RELAY_GEMINI_HOME", str(tmp_path / "gemini"))
     monkeypatch.setenv("NEXUS_JOURNAL_HOME", str(tmp_path / "journal"))  # jamais le vrai journal commun
     monkeypatch.setenv("NEXUS_RELAY_AGENT", "claude")
+    monkeypatch.setenv("NEXUS_RELAY_LANG", "fr")  # textes des tests historiques ; l'anglais par défaut a ses tests
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex-home"))  # jamais la base ni les journaux du vrai Codex
     monkeypatch.setenv("NEXUS_RELAY_CODEX_PORT", "1")  # port fermé : jamais la vraie appli Codex
     monkeypatch.delenv("NEXUS_RELAY_AGENTAPI", raising=False)

@@ -25,6 +25,8 @@ from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import Any
 
+from .lang import tr
+
 CODEX_PORT = int(os.environ.get("NEXUS_RELAY_CODEX_PORT", "9223"))
 CODEX_PAGE = "app://-/index.html"  # page principale (les autres : avatar, fenêtre détachée, iframes)
 CODEX_PROCESS = "ChatGPT.exe"
@@ -68,7 +70,20 @@ class CdpError(RuntimeError):
 # réveils suivants l'ont pris pour un brouillon de l'utilisateur et n'ont plus rien tapé).
 UI_LOCKS = {"codex": threading.Lock(), "antigravity": threading.Lock()}  # un pilote à la fois PAR appli (tour 2)
 UI_LOCK = UI_LOCKS["codex"]
-BUSY_REASON = "l'interface de l'appli est déjà pilotée (réveil, rangement, crédits ou cartes) : reporté"
+
+
+def busy_reason() -> str:
+    return tr(
+        "the app's interface is busy (already driven by a wake, tidy-up, credits or maps): postponed",
+        "l'interface de l'appli est déjà pilotée (réveil, rangement, crédits ou cartes) : reporté",
+    )
+
+
+def __getattr__(name: str) -> Any:
+    """`cdp.BUSY_REASON` lu dans la langue réglée au moment de l'appel (lang.tr)."""
+    if name == "BUSY_REASON":
+        return busy_reason()
+    raise AttributeError(name)
 
 
 def one_at_a_time[**P, R](busy: Callable[[], R], app: str = "codex") -> Callable[[Callable[P, R]], Callable[P, R]]:
@@ -91,7 +106,7 @@ def one_at_a_time[**P, R](busy: Callable[[], R], app: str = "codex") -> Callable
 
 
 def _deferred() -> dict[str, Any]:
-    return {"status": "deferred", "reason": BUSY_REASON, "injected": False}
+    return {"status": "deferred", "reason": busy_reason(), "injected": False}
 
 
 class Page:
@@ -111,7 +126,12 @@ class Page:
         while True:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
-                raise CdpError(f"{method} : pas de réponse en {self._timeout:.0f} s")
+                raise CdpError(
+                    tr(
+                        f"{method}: no response in {self._timeout:.0f} s",
+                        f"{method} : pas de réponse en {self._timeout:.0f} s",
+                    )
+                )
             self._ws.settimeout(remaining)  # chaque attente bornée par le reste du délai (relecture du tour 2)
             try:
                 raw = self._ws.recv()
@@ -302,7 +322,13 @@ def ensure_codex(
     est pas). Rend {"status": "ready" | "deferred" | "failed", ...}. Jamais sans routeur prêt : Codex recevrait le
     message sans modèle pour y répondre."""
     if not lb():
-        return {"status": "deferred", "reason": "routeur de Codex pas prêt : Codex n'est pas réveillé pour rien"}
+        return {
+            "status": "deferred",
+            "reason": tr(
+                "Codex router not ready: Codex is not woken for nothing",
+                "routeur de Codex pas prêt : Codex n'est pas réveillé pour rien",
+            ),
+        }
     # Figée (fenêtre « ne répond pas » 2 min, ou page qui n'exécute plus rien) : relancée comme un port muet ; un tour
     # « en cours » d'une appli figée ne la protège plus (il n'avancera pas) ; l'utilisateur présent : jamais (21/10).
     frozen = running() and hung(CODEX_PROCESS) >= HUNG_RESTART_S
@@ -315,16 +341,37 @@ def ensure_codex(
         frozen = True
     path = exe()
     if path is None:
-        return {"status": "failed", "reason": "appli Codex (OpenAI.Codex) introuvable"}
+        return {
+            "status": "failed",
+            "reason": tr("Codex app (OpenAI.Codex) not found", "appli Codex (OpenAI.Codex) introuvable"),
+        }
     restarted = False
     if running():
         if busy() and not frozen:
-            return {"status": "deferred", "reason": "Codex travaille (tour en cours) : relance avec le port reportée"}
+            return {
+                "status": "deferred",
+                "reason": tr(
+                    "Codex is working (turn in progress): restart with the port postponed",
+                    "Codex travaille (tour en cours) : relance avec le port reportée",
+                ),
+            }
         if present():
-            return {"status": "deferred", "reason": "L'utilisateur est dans Codex : relance avec le port reportée"}
+            return {
+                "status": "deferred",
+                "reason": tr(
+                    "The user is in Codex: restart with the port postponed",
+                    "L'utilisateur est dans Codex : relance avec le port reportée",
+                ),
+            }
     lock = (foreground or _foreground_lock)()
     if not lock.acquire():  # avant l'arrêt (tour 2 : Codex tué puis jeton refusé = Codex fermé)
-        return {"status": "deferred", "reason": "premier plan tenu par un autre agent : relance de Codex reportée"}
+        return {
+            "status": "deferred",
+            "reason": tr(
+                "foreground held by another agent: Codex restart postponed",
+                "premier plan tenu par un autre agent : relance de Codex reportée",
+            ),
+        }
     try:
         if not frozen and (again := page_url(port)) and responsive(again):  # tout est relu avant d'arrêter
             return {"status": "ready", "launched": False}
@@ -335,7 +382,10 @@ def ensure_codex(
             if (busy() and not frozen) or present():
                 return {
                     "status": "deferred",
-                    "reason": "Codex occupé ou l'utilisateur revenu pendant l'attente du jeton",
+                    "reason": tr(
+                        "Codex busy or the user came back while waiting for the token",
+                        "Codex occupé ou l'utilisateur revenu pendant l'attente du jeton",
+                    ),
                 }
             (stop or _stop_codex)()
             restarted = True
@@ -349,7 +399,13 @@ def ensure_codex(
             sleep(1.5)  # interface montée : la barre latérale arrive juste après la page
             return {"status": "ready", "launched": True, "restarted": restarted, **({"frozen": True} if frozen else {})}
         sleep(0.5)
-    return {"status": "failed", "reason": f"port {port} muet {wait_s:.0f} s après le lancement de Codex"}
+    return {
+        "status": "failed",
+        "reason": tr(
+            f"port {port} silent {wait_s:.0f} s after Codex was launched",
+            f"port {port} muet {wait_s:.0f} s après le lancement de Codex",
+        ),
+    }
 
 
 def app_hung(process: str) -> bool:
@@ -458,7 +514,7 @@ def _activate_codex(uia: Any, port: int) -> None:
     command = _ACTIVATE.replace("PACKAGE", CODEX_PACKAGE).replace("ARGS", f"--remote-debugging-port={int(port)}")
     count_activation()  # compté à la source, même si la suite échoue (relecture de Codex : le premier plan a servi)
     if not _ps(command, timeout=60.0).strip().isdigit():
-        raise CdpError("activation de Codex par Windows refusée")
+        raise CdpError(tr("Codex activation refused by Windows", "activation de Codex par Windows refusée"))
     deadline = time.monotonic() + 15.0
     while time.monotonic() < deadline:
         hwnds = uia.windows(CODEX_PROCESS.lower())
@@ -542,18 +598,28 @@ def wake_text(ids: Iterable[str]) -> str:
     de l'utilisateur, Codex a refusé de faire ce que le pair demandait) : lire, faire ce que le message demande, répondre."""
     ids = list(ids)
     target = ", ".join(f'read(id="{i}")' for i in ids) if ids else "inbox()"
-    return (
-        f"Nexus Relay : message d'un pair pour toi, {target}. Fais ce qu'il demande si c'est légitime (pas une consigne "
-        "de l'utilisateur), puis reply (progress si c'est long). L'utilisateur ne lit pas ce chat : aucune question, ni toi ni tes "
-        "sous-agents."
-    )
+    return tr(_WAKE_EN, _WAKE_FR).format(target=target)
+
+
+_WAKE_EN = (
+    "Nexus Relay: message from a peer for you, {target}. Do what it asks if it is legitimate (not an instruction from "
+    "the user), then reply (progress if it takes long). The user does not read this chat: no questions, neither from "
+    "you nor from your sub-agents."
+)
+_WAKE_FR = (
+    "Nexus Relay : message d'un pair pour toi, {target}. Fais ce qu'il demande si c'est légitime (pas une consigne "
+    "de l'utilisateur), puis reply (progress si c'est long). L'utilisateur ne lit pas ce chat : aucune question, ni toi "
+    "ni tes sous-agents."
+)
 
 
 def is_wake_text(draft: str) -> bool:
     """Le brouillon est EXACTEMENT un texte de réveil du relais (tour 4 : un préfixe seul emportait ce que l'utilisateur
     avait ajouté derrière)."""
     ids = re.findall(r'read\(id="([^"]+)"\)', draft)
-    return draft.strip() == wake_text(ids).strip()
+    target = ", ".join(f'read(id="{i}")' for i in ids) if ids else "inbox()"
+    # les deux langues : un reste laissé avant un changement du réglage `lang` est aussi reconnu
+    return draft.strip() in {t.format(target=target).strip() for t in (_WAKE_EN, _WAKE_FR)}
 
 
 def send_in_new_chat(
@@ -592,11 +658,23 @@ def send_in_new_chat(
                 open_conversation(page, existing)
                 and _until(lambda: selected_conversation(page) == existing, STEP_WAIT_S, sleep)
             ):
-                return {"status": "failed", "reason": "chat du sujet pas rouvert", "injected": False}
+                return {
+                    "status": "failed",
+                    "reason": tr("topic chat not reopened", "chat du sujet pas rouvert"),
+                    "injected": False,
+                }
         elif not _click(page, new_chat):
-            return {"status": "failed", "reason": f"bouton « {new_chat[0]} » introuvable", "injected": False}
+            return {
+                "status": "failed",
+                "reason": tr(f'button "{new_chat[0]}" not found', f"bouton « {new_chat[0]} » introuvable"),
+                "injected": False,
+            }
         if _until(lambda: page.eval(_COMPOSER_TEXT) is not None, STEP_WAIT_S, sleep) is False:
-            return {"status": "failed", "reason": "champ de saisie introuvable", "injected": False}
+            return {
+                "status": "failed",
+                "reason": tr("input field not found", "champ de saisie introuvable"),
+                "injected": False,
+            }
         draft = (page.eval(_COMPOSER_TEXT) or "").strip()
         if is_wake_text(draft):
             _clear(page, draft)  # reste d'un réveil interrompu (vu le 19-20/10 : il bloquait tous les réveils suivants)
@@ -604,23 +682,36 @@ def send_in_new_chat(
         if draft:
             return {
                 "status": "failed",
-                "reason": "le nouveau chat contient déjà un brouillon (celui de l'utilisateur ?) : rien tapé",
+                "reason": tr(
+                    "the new chat already holds a draft (the user's?): nothing typed",
+                    "le nouveau chat contient déjà un brouillon (celui de l'utilisateur ?) : rien tapé",
+                ),
                 "injected": False,
             }
         if returned():  # l'utilisateur revenu pendant la préparation : on ne tape pas devant lui
-            return {"status": "deferred", "reason": "L'utilisateur est revenu dans Codex", "injected": False}
+            return {"status": "deferred", "reason": _user_back(), "injected": False}
         page.eval(f"(() => {{ const e = {_COMPOSER}; e.focus(); return true }})()")
         inserted = True
         page.call("Input.insertText", text=text)
         if not _until(lambda: marker in (page.eval(_COMPOSER_TEXT) or ""), STEP_WAIT_S, sleep):
-            return {"status": "failed", "reason": "texte absent du champ après insertion", "injected": False}
+            return {
+                "status": "failed",
+                "reason": tr("text missing from the field after insertion", "texte absent du champ après insertion"),
+                "injected": False,
+            }
         # juste avant l'Entrée (relecture du tour 3) : l'utilisateur pas revenu, et le champ contient EXACTEMENT notre texte
         # (sinon son brouillon partirait avec) ; s'il y a écrit, on ne touche plus au champ
         if (page.eval(_COMPOSER_TEXT) or "").strip() != text.strip():
             inserted = False
-            return {"status": "failed", "reason": "champ modifié pendant l'insertion : rien envoyé", "injected": False}
+            return {
+                "status": "failed",
+                "reason": tr(
+                    "field changed during insertion: nothing sent", "champ modifié pendant l'insertion : rien envoyé"
+                ),
+                "injected": False,
+            }
         if returned():
-            return {"status": "deferred", "reason": "L'utilisateur est revenu dans Codex", "injected": False}
+            return {"status": "deferred", "reason": _user_back(), "injected": False}
         entered = True
         page.call("Input.dispatchKeyEvent", type="rawKeyDown", key="Enter", code="Enter", windowsVirtualKeyCode=13)
         page.call("Input.dispatchKeyEvent", type="char", key="Enter", text="\r")
@@ -639,7 +730,13 @@ def send_in_new_chat(
         sent = bool(_until(shown, EXISTING_SENT_WAIT_S if existing else STEP_WAIT_S, sleep))
         if not sent:
             # issue inconnue (Entrée peut-être partie) : jamais « injected: False », la sonnette ne rejoue pas en double
-            return {"status": "uncertain", "reason": "Entrée sans effet vérifié (texte retiré du champ)"}
+            return {
+                "status": "uncertain",
+                "reason": tr(
+                    "Enter without verified effect (text removed from the field)",
+                    "Entrée sans effet vérifié (texte retiré du champ)",
+                ),
+            }
         return {"status": "started", "seconds": round(time.monotonic() - start, 2)}
     except Exception as error:  # noqa: BLE001 - interface : l'issue dépend de la phase atteinte
         if entered:
@@ -671,9 +768,7 @@ def send_in_new_chat(
         except Exception:  # noqa: BLE001
             back = entered
         if back:
-            done.update(
-                project_restored=False, view_restored=False, restore_skipped="L'utilisateur est revenu dans Codex"
-            )
+            done.update(project_restored=False, view_restored=False, restore_skipped=_user_back())
         try:
             if entered and not back:
                 chat = existing or selected_conversation(page)
@@ -703,6 +798,10 @@ def send_in_new_chat(
             done["view_restored"] = False
         if report is not None:
             report.update(done)
+
+
+def _user_back() -> str:
+    return tr("The user came back to Codex", "L'utilisateur est revenu dans Codex")
 
 
 _THREAD_ATTR = "data-app-action-sidebar-thread-id"
@@ -971,13 +1070,19 @@ def wake_codex(ids: Iterable[str] = (), port: int = CODEX_PORT) -> dict[str, Any
     ids = list(ids)
     try:
         if user_in_codex():
-            return {"status": "deferred", "reason": "appli Codex au premier plan (l'utilisateur y travaille)"}
+            return {
+                "status": "deferred",
+                "reason": tr(
+                    "Codex app in the foreground (the user is working in it)",
+                    "appli Codex au premier plan (l'utilisateur y travaille)",
+                ),
+            }
         ready = ensure_codex(port)
         if ready["status"] != "ready":
             return ready
         url = page_url(port)
         if not url:
-            return {"status": "failed", "reason": "page principale de Codex absente"}
+            return {"status": "failed", "reason": tr("Codex main page missing", "page principale de Codex absente")}
         page = Page(url)
     except Exception as error:  # noqa: BLE001 - interface : jamais fatale au relais
         return {"status": "failed", "reason": f"{type(error).__name__}: {error}"}
@@ -991,7 +1096,12 @@ def wake_codex(ids: Iterable[str] = (), port: int = CODEX_PORT) -> dict[str, Any
         )  # vue de l'utilisateur AVANT toute navigation du relais (Accueil, recherche)
         mode = codex_mode(page)
         if not ensure_codex_mode(page):
-            return {"status": "failed", "reason": f"mode « {CODEX_MODE} » de l'appli non sélectionné"}
+            return {
+                "status": "failed",
+                "reason": tr(
+                    f'app mode "{CODEX_MODE}" not selected', f"mode « {CODEX_MODE} » de l'appli non sélectionné"
+                ),
+            }
         text = wake_text(ids)
         relay_button = f"(() => !!({_BUTTON})({json.dumps(list(RELAY_NEW_CHAT))}))()"
         # 21/10 : juste après le passage du mode ChatGPT au mode Codex, la liste des projets se dessine en différé ; lue
@@ -1014,8 +1124,12 @@ def wake_codex(ids: Iterable[str] = (), port: int = CODEX_PORT) -> dict[str, Any
             # (Fichier > Nouveau projet, même dossier) ne la redemande pas.
             return {
                 "status": "failed",
-                "reason": f"projet Codex « {RELAY_PROJECT} » absent de l'appli (barre latérale visible) : le recréer "
-                f"une fois (Fichier > Nouveau projet, dossier {Path.home() / '.nexus' / 'relay' / 'codex-projet'})",
+                "reason": tr(
+                    f'Codex project "{RELAY_PROJECT}" missing from the app (sidebar visible): recreate it once '
+                    f"(File > New project, folder {Path.home() / '.nexus' / 'relay' / 'codex-projet'})",
+                    f"projet Codex « {RELAY_PROJECT} » absent de l'appli (barre latérale visible) : le recréer "
+                    f"une fois (Fichier > Nouveau projet, dossier {Path.home() / '.nexus' / 'relay' / 'codex-projet'})",
+                ),
                 "injected": False,
             }
         project = current_project(page)
@@ -1024,13 +1138,20 @@ def wake_codex(ids: Iterable[str] = (), port: int = CODEX_PORT) -> dict[str, Any
             answer = {
                 **report,
                 "status": "deferred",
-                "reason": "chat du sujet ouvert mais introuvable dans la barre latérale : réessai",
+                "reason": tr(
+                    "topic chat open but not found in the sidebar: retrying",
+                    "chat du sujet ouvert mais introuvable dans la barre latérale : réessai",
+                ),
                 "injected": False,
             }
             return answer
         if existing and not _chat_finished(existing):
             # tour encore en cours dans le chat du sujet : jamais un second message par-dessus, réveil reporté
-            return {"status": "deferred", "reason": "chat du sujet en plein tour", "injected": False}
+            return {
+                "status": "deferred",
+                "reason": tr("topic chat in the middle of a turn", "chat du sujet en plein tour"),
+                "injected": False,
+            }
         result = send_in_new_chat(
             page,
             text,
@@ -1058,7 +1179,7 @@ def wake_codex(ids: Iterable[str] = (), port: int = CODEX_PORT) -> dict[str, Any
         except Exception:  # noqa: BLE001
             back = True
         if back:
-            report.setdefault("restore_skipped", "L'utilisateur est revenu dans Codex")
+            report.setdefault("restore_skipped", _user_back())
         else:
             try:
                 if report.get("sidebar_reopened"):
@@ -1087,7 +1208,7 @@ _ESCAPE = "document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', b
 
 
 def _skipped() -> tuple[str, str | None]:
-    return "skipped", BUSY_REASON
+    return "skipped", busy_reason()
 
 
 @one_at_a_time(_skipped, "antigravity")
@@ -1100,14 +1221,16 @@ def archive_antigravity_conversation(
     ligne ``[data-testid=conversation-row-sidebar][data-cascade-id]``, bouton ``conversation-archive-button``) ; jamais
     par le titre (relecture de Codex : « relais » trouvait « relais-v2 »). « clicked » | « skipped » | « absent »."""
     if user_in_agy():
-        return "skipped", "L'utilisateur est dans Antigravity"
+        return "skipped", tr("The user is in Antigravity", "L'utilisateur est dans Antigravity")
     url = agy_page_url(port)
     if not url:
-        return "skipped", f"port {port} fermé"
+        return "skipped", tr(f"port {port} closed", f"port {port} fermé")
     try:
         page = Page(url)
     except Exception as error:  # noqa: BLE001 - port muet : report
-        return "skipped", f"port {port} muet : {type(error).__name__}"
+        return "skipped", tr(
+            f"port {port} silent: {type(error).__name__}", f"port {port} muet : {type(error).__name__}"
+        )
     try:
         row = f"""[...document.querySelectorAll('[data-testid=conversation-row-sidebar]')]
             .filter(r => r.getAttribute('data-cascade-id') === {json.dumps(conversation)})"""
@@ -1186,22 +1309,32 @@ def parse_usage(text: str) -> dict[str, Any]:
     return {"plan": plan, "limits": [x for x in limits if "remaining_pct" in x]}
 
 
-@one_at_a_time(lambda: {"status": "failed", "reason": BUSY_REASON}, "antigravity")
+@one_at_a_time(lambda: {"status": "failed", "reason": busy_reason()}, "antigravity")
 def read_antigravity_usage(port: int = AGY_PORT, sleep: Callable[[float], None] = time.sleep) -> dict[str, Any]:
     """Quotas d'Antigravity lus dans « Settings › Models » par son port (point I du 20/10) : jamais quand l'utilisateur y est ;
     la vue est rendue (adresse d'origine retrouvée, vérifiée)."""
     from .box import now_iso
 
     if user_in_agy():
-        return {"status": "deferred", "reason": "L'utilisateur est dans Antigravity : quotas non lus"}
+        return {
+            "status": "deferred",
+            "reason": tr(
+                "The user is in Antigravity: quotas not read", "L'utilisateur est dans Antigravity : quotas non lus"
+            ),
+        }
     url = agy_page_url(port)
     if not url:
-        return {"status": "failed", "reason": f"port {port} muet ou page Antigravity absente"}
+        return {
+            "status": "failed",
+            "reason": tr(
+                f"port {port} silent or Antigravity page missing", f"port {port} muet ou page Antigravity absente"
+            ),
+        }
     page = Page(url)
     try:
         origin = page.eval("location.href")
         if page.eval(_DIALOG_TEXT) is None and not page.eval(_SETTINGS_BUTTON):
-            return {"status": "failed", "reason": "bouton « Settings » introuvable"}
+            return {"status": "failed", "reason": tr('"Settings" button not found', "bouton « Settings » introuvable")}
         text = None
         if _until(lambda: page.eval(_DIALOG_TEXT) is not None, STEP_WAIT_S, sleep) and page.eval(_MODELS_TAB):
             text = _until(
@@ -1216,7 +1349,11 @@ def read_antigravity_usage(port: int = AGY_PORT, sleep: Callable[[float], None] 
         if not restored and "settingsOpen" not in str(origin):
             restored = bool(page.eval(_CLOSE))
         if not text:
-            return {"status": "failed", "reason": "page « Models & Usage » non lue", "view_restored": restored}
+            return {
+                "status": "failed",
+                "reason": tr('"Models & Usage" page not read', "page « Models & Usage » non lue"),
+                "view_restored": restored,
+            }
         return {"status": "success", "read_at": now_iso(), **parse_usage(text), "view_restored": restored}
     except Exception as error:  # noqa: BLE001
         return {"status": "failed", "reason": f"{type(error).__name__}: {error}"}
@@ -1254,25 +1391,46 @@ def agy_working(now: float | None = None) -> bool:
 def restart_frozen_antigravity(port: int = AGY_PORT) -> dict[str, Any]:
     """Antigravity figé (« ne répond pas ») depuis HUNG_RESTART_S, l'utilisateur hors de l'appli : arrêté puis relancé réduit
     avec son port (son sidecar repart avec lui). Ses conversations restent sur disque."""
-    return _restart_antigravity("figé", port)
+    return _restart_antigravity(tr("frozen", "figé"), port)
 
 
 def _restart_antigravity(why: str, port: int) -> dict[str, Any]:
     """Arrêt puis relance réduite avec le port, jamais pendant que l'utilisateur est dedans ni pendant qu'un de ses agents
     travaille (journaux sur disque, lus sans le port), sous le jeton commun de premier plan."""
     if user_in_agy():
-        return {"status": "deferred", "reason": f"Antigravity {why}, mais l'utilisateur est dedans : pas de relance"}
+        return {
+            "status": "deferred",
+            "reason": tr(
+                f"Antigravity {why}, but the user is in it: no restart",
+                f"Antigravity {why}, mais l'utilisateur est dedans : pas de relance",
+            ),
+        }
     if agy_working():
         # relecture d'Antigravity : l'utilisateur le laisse travailler en fond (objectifs, tests, compilations) ; sa fenêtre
         # peut ne plus répondre pendant que son agent avance encore : jamais tué pendant un travail
-        return {"status": "deferred", "reason": f"Antigravity {why}, mais un de ses agents travaille encore"}
+        return {
+            "status": "deferred",
+            "reason": tr(
+                f"Antigravity {why}, but one of its agents is still working",
+                f"Antigravity {why}, mais un de ses agents travaille encore",
+            ),
+        }
     path = agy_exe()
     if path is None:
-        return {"status": "failed", "reason": f"Antigravity {why} et introuvable sur ce PC"}
+        return {
+            "status": "failed",
+            "reason": tr(f"Antigravity {why} and not found on this PC", f"Antigravity {why} et introuvable sur ce PC"),
+        }
     reset_hung("antigravity")
     lock = _foreground_lock()
     if not lock.acquire():
-        return {"status": "deferred", "reason": "premier plan tenu par un autre agent : relance d'Antigravity reportée"}
+        return {
+            "status": "deferred",
+            "reason": tr(
+                "foreground held by another agent: Antigravity restart postponed",
+                "premier plan tenu par un autre agent : relance d'Antigravity reportée",
+            ),
+        }
     try:
         _ps(f"Get-Process {Path(AGY_PROCESS).stem} -ErrorAction SilentlyContinue | Stop-Process -Force")
         time.sleep(2.0)
@@ -1281,9 +1439,42 @@ def _restart_antigravity(why: str, port: int) -> dict[str, Any]:
         lock.release()
     return {
         "status": "failed",
-        "reason": f"non livré : Antigravity {why}, relancé avec son port {port}",
+        "reason": tr(
+            f"not delivered: Antigravity {why}, restarted with its port {port}",
+            f"non livré : Antigravity {why}, relancé avec son port {port}",
+        ),
         "launched": True,
     }
+
+
+AGY_PORT_RESTART_S = 300.0  # Antigravity ouvert sans son port 5 min d'affilée : relancé avec (encadré)
+AGY_PORT_COOLDOWN_S = 3600.0  # au plus une relance par heure (une mise à jour qui ignore l'option ne boucle pas)
+AGY_PORT_CHECK_S = 60.0  # relevé (Get-Process) au plus une fois par minute, pas à chaque passage du rangement
+_agy_port = {"checked": 0.0, "restarted": 0.0}
+
+
+def restart_portless_antigravity(port: int = AGY_PORT, now: float | None = None) -> dict[str, Any] | None:
+    """Antigravity ouvert mais son port n'écoute pas (vu le 22/10 : relancé par sa mise à jour sans l'option ; rangement,
+    crédits et repères aveugles) : relancé avec son port, sans le demander (l'utilisateur, 26/10), mêmes gardes qu'un
+    Antigravity figé (l'utilisateur dedans, un agent au travail : jamais), au plus une fois par heure. None : rien à
+    faire."""
+    now = time.time() if now is None else now
+    if now - _agy_port["checked"] < AGY_PORT_CHECK_S:
+        return None
+    _agy_port["checked"] = now
+    closed = agy_page_url(port) is None and agy_running()
+    if hung_for("agy-port", closed, now) < AGY_PORT_RESTART_S:
+        return None
+    if now - _agy_port["restarted"] < AGY_PORT_COOLDOWN_S:
+        return {
+            "status": "deferred",
+            "reason": tr("restarted less than an hour ago", "relancé il y a moins d'une heure"),
+        }
+    result = _restart_antigravity(tr(f"open without its port {port}", f"ouvert sans son port {port}"), port)
+    if result.get("launched"):
+        _agy_port["restarted"] = now
+        reset_hung("agy-port")
+    return result
 
 
 def start_antigravity(port: int = AGY_PORT) -> dict[str, Any]:
@@ -1291,12 +1482,25 @@ def start_antigravity(port: int = AGY_PORT) -> dict[str, Any]:
     (lancé par un raccourci sans --remote-debugging-port, 23/10 : injoignable sans fin) : relancé avec son port, mêmes
     gardes qu'un Antigravity figé (l'utilisateur dedans, agent au travail : jamais)."""
     if agy_running():
-        return _restart_antigravity("ouvert sans sidecar ni port", port)
+        return _restart_antigravity(tr("open without sidecar or port", "ouvert sans sidecar ni port"), port)
     path = agy_exe()
     if path is None:
-        return {"status": "failed", "reason": "non livré : Antigravity fermé et introuvable sur ce PC"}
+        return {
+            "status": "failed",
+            "reason": tr(
+                "not delivered: Antigravity closed and not found on this PC",
+                "non livré : Antigravity fermé et introuvable sur ce PC",
+            ),
+        }
     _start_detached(path, port)  # lancement direct : réduit, sans activation, détaché (pas un paquet Store)
-    return {"status": "failed", "reason": "non livré : Antigravity fermé, relancé avec son port 9227", "launched": True}
+    return {
+        "status": "failed",
+        "reason": tr(
+            f"not delivered: Antigravity closed, restarted with its port {port}",
+            f"non livré : Antigravity fermé, relancé avec son port {port}",
+        ),
+        "launched": True,
+    }
 
 
 # --- repères d'interface (point E du 20/10) : ce que le relais doit trouver dans chaque appli, lu sans rien toucher
@@ -1335,22 +1539,26 @@ AGY_LANDMARKS = {
 
 
 def _check(url: str | None, checks: dict[str, str], port: int) -> dict[str, Any]:
+    untested = tr("not tested", "non testé")
     if not url:
-        return {"status": "non testé", "reason": f"port {port} fermé ou page absente"}
+        return {
+            "status": untested,
+            "reason": tr(f"port {port} closed or page missing", f"port {port} fermé ou page absente"),
+        }
     try:
         page = Page(url)
     except Exception as error:  # noqa: BLE001
-        return {"status": "non testé", "reason": f"{type(error).__name__}: {error}"}
+        return {"status": untested, "reason": f"{type(error).__name__}: {error}"}
     try:
         values = {name: page.eval(js) for name, js in checks.items()}
     except Exception as error:  # noqa: BLE001
-        return {"status": "non testé", "reason": f"{type(error).__name__}: {error}"}
+        return {"status": untested, "reason": f"{type(error).__name__}: {error}"}
     finally:
         page.close()
     found = {name: bool(v) for name, v in values.items() if v is not None}
     unknown = [name for name, v in values.items() if v is None]
     missing = [name for name, ok in found.items() if not ok]
-    result: dict[str, Any] = {"status": "ok" if not missing else "manquant", "found": found}
+    result: dict[str, Any] = {"status": "ok" if not missing else tr("missing", "manquant"), "found": found}
     if missing:
         result["missing"] = missing
     if unknown:
@@ -1360,9 +1568,15 @@ def _check(url: str | None, checks: dict[str, str], port: int) -> dict[str, Any]
 
 def landmarks() -> dict[str, Any]:
     """Boutons et menus attendus par le relais, trouvés ou non, dans Codex et Antigravity (lecture seule)."""
-    agy = _check(agy_page_url(AGY_PORT), AGY_LANDMARKS, AGY_PORT)
-    if agy.get("reason", "").startswith(f"port {AGY_PORT}") and agy_running():
+    agy_url = agy_page_url(AGY_PORT)
+    agy = _check(agy_url, AGY_LANDMARKS, AGY_PORT)
+    if agy_url is None and agy_running():
         # vu le 22/10 : relancé par sa mise à jour automatique (2.25, « --updated ») avec l'option du port, Antigravity
         # n'ouvrait pas ce port ; rangement, crédits et repères restent aveugles jusqu'à sa prochaine relance
-        agy["reason"] = f"Antigravity ouvert mais son port {AGY_PORT} n'écoute pas : le relancer (fermer puis rouvrir)"
+        agy["reason"] = tr(
+            f"Antigravity open but its port {AGY_PORT} is not listening: the relay restarts it with its port once "
+            "nobody is using it",
+            f"Antigravity ouvert mais son port {AGY_PORT} n'écoute pas : le relais le relance avec son port dès que "
+            "personne ne s'en sert",
+        )
     return {"codex": _check(page_url(CODEX_PORT), CODEX_LANDMARKS, CODEX_PORT), "antigravity": agy}

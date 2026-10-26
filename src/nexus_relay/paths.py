@@ -8,6 +8,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+from .lang import tr
+
 AGENTS = ("claude", "antigravity", "codex")
 # Boîte de l'utilisateur : une boîte aux lettres, pas un agent (son panneau de Chrome, qui y déposait ses demandes, a été retiré
 # le 20/10, jamais utilisé ; la boîte reste lisible pour les anciens messages).
@@ -144,7 +146,9 @@ def agy_error(conversation: str) -> tuple[str, float | None] | None:
     marker = b"Agent execution terminated due to error"
     if marker not in payload:
         return None
-    reason = _agy_error_detail(payload[payload.index(marker) + len(marker) :]) or "erreur d'exécution"
+    reason = _agy_error_detail(payload[payload.index(marker) + len(marker) :]) or tr(
+        "execution error", "erreur d'exécution"
+    )
     stamp = re.search(rb"\n\x0c\x08([\x80-\xff]*[\x00-\x7f])", payload)  # Timestamp protobuf : secondes (varint)
     at = None
     if stamp:
@@ -172,12 +176,13 @@ def _agy_error_detail(tail: bytes) -> str | None:
 
 
 TOOL_ERRORS_WINDOW = 2 * 1024 * 1024  # fin du journal relue pour les outils en erreur (lignes d'outil parfois longues)
-_TOOL_ERROR_HINTS = (
+_TOOL_ERROR_HINTS = (  # (marqueur, anglais, français) : la langue est choisie à l'appel
     (
         "denied by pre-tool hook",
+        'an Antigravity PreToolUse hook refuses its tools (it must answer {"decision": "allow"})',
         'un hook PreToolUse d\'Antigravity refuse ses outils (il doit répondre {"decision": "allow"})',
     ),
-    ("is not enabled for server", "outil MCP désactivé dans Antigravity"),
+    ("is not enabled for server", "MCP tool disabled in Antigravity", "outil MCP désactivé dans Antigravity"),
 )
 
 
@@ -248,11 +253,15 @@ def _tool_errors(path: Path, since: float) -> dict[str, Any] | None:
             continue
         count += 1
         if last is None:
-            last = (str(step.get("error") or "").strip().rstrip(":").strip() or "erreur d'exécution d'outil", at)
+            last = (
+                str(step.get("error") or "").strip().rstrip(":").strip()
+                or tr("tool execution error", "erreur d'exécution d'outil"),
+                at,
+            )
     if not count or last is None:
         return None
     reason = last[0][:300]
-    hint = next((h for marker, h in _TOOL_ERROR_HINTS if marker in reason), None)
+    hint = next((tr(en, fr) for marker, en, fr in _TOOL_ERROR_HINTS if marker in reason), None)
     return {"count": count, "reason": reason, "hint": hint, "at": last[1], "ended": bool(ended)}
 
 
@@ -308,7 +317,9 @@ def is_conversation_id(value: str) -> bool:
 
 def transcript_path(conversation: str, brain: Path | None = None) -> Path:
     if not is_conversation_id(conversation):
-        raise ValueError(f"identifiant de conversation invalide : {conversation!r}")
+        raise ValueError(
+            tr(f"invalid conversation id: {conversation!r}", f"identifiant de conversation invalide : {conversation!r}")
+        )
     return (brain or brain_dir()) / conversation / ".system_generated" / "logs" / "transcript.jsonl"
 
 
@@ -316,7 +327,12 @@ def normalize_agent(name: str) -> str:
     """« claude », « antigravity » (alias : agy, gemini) ou « codex » (alias : chatgpt, openai) ; tout autre nom est refusé."""
     agent = _ALIASES.get(str(name).strip().lower())
     if not agent:
-        raise ValueError(f"agent inconnu : {name!r} (claude, antigravity ou codex)")
+        raise ValueError(
+            tr(
+                f"unknown agent: {name!r} (claude, antigravity or codex)",
+                f"agent inconnu : {name!r} (claude, antigravity ou codex)",
+            )
+        )
     return agent
 
 

@@ -112,7 +112,9 @@ changes it.
    <details>
    <summary>Codex</summary>
 
-   Add a personal plugin whose `.mcp.json` points to the daemon:
+   Use the ready-made plugin in [`codex/`](codex) (MCP server and the `nexus-relay` skill; the bearer token is read
+   from the user variable `NEXUS_MCP_TOKEN`), for instance by adding this repository as a plugin marketplace with
+   `codex/` as its root. Or add a personal plugin whose `.mcp.json` points to the daemon:
 
    ```json
    {
@@ -152,6 +154,7 @@ with `selftest(to="codex")` and `selftest(to="antigravity")`.
 | `track` | Where a message is: posted, rings, read, in progress, answered, late |
 | `close` | Close a topic (its conversations are archived) |
 | `reserve`, `release`, `reservations` | Reserve files before editing them, release them, list who holds what |
+| `file_reservation_paths`, `release_file_reservations` | The same reservations under the [mcp_agent_mail](https://github.com/Dicklesworthstone/mcp_agent_mail) names and parameters |
 | `search`, `summary` | Full-text search of the room; summary of a topic |
 | `status` | Unread counts, last wakes, bell threads, Codex port, Antigravity sidecar, quotas |
 | `selftest` | Interface landmarks of both apps; with `to`, a real wake round trip |
@@ -177,6 +180,7 @@ the daemon's environment win.
 | `NEXUS_JOURNAL_HOME` | — | `%LOCALAPPDATA%\NexusJournal` | Action log |
 | `NEXUS_RELAY_UPDATE_CHECK` | — | on | `0`: never look up the latest version |
 | `NEXUS_RELAY_HOST` | `host` | `claude` | The only agent that opens exchanges (`claude`, `codex` or `antigravity`); never woken |
+| `NEXUS_RELAY_LANG` | `lang` | `en` | Language of the texts agents receive (tool results, errors, wake text) and of the deployed instructions: `en` or `fr` |
 
 ## Updates
 
@@ -200,6 +204,8 @@ install made by the one-line installer (`%LOCALAPPDATA%\NexusRelay\app`) updates
 - Only conversations born in the relay's own "Nexus Relay" project are archived, only once the agent's turn has been
   over for 10 s, never while you are in the app.
 - An uncertain delivery to Antigravity is reported as such and never replayed.
+- Antigravity open without its debugging port (for instance after its own update) is restarted with it after 5 min,
+  never while you are in it or while one of its agents works, at most once an hour.
 - A peer's message is framed as an opinion to examine, never as an instruction from you; agents never ask you
   questions in relay conversations.
 - Attachments: absolute paths, regular files with a single name only (no hard links, no network shares), never inside

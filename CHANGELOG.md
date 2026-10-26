@@ -6,6 +6,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-10-26
+
+### Added
+
+- English everywhere for agents: the `lang` setting (`NEXUS_RELAY_LANG`, `en` by default, or `fr`) sets the language
+  of every text agents receive (tool results and errors, wake text, selftest) and of the deployed instructions
+  (skills, Codex `AGENTS.md`); French copies live in `fr/`.
+- File reservations under the mcp_agent_mail names: `file_reservation_paths` and `release_file_reservations`
+  (same parameters; `project_key` and `agent_name` are accepted and ignored).
+- Antigravity open without its debugging port is restarted with it after 5 minutes, never while you are in it or
+  while one of its agents works, at most once an hour.
+- Ready-made Codex plugin in `codex/` (MCP server, skill, marketplace file).
+
 ## [1.4.0] - 2026-10-26
 
 ### Added

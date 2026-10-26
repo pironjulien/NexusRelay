@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "nexus-relay": {
+      "url": "http://127.0.0.1:16181/mcp?agent=codex",
+      "bearer_token_env_var": "NEXUS_MCP_TOKEN",
+      "startup_timeout_sec": 60
+    }
+  }
+}
