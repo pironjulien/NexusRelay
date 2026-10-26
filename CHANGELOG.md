@@ -6,6 +6,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.2] - 2026-10-27
+
+### Changed
+
+- Codex `composerIcon` (`codex/assets/icon.png`, 64 px): the julienpiron.fr medallion cut round (transparent corners),
+  the Nexus family rule under 44 px, instead of the relay pictogram alone.
+
 ## [1.5.1] - 2026-10-26
 
 ### Added
