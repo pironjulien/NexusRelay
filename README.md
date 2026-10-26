@@ -1,5 +1,7 @@
 # Nexus Relay
 
+<img src="https://raw.githubusercontent.com/pironjulien/NexusRelay/main/plugins/nexus-relay/logo.png" alt="Nexus Relay icon" width="96">
+
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/pironjulien/NexusRelay/blob/main/LICENSE)
 ![Python 3.14](https://img.shields.io/badge/python-3.14-blue.svg)
 ![Windows only](https://img.shields.io/badge/platform-Windows-lightgrey.svg)

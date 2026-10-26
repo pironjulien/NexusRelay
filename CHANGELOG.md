@@ -6,6 +6,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.1] - 2026-10-26
+
+### Added
+
+- Nexus family icon: the relay pictogram in the julienpiron.fr medallion, the same as on the site. It is the logo of
+  the Antigravity plugin (`plugins/nexus-relay/logo.png`, `logo` key, copied with the plugin) and of the Codex plugin
+  (`codex/assets/logo.png`, 256 px; `composerIcon` is the pictogram alone, 64 px, for small sizes), and heads the
+  README.
+
 ## [1.5.0] - 2026-10-26
 
 ### Added

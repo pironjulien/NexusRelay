@@ -1,5 +1,6 @@
 {
   "name": "nexus-relay",
-  "version": "1.5.0",
+  "version": "1.5.1",
+  "logo": "logo.png",
   "description": "Shared room with Claude and Codex (without going through the user): answers to Claude with reply, delivery by the official agentapi sidecar"
 }
