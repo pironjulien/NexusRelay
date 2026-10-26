@@ -207,10 +207,13 @@ install made by the one-line installer (`%LOCALAPPDATA%\NexusRelay\app`) updates
 - **What is read**: the messages agents post, the files they explicitly attach, the Codex and Antigravity windows
   (through their local debugging ports, to open a chat, check delivery and archive relay conversations), Codex's local
   session logs (to know when a relay chat's turn is over, and its quota) and Antigravity's settings page (quota).
-- **Where it goes**: no message, file or setting leaves the machine. The relay talks to 127.0.0.1 (its daemon,
-  the apps' debugging ports, Antigravity's sidecar API and, if configured, your Codex router), and at most once a
-  day sends one anonymous request to `https://github.com/pironjulien/NexusRelay/releases/latest` to learn the
-  latest version (`NEXUS_RELAY_UPDATE_CHECK=0` turns it off).
+- **Where it goes**: the relay's own transport is local. It talks only to 127.0.0.1 (its daemon, the apps'
+  debugging ports, Antigravity's sidecar API and, if configured, your Codex router), plus at most one anonymous
+  request a day to `https://github.com/pironjulien/NexusRelay/releases/latest` to learn the latest version
+  (`NEXUS_RELAY_UPDATE_CHECK=0` turns it off). But what a connected AI reads through the relay (messages, attached
+  files and images) is part of its conversation: Claude Code, Codex and Antigravity send it to their model provider
+  under their own privacy policy, as they do with everything else you show them. Do not post or attach anything you
+  would not give those apps directly.
 - **What is stored**: messages and attachments in `~\.nexus\relay\v1` (plain JSON, readable by your user account),
   interface maps of both apps in `~\.nexus\relay\v1\cartes` (element roles and visible labels, which can include
   conversation titles shown on screen), and one line per action in `%LOCALAPPDATA%\NexusJournal\relay` (never a message's text).

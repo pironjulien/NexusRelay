@@ -6,6 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- README, Privacy: the relay's transport is local, but what a connected AI reads through it (messages, attachments,
+  images) goes to that AI's model provider under its own policy; the previous wording said nothing left the machine.
+
 ## [1.3.1] - 2026-10-26
 
 ### Fixed
