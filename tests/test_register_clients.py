@@ -106,3 +106,34 @@ def test_perimetre_du_pack(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caps
     assert last == "NEXUS_PACK_RESULT Codex=declared"
     assert claude.read_text(encoding="utf-8") == '{"theme": "dark"}'  # Claude Code exclu : fichier intact
     assert "nexus-relay" in (tmp_path / ".codex" / "config.toml").read_text(encoding="utf-8")
+
+
+def test_claude_code_par_sa_commande(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Commande `claude` présente : remove puis add-json en portée utilisateur, entrée HTTP sans jeton écrit."""
+    calls: list[list[str]] = []
+
+    class Done:
+        returncode, stdout, stderr = 0, "", ""
+
+    def run(args: list[str], **kwargs: Any) -> Done:
+        calls.append(args)
+        return Done()
+
+    monkeypatch.setattr(rc.shutil, "which", lambda name: "C:/bin/claude.exe" if name == "claude" else None)
+    monkeypatch.setattr(rc.subprocess, "run", run)
+    assert rc.claude_code(tmp_path, 16181, tmp_path / "b") == "declared (claude mcp add-json, user scope)"
+    assert calls[0] == ["C:/bin/claude.exe", "mcp", "remove", "nexus-relay", "--scope", "user"]
+    add = calls[1]
+    assert add[:4] == ["C:/bin/claude.exe", "mcp", "add-json", "nexus-relay"] and add[-2:] == ["--scope", "user"]
+    entry = json.loads(add[4])
+    assert entry["url"] == "http://127.0.0.1:16181/mcp?agent=claude"
+    assert entry["headers"]["Authorization"] == "Bearer ${NEXUS_MCP_TOKEN}"
+
+
+def test_claude_code_commande_en_echec(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    class Failed:
+        returncode, stdout, stderr = 1, "", "boom"
+
+    monkeypatch.setattr(rc.shutil, "which", lambda name: "claude" if name == "claude" else None)
+    monkeypatch.setattr(rc.subprocess, "run", lambda args, **kw: Failed())
+    assert rc.claude_code(tmp_path, 16181, tmp_path / "b") == "failed: boom"
