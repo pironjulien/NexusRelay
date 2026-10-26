@@ -135,3 +135,47 @@ def test_antigravity_launched_with_neutral_stdio(monkeypatch) -> None:
     monkeypatch.setattr(cdp.subprocess, "Popen", lambda *args, **kwargs: seen.update(kwargs))
     cdp._start_detached(Path("antigravity.exe"), 9227)
     assert seen["stdin"] is seen["stdout"] is seen["stderr"] is cdp.subprocess.DEVNULL
+
+
+def test_quotas_lus_malgre_une_notification_role_dialog(monkeypatch: pytest.MonkeyPatch):
+    """26/10 : la notification « Conversation Archived … Undo » d'Antigravity est aussi un [role=dialog] ; prise pour la
+    fenêtre des réglages, le clic sur « Settings » était sauté et les quotas n'étaient plus lus. Les trois gestes visent
+    désormais la fenêtre qui porte l'onglet « Models », et la lecture va jusqu'au bout la notification présente."""
+    for script in (cdp._DIALOG_TEXT, cdp._MODELS_TAB, cdp._CLOSE):
+        assert cdp._SETTINGS_DIALOG in script and "document.querySelector('[role=dialog]')" not in script
+    assert "'Models'" in cdp._SETTINGS_DIALOG
+
+    class Page:
+        """Antigravity avec la notification d'archivage toujours affichée (jamais la fenêtre des réglages)."""
+
+        def __init__(self, url: str) -> None:
+            self.href, self.settings, self.models, self.clicks = "https://ag/", False, False, []
+
+        def eval(self, script: str) -> object:
+            if script == "location.href":
+                return self.href
+            if script == cdp._DIALOG_TEXT:  # la notification n'est jamais prise pour les réglages
+                return None if not self.settings else ("Settings\nModels\n" + (AGY_TEXT if self.models else "General"))
+            if script == cdp._SETTINGS_BUTTON:
+                self.clicks.append("settings")
+                self.settings, self.href = True, "https://ag/?settingsOpen=true&settingsScreen=General"
+                return True
+            if script == cdp._MODELS_TAB:
+                self.clicks.append("models")
+                self.models = self.settings
+                return self.settings
+            if script == "history.back()":
+                self.href, self.settings, self.models = "https://ag/", False, False
+                return None
+            raise AssertionError(script)
+
+        def close(self) -> None:
+            pass
+
+    pages: list[Page] = []
+    monkeypatch.setattr(cdp, "user_in_agy", lambda: False)
+    monkeypatch.setattr(cdp, "agy_page_url", lambda port=0: "ws://ag")
+    monkeypatch.setattr(cdp, "Page", lambda url: pages.append(Page(url)) or pages[-1])
+    result = cdp.read_antigravity_usage(sleep=lambda s: None)
+    assert result["status"] == "success" and result["view_restored"] is True, result
+    assert len(result["limits"]) == 4 and pages[0].clicks == ["settings", "models"]

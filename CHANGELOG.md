@@ -15,6 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `NEXUS_PACK_HOST`, else the first agent found among the chosen ones (Claude Code, Codex, Antigravity). `status()`
   shows `host`; `state/peers.json` carries `host` only when it is not Claude. NexusRelay now works without Claude Code.
 
+### Fixed
+
+- Antigravity quotas read again: the reader targets the Settings window (the one with the Models tab) instead of
+  the first `[role=dialog]`, which could be Antigravity's "Conversation Archived" notification.
+
 ## [1.3.2] - 2026-10-26
 
 ### Added

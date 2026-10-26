@@ -1142,18 +1142,25 @@ _USAGE_LIMIT = {"Weekly Limit Remaining": "semaine", "Five Hour Limit Remaining"
 _USAGE_FAMILIES = ("Gemini Models", "Claude and GPT models")
 _PERCENT = re.compile(r"^(\d{1,3}(?:[.,]\d+)?)\s*%$")
 _REFRESH = re.compile(r"refresh in (.+?)\.?$", re.IGNORECASE)
-_DIALOG_TEXT = "(() => { const d = document.querySelector('[role=dialog]'); return d ? d.innerText : null })()"
+# La fenêtre des réglages, reconnue à son onglet « Models » : jamais le premier [role=dialog] venu. Vu le 26/10 : la
+# notification « Conversation Archived … Undo » d'Antigravity (laissée par le rangement du relais) est aussi un
+# [role=dialog] ; prise pour les réglages, le clic sur « Settings » était sauté et les quotas n'étaient plus lus.
+_SETTINGS_DIALOG = (
+    "[...document.querySelectorAll('[role=dialog]')].find(d => [...d.querySelectorAll('button')].some(b => "
+    "(b.innerText || '').trim() === 'Models'))"
+)
+_DIALOG_TEXT = f"(() => {{ const d = {_SETTINGS_DIALOG}; return d ? d.innerText : null }})()"
 _SETTINGS_BUTTON = (
     "(() => { const b = [...document.querySelectorAll('button, [role=button]')].find(b => "
     "(b.getAttribute('aria-label') || b.innerText || '').trim() === 'Settings'); if (!b) return false; b.click(); "
     "return true })()"
 )
 _MODELS_TAB = (
-    "(() => { const b = [...document.querySelectorAll('[role=dialog] button')].find(b => "
+    f"(() => {{ const d = {_SETTINGS_DIALOG}; const b = d && [...d.querySelectorAll('button')].find(b => "
     "(b.innerText || '').trim() === 'Models'); if (!b) return false; b.click(); return true })()"
 )
 _CLOSE = (
-    "(() => { const b = [...document.querySelectorAll('[role=dialog] button')].find(b => "
+    f"(() => {{ const d = {_SETTINGS_DIALOG}; const b = d && [...d.querySelectorAll('button')].find(b => "
     "(b.getAttribute('aria-label') || b.innerText || '').trim() === 'Close'); if (!b) return false; b.click(); "
     "return true })()"
 )
