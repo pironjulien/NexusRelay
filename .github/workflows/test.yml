@@ -128,3 +128,34 @@ jobs:
             throw "self-update: $($state | ConvertTo-Json)"
           }
           Write-Host "self-update OK: 0.0.1 -> $($state.version)"
+
+  install-windows-scoped:
+    # The Nexus pack passes the AI apps the user chose (NEXUS_PACK_TARGETS): the others must stay untouched.
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e  # v10.3.2
+        with:
+          python-version: "3.14"
+      - name: get.ps1 with NEXUS_PACK_TARGETS=codex (Claude Code and Antigravity present but not chosen)
+        shell: powershell
+        env:
+          NEXUS_PACK: "1"
+          NEXUS_PACK_TARGETS: codex
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:NEXUS_RELAY_SOURCE = $env:GITHUB_WORKSPACE
+          New-Item -ItemType Directory -Force "$HOME\.codex", "$HOME\.claude", "$HOME\.gemini\config" | Out-Null
+          Set-Content "$HOME\.claude.json" '{"theme": "dark"}' -Encoding ascii
+          $out = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\get.ps1
+          if ($LASTEXITCODE) { $out; throw "get.ps1 failed ($LASTEXITCODE)" }
+          $out
+          $last = @($out)[-1]
+          if ($last -ne 'NEXUS_PACK_RESULT Codex=declared') { throw "pack line: $last" }
+          if ((Get-Content "$HOME\.claude.json" -Raw).Trim() -ne '{"theme": "dark"}') { throw 'Claude Code touched' }
+          if (Test-Path "$HOME\.gemini\config\plugins\nexus-relay") { throw 'Antigravity plugin installed' }
+          if (Test-Path "$HOME\.gemini\config\config.json") { throw 'Antigravity config touched' }
+          if ((Get-Content "$HOME\.codex\config.toml" -Raw) -notmatch 'nexus-relay') { throw 'Codex not declared' }

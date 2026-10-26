@@ -6,6 +6,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.2] - 2026-10-26
+
+### Added
+
+- Nexus pack scope: with `NEXUS_PACK_TARGETS` (AI apps chosen by the user, comma separated), the installer only
+  configures those apps; Claude Code, Codex or Antigravity left out are never touched nor reported. CI job
+  `install-windows-scoped`.
+
 ### Changed
 
 - README, Privacy: the relay's transport is local, but what a connected AI reads through it (messages, attachments,
@@ -65,7 +73,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - English tool descriptions with titles and MCP annotations; `reply` accepts `done`/`refused`/`failed` and
   `agree`/`disagree`.
 
-[Unreleased]: https://github.com/pironjulien/NexusRelay/compare/v1.3.1...HEAD
+[Unreleased]: https://github.com/pironjulien/NexusRelay/compare/v1.3.2...HEAD
+[1.3.2]: https://github.com/pironjulien/NexusRelay/compare/v1.3.1...v1.3.2
 [1.3.1]: https://github.com/pironjulien/NexusRelay/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/pironjulien/NexusRelay/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/pironjulien/NexusRelay/compare/v1.1.0...v1.2.0

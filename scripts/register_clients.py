@@ -6,6 +6,9 @@ HTTP entry whose bearer token is read from the user environment variable NEXUS_M
 files. Antigravity is handled by install.ps1 itself (nexus-relay plugin and sidecar). Claude Desktop's chat is not a
 relay client (only Claude Code, the host, opens exchanges).
 
+NEXUS_PACK_TARGETS (the Nexus pack: AI apps to configure, pack names comma separated): when set, a client not in
+the list is never touched nor reported.
+
 An entry of ours is replaced in place; an entry the user wrote differently, or an enabled nexus-relay Claude Code
 plugin (which already provides the server), is left alone. Nothing else in these files is touched; each file is
 written atomically after a backup. Prints one line per client, and with NEXUS_PACK=1 a last
@@ -26,6 +29,7 @@ from datetime import datetime
 from pathlib import Path
 
 NAME = "nexus-relay"
+PACK_NAMES = {"Claude Code": "claude-code", "Codex": "codex", "Antigravity": "antigravity"}
 TOKEN_VAR = "NEXUS_MCP_TOKEN"
 
 
@@ -152,6 +156,12 @@ def codex(home: Path, port: int, backups: Path) -> str | None:
     return f"declared in {config}"
 
 
+def pack_targets() -> set[str] | None:
+    """AI apps chosen in the Nexus pack (NEXUS_PACK_TARGETS), or None: every client found."""
+    raw = os.environ.get("NEXUS_PACK_TARGETS")
+    return None if raw is None else {name.strip() for name in raw.split(",") if name.strip()}
+
+
 def short(result: str | None) -> str:
     """One word per client for the Nexus pack's summary line."""
     if result is None:
@@ -171,12 +181,15 @@ def main() -> int:
     home = Path.home()
     backups = Path(args.backups)
     results: dict[str, str | None] = {}
+    targets = pack_targets()
     for client, declare in (("Claude Code", claude_code), ("Codex", codex)):
+        if targets is not None and PACK_NAMES[client] not in targets:
+            continue  # outside the user's choice in the Nexus pack: never touched
         try:
             results[client] = declare(home, args.port, backups)
         except (OSError, ValueError) as error:  # unreadable file (JSON or TOML): left as it is
             results[client] = f"failed: {error}"
-    if args.antigravity:
+    if args.antigravity and (targets is None or "antigravity" in targets):
         results["Antigravity"] = args.antigravity
     found = False
     for client, result in results.items():

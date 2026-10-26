@@ -19,6 +19,8 @@
 #  - -Register (installation publique, get.ps1) : jeton créé s'il n'y en a aucun (~\.nexus\nexus-relay\token.txt, noté
 #    dans settings.json), variable utilisateur NEXUS_MCP_TOKEN posée, serveur déclaré à Claude Code et Codex
 #    (scripts\register_clients.py) ; NEXUS_PACK=1 (pack Nexus) : aucune question ni fenêtre, ligne NEXUS_PACK_RESULT
+#  - NEXUS_PACK_TARGETS (pack Nexus) : IA à configurer (claude-code, codex, antigravity…, séparées par des
+#    virgules) ; présente, toute IA absente de la liste n'est pas touchée ; absente, toutes celles trouvées
 # Windows PowerShell 5.1 ou PowerShell 7.
 # Usage : powershell -NoProfile -File install.ps1 [-SkipTests] [-TokenFile <chemin>] [-Register]
 param([switch]$SkipTests, [string]$TokenFile, [switch]$Register)
@@ -171,7 +173,12 @@ if (-not (Get-ScheduledTask -TaskName 'Nexus MCP Daemons' -ErrorAction SilentlyC
 
 # --- Antigravity : plugin nexus-relay (serveur MCP, skill, sidecar) et activation du sidecar
 $agyRoot = Join-Path $HOME '.gemini\config'
-if (-not (Test-Path $agyRoot)) {
+# Périmètre du pack Nexus : IA choisies par l'utilisateur ; les autres ne sont jamais touchées.
+$packTargets = if ($null -ne $env:NEXUS_PACK_TARGETS) { @($env:NEXUS_PACK_TARGETS -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ }) } else { $null }
+if ($null -ne $packTargets -and $packTargets -notcontains 'antigravity') {
+    Write-Host 'Antigravity : hors du périmètre choisi (NEXUS_PACK_TARGETS), non touché.'
+    $agyResult = ''
+} elseif (-not (Test-Path $agyRoot)) {
     Write-Warning 'Antigravity absent de ce PC : plugin non installé.'
     $agyResult = ''
 } else {

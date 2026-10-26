@@ -89,3 +89,20 @@ def test_ligne_du_pack(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: 
     assert rc.main() == 0
     last = capsys.readouterr().out.strip().splitlines()[-1]
     assert last == "NEXUS_PACK_RESULT Claude Code=absent; Codex=declared; Antigravity=plugin"
+
+
+def test_perimetre_du_pack(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]):
+    """NEXUS_PACK_TARGETS : seules les IA choisies sont touchées et citées ; les autres restent intactes."""
+    monkeypatch.setattr(rc.Path, "home", lambda: tmp_path)
+    monkeypatch.setenv("NEXUS_PACK", "1")
+    monkeypatch.setenv("NEXUS_PACK_TARGETS", "codex, claude-desktop")
+    (tmp_path / ".codex").mkdir()
+    (tmp_path / ".claude").mkdir()
+    claude = tmp_path / ".claude.json"
+    claude.write_text('{"theme": "dark"}', encoding="utf-8")
+    monkeypatch.setattr("sys.argv", ["x", "--backups", str(tmp_path / "b"), "--antigravity", "plugin installed in X"])
+    assert rc.main() == 0
+    last = capsys.readouterr().out.strip().splitlines()[-1]
+    assert last == "NEXUS_PACK_RESULT Codex=declared"
+    assert claude.read_text(encoding="utf-8") == '{"theme": "dark"}'  # Claude Code exclu : fichier intact
+    assert "nexus-relay" in (tmp_path / ".codex" / "config.toml").read_text(encoding="utf-8")
