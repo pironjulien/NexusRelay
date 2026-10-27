@@ -2,8 +2,15 @@
 
 ## Reporting a vulnerability
 
-Please report vulnerabilities privately through GitHub: **Security → Report a vulnerability** on this repository.
-Do not open a public issue. You will get an answer within a few days.
+Please report vulnerabilities privately through
+[GitHub private vulnerability reporting](https://github.com/pironjulien/NexusRelay/security/advisories/new),
+not in a public issue. Include the tool calls and what happened.
+
+## Disclosure
+
+You will get a first answer within 3 days. A confirmed vulnerability is fixed in a new release, usually within 30
+days, then disclosed in a GitHub security advisory that credits the reporter unless they prefer otherwise. Please
+keep it private until that release is out.
 
 ## Scope
 
@@ -16,3 +23,5 @@ Nexus Relay runs on a single Windows PC and only listens on 127.0.0.1. Relevant 
 
 The Codex and Antigravity debugging ports give any local program control of those apps: that is a documented design
 choice (local machine assumed trusted), not a vulnerability of the relay.
+
+Only the latest release is supported.

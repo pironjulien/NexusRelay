@@ -162,7 +162,13 @@ if ($settings.codex_router) { $daemonEnv.NEXUS_RELAY_CODEX_ROUTER = [string]$set
 if ($settings.codex_router_start) { $daemonEnv.NEXUS_RELAY_CODEX_ROUTER_START = @($settings.codex_router_start) -join ';' }
 if ($settings.host) { $daemonEnv.NEXUS_RELAY_HOST = [string]$settings.host }
 if ($settings.lang) { $daemonEnv.NEXUS_RELAY_LANG = [string]$settings.lang }
-$spec = [ordered]@{ port = $port; python = $python; args = $serverArgs; env = $daemonEnv }
+# Boîte épinglée : le démon lit celle où ce script dépose ses demandes, quel que soit l'environnement de son lanceur
+# (relecture de Codex, 27/10 : un NEXUS_RELAY_HOME hérité du superviseur l'envoyait ailleurs).
+$daemonEnv.NEXUS_RELAY_HOME = $mailbox
+# restart_request : la demande de relance que suit le démon. Un superviseur la prend juste avant de le lancer (avant de
+# relire la spec) : ce lancement la satisfait, le démon neuf ne se relance pas aussitôt (CI du 27/10, 1.8.0).
+$daemonRequest = Join-Path $mailbox 'daemon-restart.request'
+$spec = [ordered]@{ port = $port; python = $python; args = $serverArgs; env = $daemonEnv; restart_request = $daemonRequest }
 $specChanged = Write-IfChanged (Join-Path $HOME '.nexus\daemons\specs\nexus-relay.json') ($spec | ConvertTo-Json -Depth 5)
 # Nouveau code : demande de relance au démon, jamais d'arrêt forcé. Il ne se relance que si son code a changé, une fois
 # aucun appel en cours, et le superviseur le relance. Vu le 20/10 : l'arrêt forcé ici coupait les wait_reply de 600 s
@@ -179,7 +185,6 @@ function Stop-Legacy([string]$pattern, [string]$name) {
 Stop-Legacy 'nexus_relay\.server --http' 'daemon'
 Stop-Legacy 'nexus_relay\.sidecar' 'sidecar'
 # Réglages du démon changés (Python, arguments, environnement) : relance forcée, le code seul ne le dirait pas.
-$daemonRequest = Join-Path $mailbox 'daemon-restart.request'
 $forced = $specChanged -or "$(Get-Content $daemonRequest -Raw -ErrorAction SilentlyContinue)".StartsWith('force')  # tour 6
 [IO.File]::WriteAllText($daemonRequest, "$(if ($forced) { 'force' } else { 'code' }) $(Get-Date -Format o)", $utf8)
 # Pareil pour le sidecar d'Antigravity : il sort entre deux livraisons si son code a changé, Antigravity le relance
@@ -227,7 +232,7 @@ if ($null -ne $packTargets -and $packTargets -notcontains 'antigravity') {
         description = 'Livre à Antigravity les messages de Claude (boîte ~\.nexus\relay) par agentapi, une conversation par sujet dans le projet Nexus Relay ; une livraison incertaine n''est jamais rejouée.'
         command = $pythonw
         args = @('-B', '-m', 'nexus_relay.sidecar')
-        env = [ordered]@{ PYTHONUTF8 = '1'; PYTHONDONTWRITEBYTECODE = '1'; PYTHONPYCACHEPREFIX = $pycache }
+        env = [ordered]@{ PYTHONUTF8 = '1'; PYTHONDONTWRITEBYTECODE = '1'; PYTHONPYCACHEPREFIX = $pycache; NEXUS_RELAY_HOME = $mailbox }
         restart_policy = 'always'
     }
     if (Write-IfChanged (Join-Path $plugin 'sidecars\relay\sidecar.json') ($sidecar | ConvertTo-Json -Depth 10)) { $copied++ }

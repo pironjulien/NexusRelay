@@ -69,12 +69,22 @@ def _log(path: Path) -> Any:
     return open(path, "ab")  # noqa: SIM115 - confié au démon lancé
 
 
-def take_request() -> Path | None:
+def request_path(spec_file: Path) -> Path:
+    """Demande déclarée par la spec (`restart_request` : boîte épinglée par install.ps1 dans l'env du démon, quel que
+    soit l'environnement de ce superviseur), sinon celle de relay_home() (spec d'avant le champ, ou illisible)."""
+    try:
+        declared = json.loads(spec_file.read_text(encoding="utf-8")).get("restart_request")
+    except (OSError, ValueError, AttributeError):
+        declared = None
+    return Path(declared) if declared else relay_home() / "daemon-restart.request"
+
+
+def take_request(request: Path | None = None) -> Path | None:
     """Demande de relance déposée AVANT ce lancement (install.ps1 l'écrit avant de lancer la tâche) : satisfaite par lui,
     prise d'un coup AVANT de relire la spec (relecture de Codex : prise après, elle effaçait une demande plus récente
     que la spec lue). Vu le 27/10 en CI : le démon tout neuf la suivait, se relançait 2 s après avoir répondu, et
     l'étape suivante trouvait le port fermé. Rend la prise (à jeter une fois lancé, à rendre sinon)."""
-    request = relay_home() / "daemon-restart.request"
+    request = request or relay_home() / "daemon-restart.request"
     taken = request.with_name(request.name + ".lancement")
     try:
         os.replace(request, taken)
@@ -111,7 +121,7 @@ def run(
     done = 0
     while rounds is None or done < rounds:
         done += 1
-        taken = take_request()
+        taken = take_request(request_path(spec_file))  # spec relue ensuite pour le lancement : prise avant
         try:
             argv, env = command(json.loads(spec_file.read_text(encoding="utf-8")))
         except (OSError, ValueError, KeyError) as error:

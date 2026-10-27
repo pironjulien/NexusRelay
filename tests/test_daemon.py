@@ -119,3 +119,37 @@ def test_une_seule_instance(tmp_path: Path):
     again = daemon.lock(tmp_path / "daemon.lock")
     assert again is not None
     again.close()
+
+
+def test_spec_declare_la_demande_suivie_par_le_demon():
+    """install.ps1 écrit dans la spec la demande que suit le démon (`restart_request`) : un superviseur général (NexusInfra)
+    la prend avant chaque lancement sans connaître le relais. Même fichier que celui que lit le serveur."""
+    from nexus_relay import server
+
+    install = (Path(__file__).parents[1] / "install.ps1").read_text(encoding="utf-8-sig")
+    assert f"$daemonRequest = Join-Path $mailbox '{server.restart_request().name}'" in install
+    assert "restart_request = $daemonRequest }" in install
+    assert install.index("$daemonRequest = ") < install.index("$spec = [ordered]@{")
+    # spec autonome (relecture de Codex) : démon et sidecar épinglés sur la boîte où install.ps1 dépose les demandes
+    assert "$mailbox = Join-Path $HOME '.nexus\\relay'" in install
+    assert "$daemonEnv.NEXUS_RELAY_HOME = $mailbox" in install
+    assert "PYTHONPYCACHEPREFIX = $pycache; NEXUS_RELAY_HOME = $mailbox }" in install
+
+
+def test_demande_declaree_par_la_spec_prise_au_lancement(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Relecture de Codex : la boîte du démon est celle de sa spec (épinglée par install.ps1), pas celle de
+    l'environnement de ce superviseur ; la demande déclarée est prise, celle de relay_home() n'est pas touchée."""
+    declared = tmp_path / "epinglee" / "daemon-restart.request"
+    declared.parent.mkdir()
+    declared.write_text("force A", encoding="utf-8")
+    other = tmp_path / "relay" / "daemon-restart.request"
+    other.parent.mkdir(parents=True, exist_ok=True)
+    other.write_text("force autre", encoding="utf-8")
+    spec = _spec(tmp_path)
+    spec.write_text(
+        json.dumps({**json.loads(spec.read_text(encoding="utf-8")), "restart_request": str(declared)}), encoding="utf-8"
+    )
+    monkeypatch.setattr(daemon.subprocess, "Popen", lambda *a, **k: type("P", (), {"wait": lambda self: 0})())
+    daemon.run(spec, sleep=lambda s: None, clock=_Clock([60.0]), rounds=1)
+    assert not declared.exists()
+    assert other.read_text(encoding="utf-8") == "force autre"

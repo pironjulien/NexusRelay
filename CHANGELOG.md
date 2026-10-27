@@ -6,6 +6,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.2] - 2026-10-27
+
+### Added
+- CodeQL code scanning of the relay and the workflows, on every push and weekly.
+- Coverage-guided fuzzing (Atheris, `fuzz/`, `.github/workflows/fuzz.yml`) of file reservations (a pattern drawn
+  from a path always covers it: never a false "free"), stored paths and topics.
+
+### Changed
+- `SECURITY.md`: disclosure timeline (first answer within 3 days, fix and advisory usually within 30 days); private reporting link.
+- Self-contained daemon spec (`~\.nexus\daemons\specs\nexus-relay.json`): `install.ps1` declares the restart
+  request the daemon follows (`restart_request`) and pins its mailbox (`NEXUS_RELAY_HOME`, also in the environment
+  of the Antigravity sidecar). A general supervisor takes that request before each launch without knowing the relay;
+  `nexus_relay.daemon` also takes the declared request, then reads the spec again. A `NEXUS_RELAY_HOME` inherited
+  from the launcher no longer sends the daemon to another mailbox than the one holding its requests.
+
 ## [1.8.1] - 2026-10-27
 
 ### Fixed
@@ -213,7 +228,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - English tool descriptions with titles and MCP annotations; `reply` accepts `done`/`refused`/`failed` and
   `agree`/`disagree`.
 
-[Unreleased]: https://github.com/pironjulien/NexusRelay/compare/v1.6.2...HEAD
+[Unreleased]: https://github.com/pironjulien/NexusRelay/compare/v1.8.2...HEAD
+[1.8.2]: https://github.com/pironjulien/NexusRelay/releases/tag/v1.8.2
 [1.6.2]: https://github.com/pironjulien/NexusRelay/compare/v1.6.1...v1.6.2
 [1.6.1]: https://github.com/pironjulien/NexusRelay/compare/v1.6.0...v1.6.1
 [1.6.0]: https://github.com/pironjulien/NexusRelay/compare/v1.5.3...v1.6.0
