@@ -78,11 +78,36 @@ def test_lecteur_entier_et_unc_reservables():
     assert call(server.reserve(["C:\\"], "tout le lecteur", ttl_min=1))
 
 
-@pytest.mark.parametrize("path", ["\\\\?\\UNC\\", "\\\\", "\\\\serveur", "\\\\serveur\\", "\\\\\\"])
-def test_unc_sans_serveur_ni_partage_refuse(path: str):
-    """Trouvé par le fuzzing (fuzz/targets.py) : « \\\\?\\UNC\\ » devenait « \\\\\\ », qui ne se relisait pas."""
+@pytest.mark.parametrize(
+    "path",
+    [
+        "\\\\?\\UNC\\",
+        "\\\\",
+        "\\\\serveur",
+        "\\\\serveur\\",
+        "\\\\\\",
+        "\\\\?\\\\\\?\\UNC\\a\\b",
+        "\\\\.\\PhysicalDrive0",
+        "\\\\a\\.\\x",
+        "\\\\?\\UNC\\?\\UNC",
+        "C:\\ \\a",
+        "C:\\...\\a",
+    ],
+)
+def test_chemin_sans_fichier_designe_refuse(path: str):
+    """Trouvés par le fuzzing (fuzz/targets.py) : chemins rangés qui ne se relisaient pas à l'identique."""
     with pytest.raises(RelayError):
         reservations.clean(path)
+
+
+def test_alias_de_peripherique_et_motifs_unc_gardes():
+    """Relecture de Codex : « \\\\.\\C:\\ » désigne le même fichier que « C:\\ », les motifs de partage restent permis."""
+    assert reservations.clean("\\\\.\\C:\\repo\\a.py") == "C:\\repo\\a.py"
+    assert reservations.overlap("\\\\.\\C:\\repo\\a.py", "C:\\repo\\a.py")
+    assert reservations.clean("\\\\.\\UNC\\nas\\projet\\a") == "\\\\nas\\projet\\a"
+    pattern = "\\\\nas\\projet*\\src\\*.py"
+    assert reservations.clean(pattern) == pattern
+    assert reservations.overlap(pattern, "\\\\nas\\projet-main\\src\\a.py")
 
 
 def test_meme_agent_prolonge_et_libere(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):

@@ -59,18 +59,22 @@ def _split(path: str) -> tuple[str, list[str], bool]:
     extended = path.startswith("\\\\?\\")
     if not extended:
         path = path.rstrip()  # forme longue : l'espace final est un vrai caractère du nom (tour 4 de Codex)
-    if path[:8].upper() == "\\\\?\\UNC\\":
+    if path[:8].upper() in ("\\\\?\\UNC\\", "\\\\.\\UNC\\"):
         path = "\\\\" + path[8:]
-    elif extended:
-        path = path[4:]
-    if not ntpath.isabs(path):
+    elif extended or path.startswith("\\\\.\\"):
+        path = path[
+            4:
+        ]  # « \\.\C:\a » est le même fichier que « C:\a » (chemin de périphérique DOS, relecture de Codex)
+    # Refusés, car aucun fichier n'est désigné et le chemin rangé ne se relisait pas à l'identique (trouvé par le
+    # fuzzing) : préfixe restant après le premier (« \\?\\\?\ », « \\.\\\.\ »), partage réseau incomplet ou à nom
+    # vide (« \\?\UNC\ », « \\serveur », « \\a\. »), nom fait seulement de points ou d'espaces hors forme longue
+    # (Windows le réduit à rien).
+    if path[:4] in ("\\\\?\\", "\\\\.\\") or not ntpath.isabs(path):
         raise RelayError(
             tr(f"reservation: absolute path expected ({path})", f"réservation : chemin absolu attendu ({path})")
         )
     drive, rest = ntpath.splitdrive(ntpath.normpath(path))
-    if drive.startswith("\\\\") and len([p for p in drive[2:].split("\\") if p]) < 2:
-        # « \\?\UNC\ » ou « \\serveur » seul : aucun fichier désigné, et le chemin rangé ne se relisait pas à
-        # l'identique (trouvé par le fuzzing)
+    if drive.startswith("\\\\") and not _share(drive):
         raise RelayError(
             tr(
                 f"reservation: network path without server and share ({path})",
@@ -79,8 +83,19 @@ def _split(path: str) -> tuple[str, list[str], bool]:
         )
     parts = [p for p in rest.split("\\") if p]
     if not extended:
-        parts = [p.rstrip(". ") or p for p in parts]
+        parts = [p.rstrip(". ") for p in parts]
+        if not all(parts):
+            raise RelayError(
+                tr(f"reservation: empty name in the path ({path})", f"réservation : nom vide dans le chemin ({path})")
+            )
     return drive, parts, extended and any(p != p.rstrip(". ") for p in parts)
+
+
+def _share(drive: str) -> bool:
+    """« \\\\serveur\\partage » (motifs permis : « \\\\nas\\projet* ») : deux noms, chacun avec au moins un caractère
+    autre que point ou espace."""
+    names = drive[2:].split("\\")
+    return len(names) == 2 and all(n.strip(". ") for n in names)
 
 
 def clean(path: str) -> str:

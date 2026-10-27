@@ -22,8 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   from the launcher no longer sends the daemon to another mailbox than the one holding its requests.
 
 ### Fixed
-- File reservations: a network path without server and share (`\\?\UNC\`, `\\server`) is refused; it designated no
-  file and its stored form did not read back the same (found by the new fuzzing).
+- File reservations: paths that designate no file are refused (network path without server and share such as
+  `\\?\UNC\` or `\\server`, doubled prefix such as `\\?\\\?\`, a device such as `\\.\PhysicalDrive0`, a name made
+  only of dots or spaces outside the long form); their stored form did not read back the same (found by the new
+  fuzzing). `\\.\C:\…` is stored as `C:\…`, the same file.
 
 ## [1.8.1] - 2026-10-27
 

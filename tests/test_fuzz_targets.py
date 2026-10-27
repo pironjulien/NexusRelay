@@ -17,3 +17,4 @@ def test_targets_hold_on_random_inputs() -> None:
 
 def test_crashes_found_by_the_fuzzer() -> None:
     targets.target(bytes.fromhex("3d5c5c3f5c554e435c"))  # « \?\UNC\ » : chemin rangé instable (CI, 27/10)
+    targets.target(bytes.fromhex("0a5c5c3f5c5c5c3f5c554e435c554e305c"))  # préfixe long doublé (CI, 27/10)
