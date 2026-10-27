@@ -53,6 +53,55 @@ def test_relance_aussitot_apres_une_relance_par_demande_pause_croissante_apres_p
     assert (Path.home() / ".nexus" / "nexus-relay" / "daemon.log").exists()
 
 
+def test_demande_de_relance_anterieure_satisfaite_par_le_lancement(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """CI du 27/10 (1.8.0) : install.ps1 dépose la demande puis lance la tâche ; le démon neuf la suivait et se
+    relançait aussitôt, port fermé pour l'étape suivante. Effacée au lancement, jamais pendant que le démon vit."""
+    request = tmp_path / "relay" / "daemon-restart.request"  # NEXUS_RELAY_HOME des tests (conftest)
+    request.parent.mkdir(parents=True, exist_ok=True)
+    request.write_text("force 2026-10-27", encoding="utf-8")
+    seen: list[bool] = []
+
+    class Proc:
+        def __init__(self, argv: list[str], env: dict[str, str], **kwargs: Any) -> None:
+            seen.append(request.exists())
+            request.write_text("code 2026-10-27", encoding="utf-8")  # déposée pendant la vie du démon : gardée
+
+        def wait(self) -> int:
+            seen.append(request.exists())
+            return 0
+
+    monkeypatch.setattr(daemon.subprocess, "Popen", Proc)
+    daemon.run(_spec(tmp_path), sleep=lambda s: None, clock=_Clock([60.0]), rounds=1)
+    assert seen == [False, True]
+
+
+def test_demande_posee_apres_la_prise_gardee(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Relecture de Codex : une demande écrite entre la lecture de la spec et le lancement (install suivant) était
+    effacée ; prise avant la lecture, seule la demande antérieure est satisfaite."""
+    request = tmp_path / "relay" / "daemon-restart.request"
+    request.parent.mkdir(parents=True, exist_ok=True)
+    request.write_text("force A", encoding="utf-8")
+    real = daemon.command
+
+    def install_b(spec: dict[str, Any]) -> tuple[list[str], dict[str, str]]:
+        request.write_text("force B", encoding="utf-8")  # spec B et sa demande, après la prise
+        return real(spec)
+
+    monkeypatch.setattr(daemon, "command", install_b)
+    monkeypatch.setattr(daemon.subprocess, "Popen", lambda *a, **k: type("P", (), {"wait": lambda self: 0})())
+    daemon.run(_spec(tmp_path), sleep=lambda s: None, clock=_Clock([60.0]), rounds=1)
+    assert request.read_text(encoding="utf-8") == "force B"
+    assert not request.with_name(request.name + ".lancement").exists()
+
+
+def test_demande_rendue_si_rien_n_est_lance(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    request = tmp_path / "relay" / "daemon-restart.request"
+    request.parent.mkdir(parents=True, exist_ok=True)
+    request.write_text("force A", encoding="utf-8")
+    daemon.run(tmp_path / "absente.json", sleep=lambda s: None, rounds=1)
+    assert request.read_text(encoding="utf-8") == "force A"
+
+
 def test_spec_illisible_attend_sans_rien_lancer(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     pauses: list[float] = []
     monkeypatch.setattr(daemon.subprocess, "Popen", lambda *a, **k: pytest.fail("rien lancé"))

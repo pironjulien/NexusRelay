@@ -6,6 +6,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.1] - 2026-10-27
+
+### Fixed
+- Daemon supervisor (`nexus_relay.daemon`): a restart request left by `install.ps1` before the task starts is
+  satisfied by that launch (taken before the spec is read, given back if nothing is launched; a newer request
+  stays). A brand-new daemon no longer restarts two seconds after answering, which left the port closed for the
+  next step of the Windows CI on 1.8.0.
+
 ## [1.8.0] - 2026-10-27
 
 ### Added

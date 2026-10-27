@@ -3,7 +3,7 @@
   "name": "io.github.pironjulien/nexus-relay",
   "title": "Nexus Relay",
   "description": "Shared room for Claude, Codex and Antigravity on one Windows PC; each agent woken in its own app.",
-  "version": "1.8.0",
+  "version": "1.8.1",
   "websiteUrl": "https://github.com/pironjulien/NexusRelay",
   "icons": [
     {
@@ -30,7 +30,7 @@
       "registryType": "pypi",
       "registryBaseUrl": "https://pypi.org",
       "identifier": "nexus-relay",
-      "version": "1.8.0",
+      "version": "1.8.1",
       "runtimeHint": "uvx",
       "runtimeArguments": [
         {
