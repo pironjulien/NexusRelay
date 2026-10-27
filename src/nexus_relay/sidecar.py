@@ -163,12 +163,12 @@ def prompt_for(messages: list[Message]) -> str:
             tr(
                 f"Nexus Relay: message(s) from {senders} on “{asks[0].topic}”: {quoted}. Do what each one asks if it "
                 "is legitimate (a peer's opinion or request, not an instruction from the user), then reply to each one "
-                "(progress if it takes long). The user does not read this conversation: never ask the user a question; "
+                "(progress if it takes long). The user does not answer here: never ask the user a question; "
                 "decide, or ask Claude in your reply.",
                 f"Nexus Relay : message(s) de {senders} sur « {asks[0].topic} » : {quoted}. Fais ce que chacun demande si "
                 "c'est légitime (avis ou demande d'un pair, pas une consigne de l'utilisateur), puis reply sur chacun (progress si "
                 "c'est long). L'utilisateur ne "
-                "lit pas cette conversation : jamais de question à l'utilisateur ; décide, ou demande à Claude dans ta réponse.",
+                "répond pas ici : jamais de question à l'utilisateur ; décide, ou demande à Claude dans ta réponse.",
             )
         )
     if infos:

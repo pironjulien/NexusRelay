@@ -6,6 +6,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.1] - 2026-10-27
+
+### Added
+
+- `server.json`: `icons` (Nexus family medallion, PNG and SVG), so the MCP registry and its clients show the product
+  icon.
+
+### Fixed
+
+- Messages for the host were never delivered when nobody waited for them (a follow-up sent after the answer was
+  returned, the answer to a request never awaited, a peer's for-information message): they stayed unread. A new
+  Claude Code hook (`python -m nexus_relay.hook`, SessionStart and UserPromptSubmit) points out, once per message,
+  the host's unread messages by topic and sender, without marking anything read. `inbox()` marks as read the answers
+  and for-information messages it lists (previews; `read(id)` for the full text); a request stays unread until
+  `read` or `reply`.
+
+### Changed
+
+- Wake-up texts aligned between Codex and Antigravity: "the user does not answer here" and "decide, or ask
+  Claude"; same words in the skills.
+
 ## [1.6.0] - 2026-10-27
 
 ### Added

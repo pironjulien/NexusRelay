@@ -640,6 +640,33 @@ def test_reponse_tardive_jointe_au_prochain_appel_puis_lue(monkeypatch: pytest.M
     assert server._box().state("abandoned-waits") == {}  # réponse définitive rendue : plus suivie
 
 
+def test_messages_de_l_hote_signales_par_le_hook_puis_remis_par_inbox(monkeypatch: pytest.MonkeyPatch):
+    """27/10 : ✉26 dans la barre, des compléments après la réponse rendue et des « pour info » que l'hôte ne voyait pas.
+    Le hook les signale une fois par conversation ; inbox les remet (l'hôte ne reçoit que réponses et « pour info »)."""
+    from nexus_relay import hook
+
+    sent = call(server.send("codex", "q", topic="t"))
+    wake.wait_on(sent["id"], time.time() + 60)  # une session attend la réponse : elle lui reste
+    as_agent(monkeypatch, "codex")
+    call(server.reply(sent["id"], "verdict"))
+    call(server.reply(sent["id"], "complément"))
+    call(server.send("claude", "avancement", topic="t", info=True))
+    as_agent(monkeypatch, "claude")
+    box = server._box()
+    text = hook.notice(box, "conv-1") or ""
+    assert "1 message(s)" in text and "t (codex, 1)" in text
+    assert hook.notice(box, "conv-1") is None and hook.notice(box, "conv-2")  # une fois par conversation
+    assert hook.notice(box, "conv-1", agent="codex") is None  # un pair est réveillé
+    assert "late_replies" not in call(server.track(sent["id"]))  # jamais remis à une session qui fait autre chose
+    first = call(server.inbox())
+    assert [m["text"].splitlines()[1] for m in first["unread"]] == ["avancement"]
+    wake.wait_done(sent["id"])
+    assert hook.notice(box, "conv-1")  # la réponse n'est plus réservée : nouvelle pour la conversation
+    second = call(server.inbox())
+    assert {m["text"].splitlines()[1] for m in second["unread"]} == {"verdict", "complément"}
+    assert not box.unread("claude") and hook.notice(box, "conv-3") is None
+
+
 def test_reponse_tardive_rendue_meme_si_le_suivi_ne_s_ecrit_pas(monkeypatch: pytest.MonkeyPatch):
     """Relecture de Codex, 24/10 : une erreur d'écriture du suivi consommait la réponse (lue) sans la rendre."""
     monkeypatch.setattr(server, "WAIT_POLL_S", 0.05)

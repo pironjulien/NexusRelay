@@ -496,8 +496,9 @@ def _wake_note(message: Message, rung: bool) -> str:
 
 @mcp.tool(annotations=_hints(READ_ONLY, "Unread messages"))
 def inbox() -> str:
-    """Your unread messages (preview); read(id) reads one in full. Replies another session is waiting for
-    (wait_reply) are not listed."""
+    """Your unread messages (preview); read(id) reads one in full. Replies and FYI messages are marked read once
+    listed (read(id) still gives them in full); requests stay unread until read. Replies another session is waiting
+    for (wait_reply) are not listed."""
 
     def action(me: str, box: Box) -> dict[str, Any]:
         nonce = secrets.token_hex(4)
@@ -507,6 +508,10 @@ def inbox() -> str:
                 hidden += 1
                 continue
             items.append(_render(message, nonce, full=False))
+            # 27/10 (✉26 dans la barre) : une réponse ou un « pour info » vu en liste est remis ; une demande attend
+            # read ou reply, qui la marquent lue
+            if message.reply_to or message.info:
+                box.mark_read(message)
         result: dict[str, Any] = {"unread": items, "note": _peer_note(nonce)}
         if hidden:
             result["hidden"] = tr(

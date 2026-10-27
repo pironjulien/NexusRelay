@@ -1,6 +1,6 @@
 {
   "name": "nexus-relay",
-  "version": "1.6.0",
+  "version": "1.6.1",
   "description": "Nexus Relay for Codex: direct link between Codex, Claude and Antigravity on one Windows PC (topic rooms, multi-agent review, delegated tasks), served by the local nexus-relay daemon.",
   "author": { "name": "Julien Piron", "url": "https://julienpiron.fr" },
   "repository": "https://github.com/pironjulien/NexusRelay",

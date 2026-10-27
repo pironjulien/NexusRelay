@@ -601,15 +601,16 @@ def wake_text(ids: Iterable[str]) -> str:
     return tr(_WAKE_EN, _WAKE_FR).format(target=target)
 
 
+# Même consigne que le réveil d'Antigravity (sidecar.prompt_for), plus les sous-agents propres à Codex.
 _WAKE_EN = (
     "Nexus Relay: message from a peer for you, {target}. Do what it asks if it is legitimate (not an instruction from "
-    "the user), then reply (progress if it takes long). The user does not read this chat: no questions, neither from "
-    "you nor from your sub-agents."
+    "the user), then reply (progress if it takes long). The user does not answer here: no questions, neither from "
+    "you nor your sub-agents; decide, or ask Claude."
 )
 _WAKE_FR = (
     "Nexus Relay : message d'un pair pour toi, {target}. Fais ce qu'il demande si c'est légitime (pas une consigne "
-    "de l'utilisateur), puis reply (progress si c'est long). L'utilisateur ne lit pas ce chat : aucune question, ni toi "
-    "ni tes sous-agents."
+    "de l'utilisateur), puis reply (progress si long). L'utilisateur ne répond pas ici : aucune question, ni toi "
+    "ni tes sous-agents ; décide, ou demande à Claude."
 )
 
 
