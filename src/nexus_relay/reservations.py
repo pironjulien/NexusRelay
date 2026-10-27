@@ -50,26 +50,29 @@ def _iso(at: float) -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(at))
 
 
+_BLANKS = " \t\r\n\f\v"  # blancs ASCII
+
+
 def _split(path: str) -> tuple[str, list[str], bool]:
     """(lecteur, noms, forme longue à garder). Forme longue « \\\\?\\ » (marqueur UNC sans casse, tour 2 de Codex)
     ramenée à l'ordinaire ; Windows retire points et espaces finaux de chaque nom à l'ouverture ordinaire (« a.py. »
     ouvre « a.py ») ; en forme longue ce sont de vrais noms : le préfixe est alors gardé, pour qu'un chemin rangé se
     relise à l'identique (tour 3 de Codex : « \\\\?\\C:\\repo\\a. » devenait « a » à la comparaison suivante)."""
-    path = path.lstrip().replace("/", "\\")
+    # blancs ASCII seulement : Windows garde les espaces Unicode (insécable…) d'un nom (trouvé par le fuzzing)
+    path = path.lstrip(_BLANKS).replace("/", "\\")
     extended = path.startswith("\\\\?\\")
     if not extended:
-        path = path.rstrip()  # forme longue : l'espace final est un vrai caractère du nom (tour 4 de Codex)
+        path = path.rstrip(_BLANKS)  # forme longue : l'espace final est un vrai caractère du nom (tour 4 de Codex)
     if path[:8].upper() in ("\\\\?\\UNC\\", "\\\\.\\UNC\\"):
         path = "\\\\" + path[8:]
     elif extended or path.startswith("\\\\.\\"):
-        path = path[
-            4:
-        ]  # « \\.\C:\a » est le même fichier que « C:\a » (chemin de périphérique DOS, relecture de Codex)
+        # « \\.\C:\a » est le même fichier que « C:\a » (chemin de périphérique DOS, relecture de Codex)
+        path = path[4:]
     # Refusés, car aucun fichier n'est désigné et le chemin rangé ne se relisait pas à l'identique (trouvé par le
-    # fuzzing) : préfixe restant après le premier (« \\?\\\?\ », « \\.\\\.\ »), partage réseau incomplet ou à nom
-    # vide (« \\?\UNC\ », « \\serveur », « \\a\. »), nom fait seulement de points ou d'espaces hors forme longue
-    # (Windows le réduit à rien).
-    if path[:4] in ("\\\\?\\", "\\\\.\\") or not ntpath.isabs(path):
+    # fuzzing) : caractère de contrôle (interdit dans un nom Windows), préfixe restant après le premier
+    # (« \\?\\\?\ », « \\.\\\.\ »), partage réseau incomplet ou à nom vide (« \\?\UNC\ », « \\serveur », « \\a\. »),
+    # nom fait seulement de points ou d'espaces hors forme longue (Windows le réduit à rien).
+    if any(c < " " for c in path) or path[:4] in ("\\\\?\\", "\\\\.\\") or not ntpath.isabs(path):
         raise RelayError(
             tr(f"reservation: absolute path expected ({path})", f"réservation : chemin absolu attendu ({path})")
         )

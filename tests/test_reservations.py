@@ -92,6 +92,8 @@ def test_lecteur_entier_et_unc_reservables():
         "\\\\?\\UNC\\?\\UNC",
         "C:\\ \\a",
         "C:\\...\\a",
+        "C:\\a\nb",
+        "C:\\a\x00b",
     ],
 )
 def test_chemin_sans_fichier_designe_refuse(path: str):
@@ -105,6 +107,9 @@ def test_alias_de_peripherique_et_motifs_unc_gardes():
     assert reservations.clean("\\\\.\\C:\\repo\\a.py") == "C:\\repo\\a.py"
     assert reservations.overlap("\\\\.\\C:\\repo\\a.py", "C:\\repo\\a.py")
     assert reservations.clean("\\\\.\\UNC\\nas\\projet\\a") == "\\\\nas\\projet\\a"
+    # espace insécable final : un vrai caractère du nom pour Windows, gardé et relu à l'identique (fuzzing)
+    assert reservations.clean("C:\\a\u00a0") == "C:\\a\u00a0" == reservations.clean(reservations.clean("C:\\a\u00a0"))
+    assert reservations.clean(" C:\\a \n") == "C:\\a"
     pattern = "\\\\nas\\projet*\\src\\*.py"
     assert reservations.clean(pattern) == pattern
     assert reservations.overlap(pattern, "\\\\nas\\projet-main\\src\\a.py")
