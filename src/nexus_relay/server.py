@@ -1132,8 +1132,12 @@ def search(query: str, topic: str | None = None, sender: str | None = None, limi
     """
 
     def action(me: str, box: Box) -> dict[str, Any]:
-        hits = search_mod.search(
-            box, query, check_topic(topic) if topic else None, normalize_agent(sender) if sender else None
+        total, hits = search_mod.search_page(
+            box,
+            query,
+            check_topic(topic) if topic else None,
+            normalize_agent(sender) if sender else None,
+            max(1, min(int(limit), 100)),
         )
         nonce = secrets.token_hex(4)
         shown = [
@@ -1147,9 +1151,9 @@ def search(query: str, topic: str | None = None, sender: str | None = None, limi
                 "snippet": f"⟦relay:{nonce} …⟧ {extract} ⟦/relay:{nonce}⟧",
                 **({"reply_to": m.reply_to} if m.reply_to else {}),
             }
-            for m, score, extract in hits[: max(1, min(int(limit), 100))]
+            for m, score, extract in hits
         ]
-        return {"total": len(hits), "hits": shown, "note": _peer_note(nonce)}
+        return {"total": total, "hits": shown, "note": _peer_note(nonce)}
 
     return _call(action)
 
@@ -1580,6 +1584,8 @@ def _serve_http(port: int) -> None:
 
     updater.resume()  # issue d'une mise à jour lancée avant cette relance ; état écrit pour l'appli Nexus
     updater.watch_latest()  # dernière version publiée, au plus une fois par jour
+    # index de recherche (1.6.0) : historique existant migré dès le démarrage, la première recherche n'attend pas
+    threading.Thread(target=search_mod.sync, args=(_box(),), name="nexus-relay-index", daemon=True).start()
     print(
         f"nexus-relay {__version__} : démon sur 127.0.0.1:{port}, {recovered} réveil(s) repris",
         file=sys.stderr,

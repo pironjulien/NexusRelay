@@ -6,6 +6,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-10-27
+
+### Added
+
+- On PyPI and in the official MCP registry: `uvx --python 3.14 nexus-relay` starts the server over stdio for one
+  agent (`NEXUS_RELAY_AGENT`), with no install step; `get.ps1` stays the complete setup. Releases are published by
+  Trusted Publishing (`publish.yml`, OIDC, no token), then `server.json` goes to the registry
+  (`io.github.pironjulien/nexus-relay`).
+
+### Changed
+
+- `search` uses a SQLite FTS5 index (trigram, accent and case insensitive) in `~/.nexus/relay/v1/index` instead of
+  reading every message on each call. Existing history is indexed when the daemon starts (or at the first search);
+  new messages are added at each search; a missing index is rebuilt. Results are the same as before.
+- pyright 1.1.414 (development).
+
 ## [1.5.3] - 2026-10-27
 
 ### Changed
@@ -122,7 +138,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - English tool descriptions with titles and MCP annotations; `reply` accepts `done`/`refused`/`failed` and
   `agree`/`disagree`.
 
-[Unreleased]: https://github.com/pironjulien/NexusRelay/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/pironjulien/NexusRelay/compare/v1.6.0...HEAD
+[1.6.0]: https://github.com/pironjulien/NexusRelay/compare/v1.5.3...v1.6.0
+[1.5.3]: https://github.com/pironjulien/NexusRelay/compare/v1.5.2...v1.5.3
+[1.5.2]: https://github.com/pironjulien/NexusRelay/compare/v1.5.1...v1.5.2
+[1.5.1]: https://github.com/pironjulien/NexusRelay/compare/v1.5.0...v1.5.1
+[1.5.0]: https://github.com/pironjulien/NexusRelay/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/pironjulien/NexusRelay/compare/v1.3.2...v1.4.0
 [1.3.2]: https://github.com/pironjulien/NexusRelay/compare/v1.3.1...v1.3.2
 [1.3.1]: https://github.com/pironjulien/NexusRelay/compare/v1.3.0...v1.3.1

@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 import time
+from contextlib import closing
+from pathlib import Path
 
 import pytest
 from conftest import as_agent, call
 
+from nexus_relay import search as search_mod
 from nexus_relay import server
+from nexus_relay.box import Box
 
 
 def _fill(monkeypatch: pytest.MonkeyPatch) -> dict[str, str]:
@@ -75,3 +80,115 @@ def test_resume_borne_les_demandes_ouvertes(monkeypatch: pytest.MonkeyPatch):
 
 def test_resume_sujet_inconnu_refuse():
     assert "inconnu" in json.loads(server.summary("rien"))["error"]
+
+
+# --- 1.6.0 : index SQLite FTS5 à la place du parcours en mémoire
+
+
+def _legacy(box: Box, query: str, topic: str | None = None, sender: str | None = None) -> list[tuple[str, int, str]]:
+    """Le parcours en mémoire de la 1.5.3, référence des résultats attendus de l'index."""
+    wanted = search_mod.terms(query)
+    pool = box.topic_messages(topic) if topic else box.all()
+    hits = []
+    for message in pool:
+        if sender and message.sender != sender:
+            continue
+        plain = search_mod.bare(message.text)
+        counts = [plain.count(term) for term in wanted]
+        if not all(counts):
+            continue
+        folded, where = search_mod.fold(message.text)
+        first = min(i for term in wanted if (i := folded.find(term)) >= 0)
+        hits.append((message.id, sum(counts), search_mod.snippet(message.text, where[first] if where else 0)))
+    hits.sort(key=lambda hit: (hit[1], hit[0]), reverse=True)
+    return hits
+
+
+def _indexed(box: Box, query: str, topic: str | None = None, sender: str | None = None) -> list[tuple[str, int, str]]:
+    return [(m.id, score, extract) for m, score, extract in search_mod.search(box, query, topic, sender)]
+
+
+TEXTS = [
+    ("claude", "codex", "relais", "Réveil de Codex : ÉCHEC du port 9223, relance à 10 h"),
+    ("codex", "claude", "relais", "Ok : le réveil marche, café « crème » et Straße ; a b c"),
+    ("antigravity", "claude", "nexuswindows", "Banc NexusWindows : 44 sur 51, réveil réveil réveil"),
+    ("claude", "antigravity", "nexuswindows", 'Le "pont, jetons" reste ouvert ; py 3.14 ; ok'),
+    ("claude", "codex", "nexusbrowser", "Sécurité des jetons : SECURITE haute, sécurité, securite"),
+]
+QUERIES = [
+    "reveil",
+    "RÉVEIL",
+    "securite jetons",
+    "a",
+    "é",
+    "ok",
+    "py",
+    "10",
+    "ss",
+    "strasse",
+    '"pont, jetons"',
+    "echec 9223",
+    "reveil codex",
+    "rien du tout",
+    "ab",
+    "e",
+]
+
+
+def _corpus(box: Box) -> None:
+    for sender, to, topic, text in TEXTS:
+        box.post(sender, to, text, topic)
+
+
+def test_index_memes_resultats_que_le_parcours(isolated: Path):
+    box = Box(isolated / "boite")
+    _corpus(box)
+    for query in QUERIES:
+        for topic, sender in [(None, None), ("relais", None), (None, "claude"), ("nexuswindows", "antigravity")]:
+            expected = _legacy(box, query, topic, sender)
+            assert _indexed(box, query, topic, sender) == expected, (query, topic, sender)
+            total, page = search_mod.search_page(box, query, topic, sender, limit=2)
+            assert total == len(expected) and [(m.id, n, x) for m, n, x in page] == expected[:2]
+
+
+def test_index_migre_l_historique_existant(isolated: Path):
+    box = Box(isolated / "boite")
+    _corpus(box)  # messages déposés avant toute recherche : pas d'index
+    assert not search_mod.index_path(box).exists()
+    assert search_mod.sync(box) == len(TEXTS)  # migration de l'historique
+    assert search_mod.index_path(box).exists() and search_mod.sync(box) == 0
+    expected = _legacy(box, "reveil")
+    assert _indexed(box, "reveil") == expected and len(expected) == 3
+    search_mod.index_path(box).unlink()  # index perdu : reconstruit à la recherche suivante
+    assert _indexed(box, "reveil") == expected
+
+
+def test_index_suit_les_nouveaux_messages_et_les_disparus(isolated: Path):
+    box = Box(isolated / "boite")
+    _corpus(box)
+    assert len(_indexed(box, "jetons")) == 2
+    added = box.post("codex", "claude", "Troisième avis sur les JETONS", "nexusbrowser")
+    assert _indexed(box, "jetons")[0][0] == added.id  # vu sans relancer quoi que ce soit
+    next((box.root / "messages").glob(f"{added.id}.*.json")).unlink()
+    assert [hit[0] for hit in _indexed(box, "jetons")] == [hit[0] for hit in _legacy(box, "jetons")]
+    assert added.id not in [hit[0] for hit in _indexed(box, "jetons")]
+
+
+def test_index_d_un_autre_schema_reconstruit(isolated: Path):
+    box = Box(isolated / "boite")
+    _corpus(box)
+    search_mod.sync(box)
+    with closing(sqlite3.connect(search_mod.index_path(box))) as db:
+        db.execute("PRAGMA user_version = 99")
+        db.commit()
+    assert _indexed(box, "reveil") == _legacy(box, "reveil")
+    with closing(sqlite3.connect(search_mod.index_path(box))) as db:
+        assert db.execute("PRAGMA user_version").fetchone()[0] == search_mod.SCHEMA
+        assert db.execute("SELECT count(*) FROM messages").fetchone()[0] == len(TEXTS)
+
+
+def test_message_illisible_ignore_comme_avant(isolated: Path):
+    box = Box(isolated / "boite")
+    _corpus(box)
+    (box.root / "messages" / "20260101T000000000-abcdef.claude.codex.relais.json").write_text("{", encoding="utf-8")
+    assert _indexed(box, "reveil") == _legacy(box, "reveil")

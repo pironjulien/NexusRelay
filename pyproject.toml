@@ -1,6 +1,6 @@
 [project]
 name = "nexus-relay"
-version = "1.5.3"
+version = "1.6.0"
 description = "Shared room for Claude, Codex and Antigravity on one Windows PC: local MCP daemon, each agent woken in its own app (experimental)"
 readme = "README.md"
 license = "MIT"
@@ -23,7 +23,10 @@ dependencies = [
 ]
 
 [project.urls]
+Homepage = "https://github.com/pironjulien/NexusRelay"
 Repository = "https://github.com/pironjulien/NexusRelay"
+Changelog = "https://github.com/pironjulien/NexusRelay/blob/main/CHANGELOG.md"
+Issues = "https://github.com/pironjulien/NexusRelay/issues"
 
 [project.scripts]
 nexus-relay = "nexus_relay.server:main"
@@ -37,7 +40,7 @@ build-backend = "uv_build"
 dev = [
     "pytest>=9.1.1",
     "ruff>=0.17.0",
-    "pyright==1.1.407",
+    "pyright==1.1.414",
 ]
 
 [tool.ruff]

@@ -1,7 +1,10 @@
 # Nexus Relay
 
+<!-- mcp-name: io.github.pironjulien/nexus-relay -->
+
 <img src="https://raw.githubusercontent.com/pironjulien/NexusRelay/main/plugins/nexus-relay/logo.png" alt="Nexus Relay icon" width="96">
 
+[![PyPI](https://img.shields.io/pypi/v/nexus-relay.svg)](https://pypi.org/project/nexus-relay/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/pironjulien/NexusRelay/blob/main/LICENSE)
 ![Python 3.14](https://img.shields.io/badge/python-3.14-blue.svg)
 ![Windows only](https://img.shields.io/badge/platform-Windows-lightgrey.svg)
@@ -62,6 +65,35 @@ changes it.
    "Nexus Relay", folder `%USERPROFILE%\.nexus\relay\codex-projet`.
 3. In Claude Code, ask: *"use Nexus Relay to ask Codex for a second opinion on this file"*. Check both directions with
    `selftest(to="codex")` and `selftest(to="antigravity")`.
+
+### From PyPI (one line, stdio)
+
+The same server is on [PyPI](https://pypi.org/project/nexus-relay/) and in the
+[official MCP registry](https://registry.modelcontextprotocol.io/) (`io.github.pironjulien/nexus-relay`). One line
+starts it over stdio for one agent, with no install step:
+
+```powershell
+uvx --python 3.14 nexus-relay
+```
+
+Set `NEXUS_RELAY_AGENT` to the agent the connection speaks for (`claude`, `codex` or `antigravity`). For instance, in
+a client that reads `mcpServers` JSON:
+
+```json
+{
+  "mcpServers": {
+    "nexus-relay": {
+      "command": "uvx",
+      "args": ["--python", "3.14", "nexus-relay@latest"],
+      "env": { "NEXUS_RELAY_AGENT": "claude" }
+    }
+  }
+}
+```
+
+It shares the same room (`~\.nexus\relay`) as the daemon. The one-line installer above remains the complete setup:
+background daemon, Antigravity plugin and sidecar, Codex project, token and updates. Under OneDrive, add
+`--link-mode copy` to `uvx` (uv's cache cannot hard-link there).
 
 ## Manual install
 
@@ -157,7 +189,7 @@ with `selftest(to="codex")` and `selftest(to="antigravity")`.
 | `close` | Close a topic (its conversations are archived) |
 | `reserve`, `release`, `reservations` | Reserve files before editing them, release them, list who holds what |
 | `file_reservation_paths`, `release_file_reservations` | The same reservations under the [mcp_agent_mail](https://github.com/Dicklesworthstone/mcp_agent_mail) names and parameters |
-| `search`, `summary` | Full-text search of the room; summary of a topic |
+| `search`, `summary` | Full-text search of the whole room history (SQLite FTS5 index, accent and case insensitive); summary of a topic |
 | `status` | Unread counts, last wakes, bell threads, Codex port, Antigravity sidecar, quotas |
 | `selftest` | Interface landmarks of both apps; with `to`, a real wake round trip |
 | `where`, `survey` | Where a button or menu is in Codex or Antigravity; refresh an app's interface map |
@@ -226,6 +258,7 @@ install made by the one-line installer (`%LOCALAPPDATA%\NexusRelay\app`) updates
   under their own privacy policy, as they do with everything else you show them. Do not post or attach anything you
   would not give those apps directly.
 - **What is stored**: messages and attachments in `~\.nexus\relay\v1` (plain JSON, readable by your user account),
+  a search index of those messages in `~\.nexus\relay\v1\index` (SQLite, rebuilt from the messages if deleted),
   interface maps of both apps in `~\.nexus\relay\v1\cartes` (element roles and visible labels, which can include
   conversation titles shown on screen), and one line per action in `%LOCALAPPDATA%\NexusJournal\relay` (never a message's text).
 - **How to remove everything**: delete the scheduled task "Nexus Relay" and stop its `pythonw` processes, then
