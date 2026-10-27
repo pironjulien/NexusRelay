@@ -24,9 +24,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - File reservations: paths that designate no file are refused (network path without server and share such as
   `\\?\UNC\` or `\\server`, doubled prefix such as `\\?\\\?\`, a device such as `\\.\PhysicalDrive0`, a control
-  character, a name made only of dots or spaces outside the long form); their stored form did not read back the same
-  (found by the new fuzzing). `\\.\C:\…` is stored as `C:\…`, the same file; a trailing Unicode space (no-break…)
-  is kept as part of the name, like Windows does.
+  character, a path without a real drive letter such as `\:\`, a name made only of dots or spaces outside the long
+  form); their stored form did not read back the same (found by the new fuzzing). `\\.\C:\…` is stored as `C:\…`,
+  the same file; a trailing Unicode space (no-break…) is kept as part of the name, like Windows does.
 
 ## [1.8.1] - 2026-10-27
 

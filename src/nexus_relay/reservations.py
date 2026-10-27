@@ -71,12 +71,14 @@ def _split(path: str) -> tuple[str, list[str], bool]:
     # Refusés, car aucun fichier n'est désigné et le chemin rangé ne se relisait pas à l'identique (trouvé par le
     # fuzzing) : caractère de contrôle (interdit dans un nom Windows), préfixe restant après le premier
     # (« \\?\\\?\ », « \\.\\\.\ »), partage réseau incomplet ou à nom vide (« \\?\UNC\ », « \\serveur », « \\a\. »),
-    # nom fait seulement de points ou d'espaces hors forme longue (Windows le réduit à rien).
-    if any(c < " " for c in path) or path[:4] in ("\\\\?\\", "\\\\.\\") or not ntpath.isabs(path):
+    # nom fait seulement de points ou d'espaces hors forme longue (Windows le réduit à rien), chemin sans vraie lettre
+    # de lecteur ni partage (« \:\ », «  :\ », que ntpath dit absolus).
+    drive, rest = ntpath.splitdrive(ntpath.normpath(path))
+    lettered = len(drive) == 2 and drive[0].isascii() and drive[0].isalpha() or drive.startswith("\\\\")
+    if any(c < " " for c in path) or path[:4] in ("\\\\?\\", "\\\\.\\") or not ntpath.isabs(path) or not lettered:
         raise RelayError(
             tr(f"reservation: absolute path expected ({path})", f"réservation : chemin absolu attendu ({path})")
         )
-    drive, rest = ntpath.splitdrive(ntpath.normpath(path))
     if drive.startswith("\\\\") and not _share(drive):
         raise RelayError(
             tr(

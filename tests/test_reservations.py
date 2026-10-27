@@ -94,6 +94,8 @@ def test_lecteur_entier_et_unc_reservables():
         "C:\\...\\a",
         "C:\\a\nb",
         "C:\\a\x00b",
+        "\\:\\",
+        "\\\\?\\ :\\a",
     ],
 )
 def test_chemin_sans_fichier_designe_refuse(path: str):

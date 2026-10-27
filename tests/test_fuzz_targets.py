@@ -25,3 +25,4 @@ def test_crashes_found_by_the_fuzzer() -> None:
             "TFxcCgoCXApcCgJcXApMXFwrXFxcAsdSYWNcXAAaGhoGGhoaGhoaGhoaGhoaGhoaGhoaGhoaGhoaGgIaGhoaGhoaGhoaGhoaGhoaGgEAAAAAAAAAGhpMXFwpCgJcClwK"
         )
     )
+    targets.target(base64.b64decode("Clw6XAo="))  # « \:\ » : chemin sans lecteur (CI, 27/10)
