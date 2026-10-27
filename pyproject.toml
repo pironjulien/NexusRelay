@@ -1,6 +1,6 @@
 [project]
 name = "nexus-relay"
-version = "1.6.2"
+version = "1.7.0"
 description = "Shared room for Claude, Codex and Antigravity on one Windows PC: local MCP daemon, each agent woken in its own app (experimental)"
 readme = "README.md"
 license = "MIT"
@@ -18,7 +18,7 @@ classifiers = [
 ]
 requires-python = ">=3.14"
 dependencies = [
-    "mcp>=2.3.0",
+    "mcp>=2.3.0,<3",
     "websocket-client>=1.8.0",
 ]
 

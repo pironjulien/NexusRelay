@@ -6,6 +6,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-10-27
+
+### Added
+- The MCP server sends its icon and website to clients when they connect, and announces how long its tool list stays
+  fresh (one minute, private cache: MCP protocol 2026-07-28).
+
+### Changed
+- The MCP SDK is capped below 3 (version 3 will remove what 2026-07-28 deprecates).
+
 ## [1.6.2] - 2026-10-27
 
 ### Fixed

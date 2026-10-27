@@ -9,8 +9,9 @@ expirée, elle reste sur disque, marquée (jamais supprimée).
 
     <racine>/reservations/<id>.json   {id, agent, paths, reason, exclusive, created, expires, released?}
 
-Garde de commit : `python -m nexus_relay.reservations --agent <moi> <fichiers…>` rend 1 si un fichier est réservé par
-un AUTRE agent (pour un hook pre-commit).
+Garde de commit : `python -m nexus_relay.reservations [--agent <moi>] [--staged] <fichiers…>` rend 1 si un fichier est
+réservé par un AUTRE agent ; sans --agent, l'agent est reconnu par ses processus parents. Branchée dans les dépôts par
+scripts/install_commit_guard.ps1 (hook scripts/pre-commit).
 """
 
 from __future__ import annotations
@@ -21,6 +22,7 @@ import ntpath
 import os
 import re
 import secrets
+import subprocess
 import sys
 import threading
 import time
@@ -235,18 +237,114 @@ def blocking(agent: str, files: list[str], box: Box | None = None) -> list[dict[
     ]
 
 
+# Exécutables dont descend une commande → agent qui la lance. Git ne le dit pas : les trois commitent sous l'identité
+# de Julien. Claude.exe (appli et claude-code), Codex.exe et ses services, Antigravity.exe.
+_ANCESTORS = (("claude", "claude"), ("codex", "codex"), ("antigravity", "antigravity"))
+
+
+def _processes() -> dict[int, tuple[int, str]]:
+    """pid → (pid parent, exécutable en minuscules), d'après un instantané Toolhelp de Windows ; vide ailleurs."""
+    if sys.platform != "win32":
+        return {}
+    import ctypes
+    from ctypes import wintypes
+
+    class Entry(ctypes.Structure):
+        _fields_ = [
+            ("dwSize", wintypes.DWORD),
+            ("cntUsage", wintypes.DWORD),
+            ("th32ProcessID", wintypes.DWORD),
+            ("th32DefaultHeapID", ctypes.c_size_t),
+            ("th32ModuleID", wintypes.DWORD),
+            ("cntThreads", wintypes.DWORD),
+            ("th32ParentProcessID", wintypes.DWORD),
+            ("pcPriClassBase", ctypes.c_long),
+            ("dwFlags", wintypes.DWORD),
+            ("szExeFile", ctypes.c_wchar * 260),
+        ]
+
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
+    kernel.CreateToolhelp32Snapshot.argtypes = [wintypes.DWORD, wintypes.DWORD]
+    kernel.Process32FirstW.argtypes = kernel.Process32NextW.argtypes = [wintypes.HANDLE, ctypes.POINTER(Entry)]
+    kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+    snapshot = kernel.CreateToolhelp32Snapshot(0x2, 0)  # TH32CS_SNAPPROCESS
+    if not snapshot or snapshot == ctypes.c_void_p(-1).value:
+        return {}
+    table: dict[int, tuple[int, str]] = {}
+    entry = Entry(dwSize=ctypes.sizeof(Entry))
+    try:
+        ok = kernel.Process32FirstW(snapshot, ctypes.byref(entry))
+        while ok:
+            table[entry.th32ProcessID] = (entry.th32ParentProcessID, entry.szExeFile.lower())
+            ok = kernel.Process32NextW(snapshot, ctypes.byref(entry))
+    finally:
+        kernel.CloseHandle(snapshot)
+    return table
+
+
+def whoami(table: dict[int, tuple[int, str]] | None = None, pid: int | None = None) -> str:
+    """Agent qui lance la commande : NEXUS_RELAY_AGENT, sinon le plus proche ancêtre reconnu ; « user » (Julien à la
+    main) quand aucun ne l'est."""
+    if named := os.environ.get("NEXUS_RELAY_AGENT", "").strip():
+        return normalize_party(named)
+    table = _processes() if table is None else table
+    pid, seen = os.getpid() if pid is None else pid, set()
+    while pid in table and pid not in seen:  # pid déjà vu : cycle d'un pid réutilisé, on s'arrête
+        seen.add(pid)
+        pid, exe = table[pid]
+        for prefix, agent in _ANCESTORS:
+            if exe.startswith(prefix):
+                return agent
+    return normalize_party("user")
+
+
+def staged() -> list[str]:
+    """Fichiers indexés du dépôt courant, chemins absolus ; un renommage compte ses deux noms (--no-renames)."""
+
+    def git(*args: str) -> str:
+        return subprocess.run(
+            ["git", *args],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=True,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        ).stdout
+
+    top = git("rev-parse", "--show-toplevel").strip()
+    return [
+        os.path.join(top, name)
+        for name in git("diff", "--cached", "--name-only", "--no-renames", "-z").split("\0")
+        if name
+    ]
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Garde de commit Nexus Relay : fichiers réservés par un autre agent")
-    parser.add_argument("--agent", required=True, help="toi : claude, codex ou antigravity")
+    parser.add_argument(
+        "--agent", help="toi : claude, codex ou antigravity (par défaut : reconnu par les processus parents)"
+    )
+    parser.add_argument("--staged", action="store_true", help="fichiers indexés du dépôt courant (hook pre-commit)")
     parser.add_argument("files", nargs="*")
     args = parser.parse_args(argv)
-    hits = blocking(args.agent, args.files)
+    agent = normalize_party(args.agent) if args.agent else whoami()
+    hits = blocking(agent, [*args.files, *(staged() if args.staged else [])])
     for hit in hits:
         line = tr(
             f"{hit['file']}: reserved by {hit['agent']} ({hit['reason']}) until {hit['expires']}",
             f"{hit['file']} : réservé par {hit['agent']} ({hit['reason']}) jusqu'à {hit['expires']}",
         )
         print(line, file=sys.stderr)
+    if hits:
+        print(
+            tr(
+                f"Nexus Relay: commit refused for {agent}; wait for the release or ask the holder through the relay.",
+                f"Nexus Relay : commit refusé pour {agent} ; attendre la libération ou demander au détenteur par le "
+                "relais.",
+            ),
+            file=sys.stderr,
+        )
     return 1 if hits else 0
 
 

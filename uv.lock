@@ -305,7 +305,7 @@ wheels = [
 
 [[package]]
 name = "nexus-relay"
-version = "1.6.2"
+version = "1.7.0"
 source = { editable = "." }
 dependencies = [
     { name = "mcp" },
@@ -321,7 +321,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "mcp", specifier = ">=2.3.0" },
+    { name = "mcp", specifier = ">=2.3.0,<3" },
     { name = "websocket-client", specifier = ">=1.8.0" },
 ]
 

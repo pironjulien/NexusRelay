@@ -168,3 +168,47 @@ def test_garde_de_commit(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         check=False,
     )
     assert done.returncode == 1 and "codex" in done.stderr
+
+
+def test_agent_reconnu_par_ses_ancetres(monkeypatch: pytest.MonkeyPatch):
+    """Sans --agent ni NEXUS_RELAY_AGENT : le plus proche ancêtre reconnu ; Julien à la main → « user »."""
+    monkeypatch.delenv("NEXUS_RELAY_AGENT", raising=False)
+    table = {
+        10: (9, "python.exe"),
+        9: (8, "sh.exe"),
+        8: (7, "codex.exe"),
+        7: (6, "claude.exe"),
+        20: (21, "pwsh.exe"),
+        21: (20, "explorer.exe"),  # cycle d'un pid réutilisé
+    }
+    assert reservations.whoami(table, 10) == "codex"
+    assert reservations.whoami({10: (5, "python.exe"), 5: (1, "antigravity.exe")}, 10) == "antigravity"
+    assert reservations.whoami(table, 20) == "user"
+    monkeypatch.setenv("NEXUS_RELAY_AGENT", "claude")
+    assert reservations.whoami(table, 10) == "claude"
+
+
+def test_hook_refuse_le_commit_d_un_fichier_reserve(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """--staged lit l'index du dépôt : fichier réservé par codex indexé par claude → refus ; libéré → accepté."""
+    repo = tmp_path / "depot"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    (repo / "a.py").write_text("x = 1\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(repo), "add", "a.py"], check=True)
+    as_agent(monkeypatch, "codex")
+    call(server.reserve([str(repo / "a.py")], "refonte"))
+
+    def guard() -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [sys.executable, "-m", "nexus_relay.reservations", "--agent", "claude", "--staged"],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=False,
+        )
+
+    refused = guard()
+    assert refused.returncode == 1 and "codex" in refused.stderr and "a.py" in refused.stderr
+    call(server.release())
+    assert guard().returncode == 0

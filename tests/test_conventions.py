@@ -23,7 +23,7 @@ def test_sous_processus_sans_fenetre():
     import ast
 
     spawners = sorted(p.name for p in SOURCES if "subprocess." in p.read_text(encoding="utf-8"))
-    assert spawners == ["agentapi.py", "cdp.py", "daemon.py", "updater.py"], spawners
+    assert spawners == ["agentapi.py", "cdp.py", "daemon.py", "reservations.py", "updater.py"], spawners
     for name in spawners:
         tree = ast.parse((ROOT / "src" / "nexus_relay" / name).read_text(encoding="utf-8"))
         calls = [

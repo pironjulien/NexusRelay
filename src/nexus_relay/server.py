@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import calendar
 import json
+import logging
 import os
 import re
 import secrets
@@ -29,9 +30,10 @@ from contextvars import ContextVar
 from pathlib import Path
 from typing import Annotated, Any
 
+from mcp.server.caching import CacheHint
 from mcp.server.mcpserver import Context, Image, MCPServer
 from mcp.shared.exceptions import MCPError
-from mcp.types import CallToolResult, ContentBlock, TextContent, ToolAnnotations
+from mcp.types import CallToolResult, ContentBlock, Icon, TextContent, ToolAnnotations
 
 from . import __version__, cartes, credits, journal, wake
 from . import reservations as reservations_mod
@@ -100,6 +102,20 @@ def _peer_note(n: str) -> str:
 mcp = MCPServer(
     name="nexus-relay",
     version=__version__,
+    # Icônes et site déjà déclarés dans server.json (registre MCP), envoyés aussi aux clients ; liste des outils fixe
+    # pour une version : annoncée fraîche une minute (protocole 2026-07-28, cache privé).
+    website_url="https://github.com/pironjulien/NexusRelay",
+    icons=[
+        Icon(
+            src="https://raw.githubusercontent.com/pironjulien/NexusRelay/main/plugins/nexus-relay/logo.png",
+            mime_type="image/png",
+            sizes=["256x256"],
+        ),
+        Icon(
+            src="https://julienpiron.fr/nexusrelay/assets/nexusrelay-mark.svg", mime_type="image/svg+xml", sizes=["any"]
+        ),
+    ],
+    cache_hints={"tools/list": CacheHint(ttl_ms=61_800, scope="private")},
     instructions=(
         "Shared room of Claude, Antigravity and Codex on this PC, without going through the user. "
         'send(to, text, topic) posts a message (topic: the project, e.g. "nexuswindows"); the recipient is woken '
@@ -1583,6 +1599,23 @@ async def _update_route(scope: Any, send: Any) -> None:
     await send({"type": "http.response.body", "body": payload})
 
 
+class _ClientGone(logging.Filter):
+    """Écarte du journal du démon la trace d'un client parti sans fermer sa connexion (ConnectionResetError dans
+    _ProactorBasePipeTransport._call_connection_lost, défaut connu d'asyncio sous Windows) : sans effet sur le
+    service, elle noyait les vraies erreurs (606 traces sur 6 266 lignes le 27/10). Toute autre erreur d'asyncio reste
+    écrite."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        exc = record.exc_info[1] if record.exc_info else None
+        return not (isinstance(exc, ConnectionResetError) and "_call_connection_lost" in record.getMessage())
+
+
+def quiet_client_resets() -> None:
+    logger = logging.getLogger("asyncio")
+    if not any(isinstance(f, _ClientGone) for f in logger.filters):
+        logger.addFilter(_ClientGone())
+
+
 def _serve_http(port: int) -> None:
     """Démon unique sur 127.0.0.1, jeton : NEXUS_MCP_TOKEN, ou le fichier NEXUS_MCP_TOKEN_FILE."""
     import uvicorn
@@ -1593,6 +1626,7 @@ def _serve_http(port: int) -> None:
     if len(token) < 32:
         raise SystemExit("Jeton absent ou trop court (NEXUS_MCP_TOKEN ou NEXUS_MCP_TOKEN_FILE, 32 caractères au moins)")
     guarded = http_app(token)
+    quiet_client_resets()
     loaded = code_fingerprint()
     mark_restartable("daemon")
     recovered = bell(_box()).recover()
