@@ -21,6 +21,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `nexus_relay.daemon` also takes the declared request, then reads the spec again. A `NEXUS_RELAY_HOME` inherited
   from the launcher no longer sends the daemon to another mailbox than the one holding its requests.
 
+### Fixed
+- File reservations: a network path without server and share (`\\?\UNC\`, `\\server`) is refused; it designated no
+  file and its stored form did not read back the same (found by the new fuzzing).
+
 ## [1.8.1] - 2026-10-27
 
 ### Fixed

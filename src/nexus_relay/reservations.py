@@ -68,6 +68,15 @@ def _split(path: str) -> tuple[str, list[str], bool]:
             tr(f"reservation: absolute path expected ({path})", f"réservation : chemin absolu attendu ({path})")
         )
     drive, rest = ntpath.splitdrive(ntpath.normpath(path))
+    if drive.startswith("\\\\") and len([p for p in drive[2:].split("\\") if p]) < 2:
+        # « \\?\UNC\ » ou « \\serveur » seul : aucun fichier désigné, et le chemin rangé ne se relisait pas à
+        # l'identique (trouvé par le fuzzing)
+        raise RelayError(
+            tr(
+                f"reservation: network path without server and share ({path})",
+                f"réservation : chemin réseau sans serveur ni partage ({path})",
+            )
+        )
     parts = [p for p in rest.split("\\") if p]
     if not extended:
         parts = [p.rstrip(". ") or p for p in parts]

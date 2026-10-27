@@ -12,6 +12,7 @@ import pytest
 from conftest import as_agent, call
 
 from nexus_relay import reservations, server
+from nexus_relay.box import RelayError
 
 
 def test_reserver_puis_conflit_pour_un_autre(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -75,6 +76,13 @@ def test_lecteur_entier_et_unc_reservables():
     assert reservations.clean("C:\\") == "C:\\" and reservations.clean(reservations.clean("C:\\")) == "C:\\"
     assert reservations.clean("\\\\?\\UNC\\serveur\\partage\\a.txt") == "\\\\serveur\\partage\\a.txt"
     assert call(server.reserve(["C:\\"], "tout le lecteur", ttl_min=1))
+
+
+@pytest.mark.parametrize("path", ["\\\\?\\UNC\\", "\\\\", "\\\\serveur", "\\\\serveur\\", "\\\\\\"])
+def test_unc_sans_serveur_ni_partage_refuse(path: str):
+    """Trouvé par le fuzzing (fuzz/targets.py) : « \\\\?\\UNC\\ » devenait « \\\\\\ », qui ne se relisait pas."""
+    with pytest.raises(RelayError):
+        reservations.clean(path)
 
 
 def test_meme_agent_prolonge_et_libere(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):

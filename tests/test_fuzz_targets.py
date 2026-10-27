@@ -13,3 +13,7 @@ def test_targets_hold_on_random_inputs() -> None:
     rng = random.Random(1618)
     for _ in range(20000):
         targets.target(rng.randbytes(rng.randrange(0, 200)))
+
+
+def test_crashes_found_by_the_fuzzer() -> None:
+    targets.target(bytes.fromhex("3d5c5c3f5c554e435c"))  # « \?\UNC\ » : chemin rangé instable (CI, 27/10)
