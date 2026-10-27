@@ -87,9 +87,22 @@ def no_network(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(socket.socket, "connect", connect)
 
 
+def payload(result: Any) -> dict[str, Any]:
+    """JSON rendu par un outil, succès ou erreur : texte seul, ou CallToolResult des outils à schéma (schemas.py), dont
+    le premier bloc texte et le structuredContent portent les mêmes données (erreur : isError, sans données)."""
+    if isinstance(result, str):
+        return json.loads(result)
+    data = json.loads(result.content[0].text)
+    if data["status"] == "success":
+        assert not result.is_error and result.structured_content == data
+    else:
+        assert result.is_error and result.structured_content is None
+    return data
+
+
 def call(result: Any) -> dict[str, Any]:
-    """Réponse JSON d'un outil ; read rend un CallToolResult (texte, images) : son structuredContent.result."""
-    data = json.loads(result if isinstance(result, str) else result.structured_content["result"])
+    """Réponse JSON d'un outil, réussie."""
+    data = payload(result)
     assert data["status"] == "success", data
     return data
 

@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-import json
 import sqlite3
 import time
 from contextlib import closing
 from pathlib import Path
 
 import pytest
-from conftest import as_agent, call
+from conftest import as_agent, call, payload
 
 from nexus_relay import search as search_mod
 from nexus_relay import server
@@ -54,7 +53,7 @@ def test_recherche_filtre_sujet_expediteur_phrase(monkeypatch: pytest.MonkeyPatc
 
 
 def test_recherche_vide_refusee():
-    assert json.loads(server.search("   "))["status"] == "error"
+    assert payload(server.search("   "))["status"] == "error"
 
 
 def test_resume_sujet_demandes_ouvertes_et_closes(monkeypatch: pytest.MonkeyPatch):
@@ -79,7 +78,7 @@ def test_resume_borne_les_demandes_ouvertes(monkeypatch: pytest.MonkeyPatch):
 
 
 def test_resume_sujet_inconnu_refuse():
-    assert "inconnu" in json.loads(server.summary("rien"))["error"]
+    assert "inconnu" in payload(server.summary("rien"))["error"]
 
 
 # --- 1.6.0 : index SQLite FTS5 à la place du parcours en mémoire

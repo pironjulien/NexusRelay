@@ -8,7 +8,7 @@ import time
 from pathlib import Path
 
 import pytest
-from conftest import as_agent, call
+from conftest import as_agent, call, payload
 
 from nexus_relay import journal, server, wake
 
@@ -126,7 +126,7 @@ def test_tour_arrete_journalise(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
 def test_identifiant_refuse_jamais_dans_appel():
     """Relecture de Codex : read(id="extrait confidentiel") gardait l'argument brut dans `appel`."""
     result = server.read("extrait confidentiel du message")
-    assert json.loads(result.structured_content["result"])["status"] == "error"
+    assert payload(result)["status"] == "error"
     line = journal_lines()[-1]
     assert line["action"] == "read" and line["appel"] is None and "confidentiel" not in json.dumps(line)
 

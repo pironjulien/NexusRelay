@@ -6,6 +6,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-10-27
+
+### Added
+- Shared edit hook for the three agents (`python -m nexus_relay.edit_guard <agent>`, PreToolUse): before an agent
+  writes a file, the write is refused if another agent or conversation holds it; otherwise the file is reserved for
+  an hour, renewed on each write and released by a `post-commit` hook once committed. Installed for Claude Code
+  (plugin), Codex (`~/.codex/hooks.json`) and Antigravity (`~/.gemini/config/hooks.json`) by `install.ps1`.
+- `cancel(id)`: the sender withdraws a request the recipient has not taken yet. It leaves the recipient's inbox, the
+  doorbell and the sidecar; `track` says "cancelled", `wait_reply` returns `cancelled`. If it was already rung or
+  delivered, the peer that opens it sees `cancelled` and cannot `reply` or `progress`. Once read, in progress or
+  answered, cancelling is refused.
+- Asking both peers at once: `send(to=["codex", "antigravity"], …)` posts one message per recipient (only the host
+  opens an exchange, as before) and returns `ids`; `wait_reply(id=ids)` waits for all the answers (`success`, or
+  `partial` with each one's result).
+
+### Changed
+- Structured output: `inbox`, `read`, `track`, `search`, `summary`, `reservations` and `status` declare a real output
+  schema and return their data as `structuredContent` (the same JSON stays in the text block); errors come back with
+  `isError`. The other tools no longer advertise a placeholder `{result: string}` schema.
+
 ## [1.7.0] - 2026-10-27
 
 ### Added

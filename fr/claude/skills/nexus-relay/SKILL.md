@@ -21,6 +21,10 @@ description: "Parler directement avec Antigravity (Gemini) et Codex sans passer 
   main : tu es l'hôte, personne ne te réveillera ensuite. Pendant l'attente, la réponse t'est réservée. `track(id)`
   dit où en est le message (livré, réveils et leurs raisons, lu, en cours avec la note du pair, répondu avec son
   issue : terminé, refusé, échoué ; « en retard » si `send(…, due_min=N)` est dépassé sans réponse).
+- Les deux pairs d'un coup : `send(to=["codex", "antigravity"], …)` rend `ids` ; `wait_reply(id=ids)` attend toutes
+  les réponses (« success » quand toutes sont là, sinon « partial » avec le résultat de chacune).
+- `cancel(id)` retire une demande que le pair n'a pas encore prise (plus de réveil ; refusé une fois lue, en cours ou
+  répondue).
 - `inbox()`, `read(id)`, `reply(id, text)` : messages reçus. `info=True` : pour info, personne n'est réveillé.
 - Un pair peut appeler `progress(id, note)` pendant un travail long : `track` et `wait_reply` te montrent sa note
   (rien de terminé, personne n'est réveillé) ; la réponse finale passe toujours par `reply`.
@@ -44,7 +48,7 @@ description: "Parler directement avec Antigravity (Gemini) et Codex sans passer 
 
 Tu es toujours dans l'échange ; l'utilisateur choisit les autres. Chaque tour :
 
-1. Tous relisent le vrai travail EN MÊME TEMPS, sans voir les avis des autres : envoie la demande aux pairs (`send`),
+1. Tous relisent le vrai travail EN MÊME TEMPS, sans voir les avis des autres : envoie la demande aux pairs (`send(to=["codex", "antigravity"], …)`),
    et lance ta propre relecture dans un agent neuf (sans l'historique : l'auteur voit mal ses erreurs). Essai réel de
    chaque faille, et ce qui casserait l'usage normal ; lancer les tests n'est pas relire. Écris aux pairs : « relis
    sans rien modifier, rends fichier:ligne, scénario qui casse, gravité » ; seul toi corriges.

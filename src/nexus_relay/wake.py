@@ -122,9 +122,11 @@ def _persist(change: Callable[[dict[str, float]], object]) -> None:
 
 
 def wait_on(question_id: str, until: float) -> None:
+    """Tout ou rien (relecture de Codex du 27/10) : écrite dans le salon d'abord, en mémoire ensuite ; une écriture
+    ratée lève sans laisser de réservation que personne ne libérerait (l'état d'avant reste)."""
     with _WAITED_LOCK:
-        WAITED[question_id] = until
         _persist(lambda kept: kept.__setitem__(question_id, until))
+        WAITED[question_id] = until
 
 
 def wait_done(question_id: str) -> None:
@@ -276,6 +278,7 @@ def retry_delay(state: dict[str, Any]) -> float:
 
 
 DONE = ("started", "uncertain")  # une sonnette a eu lieu (comptée)
+CANCELLED = "annulé"  # évènement posé par cancel : demande retirée par son expéditeur, plus rien à surveiller
 # issue d'un réveil dans le journal commun (FORMAT.md) : reporté parce que l'utilisateur est là ou le jeton pris = différé
 WAKE_ISSUES = {"started": "✓", "uncertain": "~", "deferred": "différé", "failed": "✗", "abandoned": "✗"}
 
@@ -612,6 +615,8 @@ def watch_codex(box: Box, now: float | None = None) -> list[str]:
             continue
         ring = box.ring_state(message.id) or {}
         events = box.events(message.id)
+        if any(e.get("kind") == CANCELLED for e in events):
+            continue  # marquée lue par cancel, jamais prise : un tour fini sans réponse est normal
         if ring.get("incident"):
             if ring.get("halt") and _resumed(events):  # il a repris : incident levé (relecture de Codex)
                 box.set_ring_state(

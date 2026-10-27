@@ -33,7 +33,7 @@ def _files(tmp_path: Path) -> tuple[Path, Path]:
 def _blocks(result: Any) -> tuple[dict, list]:
     """Rendu de read : le JSON (bloc texte, identique au structuredContent) puis les blocs image."""
     first, *images = result.content
-    assert first.type == "text" and json.loads(first.text) == json.loads(result.structured_content["result"])
+    assert first.type == "text" and json.loads(first.text) == result.structured_content
     return json.loads(first.text), images
 
 
@@ -169,16 +169,17 @@ def test_image_grossie_apres_envoi_pas_rendue(tmp_path: Path, monkeypatch: pytes
 
 
 def test_read_garde_son_schema_et_structured_content(tmp_path: Path):
-    """Relecture de Codex : read rendait structuredContent=None et plus de schéma de sortie, même sans image."""
+    """Relecture de Codex : read rendait structuredContent=None et plus de schéma de sortie, même sans image. Depuis
+    1.8.0 le schéma est réel (ReadOut) et structuredContent porte le message, validé par le SDK."""
     image, _ = _files(tmp_path)
     plain = call(server.send("codex", "texte seul", topic="t"))["id"]
     joined = call(server.send("codex", "avec image", topic="t", files=[str(image)]))["id"]
     tool = next(t for t in asyncio.run(server.mcp.list_tools()) if t.name == "read")
-    assert tool.output_schema and "result" in tool.output_schema["properties"]
+    assert tool.output_schema and "message" in tool.output_schema["properties"]
     for message_id in (plain, joined):
         result = asyncio.run(server.mcp.call_tool("read", {"id": message_id}))
         assert isinstance(result, CallToolResult) and result.structured_content
-        assert json.loads(result.structured_content["result"])["message"]["id"] == message_id
+        assert result.structured_content["message"]["id"] == message_id
 
 
 def test_pieces_jointes_bornees(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):

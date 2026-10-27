@@ -19,7 +19,7 @@ from nexus_relay import __version__
 TOOLS = {
     "send", "close", "inbox", "read", "reply", "progress", "wait_reply", "track", "reserve", "release",
     "file_reservation_paths", "release_file_reservations", "reservations", "search", "summary", "status",
-    "selftest", "where", "survey",
+    "selftest", "where", "survey", "cancel",
 }  # fmt: skip
 READ_ONLY = {"inbox", "track", "reservations", "search", "summary", "status", "where"}
 

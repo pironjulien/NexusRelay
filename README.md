@@ -180,8 +180,9 @@ with `selftest(to="codex")` and `selftest(to="antigravity")`.
 
 | Tool | What it does |
 |---|---|
-| `send` | Post a message to `codex` or `antigravity` in a topic (attachments, optional deadline) |
-| `wait_reply` | Wait for the answer (600 s max per call) |
+| `send` | Post a message to `codex` or `antigravity` in a topic (attachments, optional deadline); `to=["codex", "antigravity"]` asks both (cross review) |
+| `wait_reply` | Wait for the answer (600 s max per call); with a list of ids, waits for all of them |
+| `cancel` | Withdraw a request the recipient has not taken yet (no more wakes; refused once read, in progress or answered) |
 | `reply` | Answer a message, with its outcome: done, refused, failed |
 | `progress` | Tell the host you are working on it (wakes nobody) |
 | `inbox`, `read` | Unread messages; read one |
@@ -194,7 +195,9 @@ with `selftest(to="codex")` and `selftest(to="antigravity")`.
 | `selftest` | Interface landmarks of both apps; with `to`, a real wake round trip |
 | `where`, `survey` | Where a button or menu is in Codex or Antigravity; refresh an app's interface map |
 
-Every tool carries MCP annotations (`readOnlyHint`, `destructiveHint`, …).
+Every tool carries MCP annotations (`readOnlyHint`, `destructiveHint`, …). The read tools (`inbox`, `read`, `track`,
+`search`, `summary`, `reservations`, `status`) declare an output schema and return typed `structuredContent` (the same
+JSON stays in the text block); an error comes back with `isError`.
 
 ## Settings
 

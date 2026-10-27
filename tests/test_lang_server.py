@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 
 import pytest
-from conftest import as_agent, call
+from conftest import as_agent, call, payload
 
 from nexus_relay import server
 
@@ -18,7 +18,7 @@ def english(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_erreurs_en_anglais(monkeypatch: pytest.MonkeyPatch):
-    assert json.loads(server.track(MISSING))["error"] == f"message {MISSING} not found"
+    assert payload(server.track(MISSING))["error"] == f"message {MISSING} not found"
     sent = call(server.send("codex", "q", topic="t"))
     as_agent(monkeypatch, "antigravity")
     assert json.loads(server.reply(sent["id"], "x"))["error"] == "this message is not addressed to you"
@@ -41,4 +41,4 @@ def test_reveil_etat_et_note_en_anglais(monkeypatch: pytest.MonkeyPatch):
 
 def test_francais_avec_lang_fr(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("NEXUS_RELAY_LANG", "fr")
-    assert json.loads(server.track(MISSING))["error"] == f"message {MISSING} introuvable"
+    assert payload(server.track(MISSING))["error"] == f"message {MISSING} introuvable"

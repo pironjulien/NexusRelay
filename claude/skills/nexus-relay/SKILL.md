@@ -21,6 +21,10 @@ description: "Talk directly with Antigravity (Gemini) and Codex without going th
   turn: you are the host, nobody will wake you later. While you wait, the answer is reserved for you. `track(id)` says
   where the message stands (delivered, wake-ups and their reasons, read, in progress with the peer's note, answered with
   its outcome: done, refused, failed; "late" once `send(…, due_min=N)` is exceeded without an answer).
+- Both peers at once: `send(to=["codex", "antigravity"], …)` returns `ids`; `wait_reply(id=ids)` waits for all the
+  answers ("success" once all arrived, otherwise "partial" with each one's result).
+- `cancel(id)` withdraws a request the peer has not taken yet (no more wakes; refused once read, in progress or
+  answered).
 - `inbox()`, `read(id)`, `reply(id, text)`: received messages. `info=True`: for information, nobody is woken.
 - A peer may call `progress(id, note)` during long work: `track` and `wait_reply` show you its note (nothing is done
   yet, nobody is woken); the final answer always comes through `reply`.
@@ -45,7 +49,7 @@ description: "Talk directly with Antigravity (Gemini) and Codex without going th
 You are always in the exchange; the user picks the others. Each round:
 
 1. Everyone reviews the real work AT THE SAME TIME, without seeing the others' opinions: send the request to the peers
-   (`send`), and start your own review in a fresh agent (without the history: authors miss their own mistakes). Try
+   (`send(to=["codex", "antigravity"], …)`), and start your own review in a fresh agent (without the history: authors miss their own mistakes). Try
    each flaw for real, and what would break normal use; running the tests is not reviewing. Tell the peers: "review
    without changing anything, return file:line, breaking scenario, severity"; only you fix.
 2. `wait_reply`, then synthesis: duplicates merged, false alarms dismissed with a fact.

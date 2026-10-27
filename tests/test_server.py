@@ -7,7 +7,7 @@ import json
 import time
 
 import pytest
-from conftest import as_agent, call
+from conftest import as_agent, call, payload
 
 from nexus_relay import __version__, server, wake
 
@@ -32,7 +32,7 @@ def test_envoi_lecture_reponse_entre_les_trois(monkeypatch: pytest.MonkeyPatch):
 
 def test_identite_obligatoire(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("NEXUS_RELAY_AGENT", "")
-    assert json.loads(server.inbox())["status"] == "error"
+    assert payload(server.inbox())["status"] == "error"
 
 
 def test_reponse_seulement_au_destinataire(monkeypatch: pytest.MonkeyPatch):

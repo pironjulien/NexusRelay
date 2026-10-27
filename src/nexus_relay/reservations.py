@@ -17,6 +17,7 @@ scripts/install_commit_guard.ps1 (hook scripts/pre-commit).
 from __future__ import annotations
 
 import argparse
+import contextlib
 import fnmatch
 import ntpath
 import os
@@ -33,9 +34,12 @@ from .lang import tr
 from .paths import normalize_party
 
 MAX_PATHS = 32
-# contrôle puis écriture d'un seul tenant : le démon (seul écrivain) sert plusieurs appels à la fois
+# contrôle puis écriture d'un seul tenant : le démon sert plusieurs appels à la fois (_LOCK), et les hooks d'édition
+# (edit_guard, processus à part) réservent aussi (_between_processes)
 _LOCK = threading.Lock()
 TTL_MIN, TTL_MAX = 1, 24 * 60
+# réservation posée par le hook d'édition (edit_guard) ; libérée par le hook post-commit une fois ses fichiers commités
+AUTO_REASON = "modification en cours (réservation automatique)"
 
 
 def now() -> float:
@@ -125,6 +129,39 @@ def _folder(box: Box) -> Any:
     return box.root / "reservations"
 
 
+@contextlib.contextmanager
+def _between_processes(box: Box, wait_s: float = 10.0) -> Any:
+    """Verrou de fichier entre le démon et les hooks : un seul contrôle-puis-écriture à la fois sur le poste."""
+    folder = _folder(box)
+    folder.mkdir(parents=True, exist_ok=True)
+    with open(folder / ".lock", "a+b") as handle:
+        deadline = time.monotonic() + wait_s
+        while True:
+            try:
+                if os.name == "nt":
+                    import msvcrt
+
+                    handle.seek(0)
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+                else:
+                    import fcntl
+
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)  # pyright: ignore[reportAttributeAccessIssue]
+                break
+            except OSError:
+                if time.monotonic() > deadline:
+                    raise RelayError(tr("reservations busy, try again", "réservations occupées, réessayer")) from None
+                time.sleep(0.05)
+        try:
+            yield
+        finally:
+            if os.name == "nt":
+                import msvcrt
+
+                handle.seek(0)
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)  # flock : libéré à la fermeture
+
+
 def active(box: Box, at: float | None = None) -> list[dict[str, Any]]:
     at = now() if at is None else at
     folder = _folder(box)
@@ -132,10 +169,22 @@ def active(box: Box, at: float | None = None) -> list[dict[str, Any]]:
     return [r for r in found if not r.get("released") and float(r.get("expires_at") or 0) > at]
 
 
-def _conflicts(box: Box, agent: str, paths: list[str], exclusive: bool) -> list[tuple[dict[str, Any], str, str]]:
+def other_holder(held: dict[str, Any], agent: str, session: str | None) -> bool:
+    """La réservation est à quelqu'un d'autre : un autre agent, ou une autre conversation du même agent quand les deux
+    sont connues (hooks : Claude Code, Codex et Antigravity donnent l'id de conversation). Une réservation faite par
+    l'outil reserve, sans conversation, vaut pour tout l'agent."""
+    if held["agent"] != agent:
+        return True
+    theirs = held.get("session")
+    return bool(session and theirs and theirs != session)
+
+
+def _conflicts(
+    box: Box, agent: str, paths: list[str], exclusive: bool, session: str | None = None
+) -> list[tuple[dict[str, Any], str, str]]:
     found = []
     for held in active(box):
-        if held["agent"] == agent or not (exclusive or held.get("exclusive", True)):
+        if not other_holder(held, agent, session) or not (exclusive or held.get("exclusive", True)):
             continue
         for mine in paths:
             for theirs in held["paths"]:
@@ -145,7 +194,13 @@ def _conflicts(box: Box, agent: str, paths: list[str], exclusive: bool) -> list[
 
 
 def reserve(
-    box: Box, agent: str, paths: list[str], reason: str, ttl_min: int = 60, exclusive: bool = True
+    box: Box,
+    agent: str,
+    paths: list[str],
+    reason: str,
+    ttl_min: int = 60,
+    exclusive: bool = True,
+    session: str | None = None,
 ) -> dict[str, Any]:
     agent = normalize_party(agent)
     if not paths or len(paths) > MAX_PATHS:
@@ -157,29 +212,46 @@ def reserve(
             tr(f"reservation: ttl_min from {TTL_MIN} to {TTL_MAX}", f"réservation : ttl_min de {TTL_MIN} à {TTL_MAX}")
         )
     wanted = sorted({norm(p): clean(p) for p in paths}.values(), key=norm)
-    with _LOCK:
-        return _reserve(box, agent, wanted, reason, ttl_min, exclusive)
+    session = str(session).strip()[:120] if session else None
+    with _LOCK, _between_processes(box):
+        return _reserve(box, agent, wanted, reason, ttl_min, exclusive, session)
 
 
-def _reserve(box: Box, agent: str, wanted: list[str], reason: str, ttl_min: int, exclusive: bool) -> dict[str, Any]:
-    if clash := _conflicts(box, agent, wanted, exclusive):
+def holder(record: dict[str, Any], agent: str) -> str:
+    """Qui tient la réservation, vu de `agent` : « codex », ou « claude (autre conversation) »."""
+    same = record["agent"] == agent
+    return record["agent"] + (tr(" (other conversation)", " (autre conversation)") if same else "")
+
+
+def _reserve(
+    box: Box, agent: str, wanted: list[str], reason: str, ttl_min: int, exclusive: bool, session: str | None
+) -> dict[str, Any]:
+    if clash := _conflicts(box, agent, wanted, exclusive, session):
         lines = [
             tr(
-                f"{mine} overlaps {theirs}, reserved by {held['agent']} ({held['reason']}) until {held['expires']}",
-                f"{mine} recouvre {theirs}, réservé par {held['agent']} ({held['reason']}) jusqu'à {held['expires']}",
+                f"{mine} overlaps {theirs}, reserved by {holder(held, agent)} ({held['reason']}) until "
+                f"{held['expires']}",
+                f"{mine} recouvre {theirs}, réservé par {holder(held, agent)} ({held['reason']}) jusqu'à "
+                f"{held['expires']}",
             )
             for held, mine, theirs in clash[:5]
         ]
         raise RelayError(tr("reservation refused: ", "réservation refusée : ") + tr("; ", " ; ").join(lines))
     at = now()
-    # même agent, mêmes chemins : la réservation existante est prolongée, pas doublée
+    # même agent, même conversation, mêmes chemins : la réservation existante est prolongée, pas doublée
     key = [norm(p) for p in wanted]
     same = next(
-        (r for r in active(box, at) if r["agent"] == agent and sorted(norm(p) for p in r["paths"]) == key), None
+        (
+            r
+            for r in active(box, at)
+            if r["agent"] == agent and r.get("session") == session and sorted(norm(p) for p in r["paths"]) == key
+        ),
+        None,
     )
     record = {
         **(same or {"id": f"{time.strftime('%Y%m%dT%H%M%S', time.gmtime(at))}-{secrets.token_hex(3)}"}),
         "agent": agent,
+        **({"session": session} if session else {}),
         "paths": wanted,
         "reason": reason.strip()[:300],
         "exclusive": bool(exclusive),
@@ -188,13 +260,33 @@ def _reserve(box: Box, agent: str, wanted: list[str], reason: str, ttl_min: int,
         "expires_at": at + int(ttl_min) * 60,
     }
     write_state(_folder(box) / f"{record['id']}.json", record)
+    _purge(box, at)
     return record
+
+
+KEEP_ENDED_S = 24 * 3600
+
+
+def _purge(box: Box, at: float) -> None:
+    """Réservations finies (libérées ou expirées) depuis plus d'un jour effacées : le hook d'édition en pose une par
+    fichier modifié, le dossier ne grossit pas sans fin."""
+    for path in _folder(box).glob("*.json"):
+        record = read_json(path) or {}
+        ended = float(record.get("expires_at") or 0)
+        if record.get("released"):
+            try:
+                ended = min(ended, path.stat().st_mtime)
+            except OSError:
+                continue
+        if ended and at - ended > KEEP_ENDED_S:
+            with contextlib.suppress(OSError):
+                path.unlink()
 
 
 def release(box: Box, agent: str, reservation: str | None = None) -> list[str]:
     """Libère une réservation de `agent` (par son id), ou toutes les siennes."""
     agent = normalize_party(agent)
-    with _LOCK:
+    with _LOCK, _between_processes(box):
         return _release(box, agent, reservation)
 
 
@@ -217,6 +309,8 @@ def _release(box: Box, agent: str, reservation: str | None) -> list[str]:
                 )
             )
         held = [target]
+    else:  # « toutes les miennes » : jamais celles des conversations (hook d'édition), libérées par id ou au commit
+        held = [r for r in held if not r.get("session")]
     done = []
     for record in (r for r in held if r["agent"] == agent):
         write_state(_folder(box) / f"{record['id']}.json", {**record, "released": _iso(now())})
@@ -224,14 +318,15 @@ def _release(box: Box, agent: str, reservation: str | None) -> list[str]:
     return done
 
 
-def blocking(agent: str, files: list[str], box: Box | None = None) -> list[dict[str, Any]]:
-    """Réservations EXCLUSIVES d'autres agents qui couvrent ces fichiers (garde de commit)."""
+def blocking(agent: str, files: list[str], box: Box | None = None, session: str | None = None) -> list[dict[str, Any]]:
+    """Réservations EXCLUSIVES d'autres agents, ou d'autres conversations du même agent, qui couvrent ces fichiers
+    (hook d'édition, garde de commit)."""
     box = box or Box()
     agent = normalize_party(agent)
     return [
-        {"agent": r["agent"], "reason": r["reason"], "expires": r["expires"], "file": f}
+        {"agent": holder(r, agent), "reason": r["reason"], "expires": r["expires"], "file": f}
         for r in active(box)
-        if r["agent"] != agent and r.get("exclusive", True)
+        if other_holder(r, agent, session) and r.get("exclusive", True)
         for f in files
         if any(overlap(theirs, os.path.abspath(f)) for theirs in r["paths"])
     ]
@@ -299,25 +394,64 @@ def whoami(table: dict[int, tuple[int, str]] | None = None, pid: int | None = No
     return normalize_party("user")
 
 
+def _git(*args: str) -> str:
+    return subprocess.run(
+        ["git", *args],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=True,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+    ).stdout
+
+
+def _repo_files(*args: str) -> list[str]:
+    top = _git("rev-parse", "--show-toplevel").strip()
+    return [os.path.join(top, name) for name in _git(*args).split("\0") if name]
+
+
 def staged() -> list[str]:
     """Fichiers indexés du dépôt courant, chemins absolus ; un renommage compte ses deux noms (--no-renames)."""
+    return _repo_files("diff", "--cached", "--name-only", "--no-renames", "-z")
 
-    def git(*args: str) -> str:
-        return subprocess.run(
-            ["git", *args],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            check=True,
-            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-        ).stdout
 
-    top = git("rev-parse", "--show-toplevel").strip()
-    return [
-        os.path.join(top, name)
-        for name in git("diff", "--cached", "--name-only", "--no-renames", "-z").split("\0")
-        if name
-    ]
+def committed() -> list[str]:
+    """Fichiers du dernier commit (HEAD), chemins absolus ; --root : le premier commit d'un dépôt compte aussi."""
+    return _repo_files("diff-tree", "--root", "--no-commit-id", "-r", "--name-only", "--no-renames", "-z", "HEAD")
+
+
+# Variable d'environnement qui porte, dans les commandes d'un agent, l'id de conversation que ses hooks reçoivent
+# (session_id, conversationId). NEXUS_RELAY_SESSION d'abord, pour tous. Relevés le 27/10 dans les shells des trois.
+SESSION_VARS = {
+    "claude": "CLAUDE_CODE_SESSION_ID",
+    "codex": "CODEX_THREAD_ID",
+    "antigravity": "ANTIGRAVITY_CONVERSATION_ID",
+}
+
+
+def session_from_env(agent: str) -> str | None:
+    """Conversation de l'agent qui lance la commande (git et ses hooks), ou None : inconnue."""
+    names = ["NEXUS_RELAY_SESSION", *([SESSION_VARS[agent]] if agent in SESSION_VARS else [])]
+    return next((value.strip() for name in names if (value := os.environ.get(name, "")).strip()), None)
+
+
+def release_committed(agent: str, files: list[str], box: Box | None = None, session: str | None = None) -> list[str]:
+    """Libère les réservations AUTOMATIQUES de `agent` (de sa conversation quand elle est connue) dont tous les
+    fichiers viennent d'être commités (hook post-commit) : le travail n'est plus en cours. Ses réservations faites à la
+    main restent."""
+    box = box or Box()
+    agent = normalize_party(agent)
+    done = set(map(norm, files))
+    with _LOCK, _between_processes(box):
+        ended = [
+            r["id"]
+            for r in active(box)
+            if r["agent"] == agent
+            and not other_holder(r, agent, session)
+            and r.get("reason") == AUTO_REASON
+            and all(norm(p) in done for p in r["paths"])
+        ]
+        return [done_id for rid in ended for done_id in _release(box, agent, rid)]
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -326,10 +460,20 @@ def main(argv: list[str] | None = None) -> int:
         "--agent", help="toi : claude, codex ou antigravity (par défaut : reconnu par les processus parents)"
     )
     parser.add_argument("--staged", action="store_true", help="fichiers indexés du dépôt courant (hook pre-commit)")
+    parser.add_argument(
+        "--release-committed",
+        action="store_true",
+        help="libère mes réservations automatiques des fichiers du dernier commit (hook post-commit)",
+    )
     parser.add_argument("files", nargs="*")
     args = parser.parse_args(argv)
     agent = normalize_party(args.agent) if args.agent else whoami()
-    hits = blocking(agent, [*args.files, *(staged() if args.staged else [])])
+    session = session_from_env(agent)
+    if args.release_committed:
+        if agent != normalize_party("user"):
+            release_committed(agent, [*args.files, *committed()], session=session)
+        return 0
+    hits = blocking(agent, [*args.files, *(staged() if args.staged else [])], session=session)
     for hit in hits:
         line = tr(
             f"{hit['file']}: reserved by {hit['agent']} ({hit['reason']}) until {hit['expires']}",

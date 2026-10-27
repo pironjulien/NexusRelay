@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import calendar
+import contextlib
 import json
 import logging
 import os
@@ -26,10 +27,12 @@ import secrets
 import sys
 import threading
 import time
+import zlib
 from contextvars import ContextVar
 from pathlib import Path
 from typing import Annotated, Any
 
+import anyio
 from mcp.server.caching import CacheHint
 from mcp.server.mcpserver import Context, Image, MCPServer
 from mcp.shared.exceptions import MCPError
@@ -50,6 +53,7 @@ from .paths import (
     relay_host,
     restart_wanted,
 )
+from .schemas import InboxOut, ReadOut, ReservationsOut, SearchOut, StatusOut, SummaryOut, TrackOut
 
 WAIT_MAX_S = 600
 WAIT_POLL_S = 0.618
@@ -119,8 +123,10 @@ mcp = MCPServer(
     instructions=(
         "Shared room of Claude, Antigravity and Codex on this PC, without going through the user. "
         'send(to, text, topic) posts a message (topic: the project, e.g. "nexuswindows"); the recipient is woken '
-        "automatically (Codex in its app, Antigravity by its sidecar). reply(id, text) answers; wait_reply(id) waits "
-        "for the answer (600 s max); inbox() lists your unread messages, read(id) reads one; track(id) follows a "
+        'automatically (Codex in its app, Antigravity by its sidecar); to=["codex", "antigravity"] asks both (cross '
+        "review). reply(id, text) answers; wait_reply(id) waits for the answer (600 s max), wait_reply(id=ids) for "
+        "several; cancel(id) withdraws a request not taken yet. inbox() lists your unread messages, read(id) reads "
+        "one; track(id) follows a "
         "message (posted, wakes, read, in progress, answered, late); status() shows all three; search(query) searches "
         "the whole history, summary(topic) summarizes a topic. Before editing files: reserve(paths, reason), then "
         "release(); reservations() lists who holds what. A reply closes the request with its outcome (state: done, "
@@ -164,6 +170,16 @@ def bell(box: Box) -> wake.Bell:
 
 def _dump(data: dict[str, Any]) -> str:
     return json.dumps(data, ensure_ascii=False, indent=1)
+
+
+def _typed(text: str, *blocks: ContentBlock) -> CallToolResult:
+    """Réponse d'un outil à schéma (schemas.py) : le JSON en texte (clients sans structuredContent) et en données.
+    Erreur : isError, sans structuredContent (elle ne suit pas le schéma) ; ses late_replies restent dans le texte."""
+    data = json.loads(text)
+    content: list[ContentBlock] = [TextContent(type="text", text=text), *blocks]
+    if data.get("status") != "success":
+        return CallToolResult(content=content, is_error=True)
+    return CallToolResult(content=content, structured_content=data)
 
 
 def _call(action: Any) -> str:
@@ -340,9 +356,9 @@ def _images(message: Message) -> list[Image]:
 
 
 # --- outils
-@mcp.tool(annotations=_hints(WRITE, "Send a message"))
+@mcp.tool(annotations=_hints(WRITE, "Send a message"), structured_output=False)
 def send(
-    to: str,
+    to: str | list[str],
     text: str,
     topic: str | None = None,
     info: bool = False,
@@ -351,10 +367,11 @@ def send(
     review: bool | None = None,
 ) -> str:
     """Post a message for another agent in the TOPIC's room; the recipient is woken automatically. Returns its id
-    (for wait_reply).
+    (for wait_reply). Several recipients (cross review): the same message to each, one id per recipient (ids);
+    wait_reply(id=ids) waits for all the answers.
 
     Args:
-        to: "claude", "antigravity" (agy) or "codex" (chatgpt).
+        to: "claude", "antigravity" (agy) or "codex" (chatgpt); or a list, e.g. ["codex", "antigravity"].
         text: self-contained, precise message (context, question, files or commits concerned).
         topic: short topic (lowercase, digits, -), e.g. "nexuswindows"; one topic per project.
         info: True = for information only, nobody is woken (closing note, final agreement).
@@ -368,6 +385,7 @@ def send(
     def action(me: str, box: Box) -> dict[str, Any]:
         if not info:
             _host_only(me)
+        targets = _recipients(to)
         extra: dict[str, Any] = {}
         if not info and (review if review is not None else bool(REVIEW_ASK.search(text.strip()[:REVIEW_HEAD]))):
             extra["review"] = True
@@ -375,20 +393,45 @@ def send(
             if not 1 <= int(due_min) <= 24 * 60:
                 raise RelayError(tr("due_min: 1 to 1440 minutes", "due_min : de 1 à 1440 minutes"))
             extra["due"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() + int(due_min) * 60))
-        message = box.post(me, normalize_agent(to), text, box.project_topic(topic), info=info, extra=extra, files=files)
-        if not info and box.topic_closed(message.topic):  # sujet rouvert : ses conversations ne sont plus à ranger
-            box.set_topic_state(message.topic, "closed", {"closed": False, "at": now_iso(), "by": me})
-        rung = bell(box).ring(message)
+        name = box.project_topic(topic)
+        sent = []
+        for target in targets:
+            message = box.post(me, target, text, name, info=info, extra=dict(extra), files=files)
+            if not info and box.topic_closed(message.topic):  # sujet rouvert : ses conversations ne sont plus à ranger
+                box.set_topic_state(message.topic, "closed", {"closed": False, "at": now_iso(), "by": me})
+            rung = bell(box).ring(message)
+            sent.append(
+                {
+                    "id": message.id,
+                    "to": message.to,
+                    "topic": message.topic,
+                    "wake": _wake_note(message, rung),
+                    **({"review": True} if message.extra.get("review") else {}),
+                    **_attached(message),
+                }
+            )
+        if isinstance(to, str):
+            return sent[0]
         return {
-            "id": message.id,
-            "to": message.to,
-            "topic": message.topic,
-            "wake": _wake_note(message, rung),
-            **({"review": True} if message.extra.get("review") else {}),
-            **_attached(message),
+            "ids": [s["id"] for s in sent],
+            "topic": name,
+            "messages": sent,
+            "note": tr(
+                "one message per recipient; wait_reply(id=ids) waits for all the answers",
+                "un message par destinataire ; wait_reply(id=ids) attend toutes les réponses",
+            ),
         }
 
-    return _noted("send", time.perf_counter(), _call(action), app=_peer(to))
+    return _noted("send", time.perf_counter(), _call(action), app=_peer(to) if isinstance(to, str) else None)
+
+
+def _recipients(to: str | list[str]) -> list[str]:
+    """Destinataires d'un envoi, sans doublon (trois agents au plus) ; tous vérifiés avant le premier dépôt."""
+    names = [to] if isinstance(to, str) else list(to)
+    targets = list(dict.fromkeys(normalize_agent(name) for name in names))
+    if not targets:
+        raise RelayError(tr("to: one agent, or a list of agents", "to : un agent, ou une liste d'agents"))
+    return targets
 
 
 # Contrôle qualité d'une relecture (24/10, à la façon des « artefacts » attendus d'une tâche A2A) : la consigne du relais
@@ -445,7 +488,7 @@ def _host_only(me: str) -> None:
         )
 
 
-@mcp.tool(annotations=_hints(WRITE, "Close a topic"))
+@mcp.tool(annotations=_hints(WRITE, "Close a topic"), structured_output=False)
 def close(topic: str) -> str:
     """Close a topic (host only): its Codex and Antigravity conversations are archived (never deleted) once their
     turn is over and the user is out of the app; its open incidents leave status (track keeps them). A new send on
@@ -511,7 +554,7 @@ def _wake_note(message: Message, rung: bool) -> str:
 
 
 @mcp.tool(annotations=_hints(READ_ONLY, "Unread messages"))
-def inbox() -> str:
+def inbox() -> Annotated[CallToolResult, InboxOut]:
     """Your unread messages (preview); read(id) reads one in full. Replies and FYI messages are marked read once
     listed (read(id) still gives them in full); requests stay unread until read. Replies another session is waiting
     for (wait_reply) are not listed."""
@@ -549,11 +592,11 @@ def inbox() -> str:
             )
         return result
 
-    return _call(action)
+    return _typed(_call(action))
 
 
 @mcp.tool(annotations=_hints(WRITE, "Read a message"))
-def read(id: str) -> Annotated[CallToolResult, str]:  # noqa: A002 - nom imposé par le protocole du relais
+def read(id: str) -> Annotated[CallToolResult, ReadOut]:  # noqa: A002 - nom imposé par le protocole du relais
     """Read a message in full; if it is addressed to you, it is marked read. Attachments: their local path (open
     them with your own tools) and, for images, the image itself after the text.
 
@@ -566,20 +609,23 @@ def read(id: str) -> Annotated[CallToolResult, str]:  # noqa: A002 - nom imposé
         message = box.get(id)
         if message is None:
             raise RelayError(tr(f"message {id} not found", f"message {id} introuvable"))
-        if message.to == me:
-            box.mark_read(message)
+        with _taking(box, message.id):  # lue ou annulée, jamais les deux (cancel)
+            if message.to == me:
+                box.mark_read(message)
+            cancelled = _cancelled(box, message)
         images.extend(_images(message))
         nonce = secrets.token_hex(4)
-        return {"message": _render(message, nonce), "note": _peer_note(nonce)}
+        rendered = _render(message, nonce)
+        if cancelled:
+            rendered["cancelled"] = cancelled.get("at")
+        return {"message": rendered, "note": _peer_note(nonce)}
 
     text = _noted("read", time.perf_counter(), _call(action), appel=id)
-    # même contrat qu'avant les pièces jointes (structuredContent.result = le JSON, relecture de Codex du 24/10),
-    # images en blocs à la suite du texte
-    blocks: list[ContentBlock] = [TextContent(type="text", text=text), *(i.to_image_content() for i in images)]
-    return CallToolResult(content=blocks, structured_content={"result": text})
+    # le JSON en texte et en données (schéma ReadOut, plus le faux {result: string}), images en blocs à la suite
+    return _typed(text, *(i.to_image_content() for i in images))
 
 
-@mcp.tool(annotations=_hints(WRITE, "Reply to a message"))
+@mcp.tool(annotations=_hints(WRITE, "Reply to a message"), structured_output=False)
 def reply(  # noqa: A002
     id: str,
     text: str,
@@ -611,6 +657,7 @@ def reply(  # noqa: A002
             raise RelayError(tr("this message is not addressed to you", "ce message ne t'est pas adressé"))
         if state not in OUTCOMES:
             raise RelayError(tr(f"state: {', '.join(OUTCOME_ALIASES)}", f"state : {', '.join(OUTCOMES)}"))
+        _not_cancelled(box, original)
         fixed = _outcome(box, original)
         if fixed is not None and state != "terminé" and state != fixed:
             # la première réponse fixe l'issue ; les suivantes complètent (relecture de Codex, 21/10 : un second reply
@@ -650,10 +697,10 @@ def reply(  # noqa: A002
             **_attached(message),
         }
 
-    return _noted("reply", time.perf_counter(), _call(action), appel=id)
+    return _noted("reply", time.perf_counter(), _call(_under(id, action)), appel=id)
 
 
-@mcp.tool(annotations=_hints(WRITE, "Report progress"))
+@mcp.tool(annotations=_hints(WRITE, "Report progress"), structured_output=False)
 def progress(id: str, note: str) -> str:  # noqa: A002 - nom imposé par le protocole du relais
     """Say you are working on a request addressed to you (not final, nobody is woken): track and wait_reply show
     it to the sender. Call it at the start of a long task, then now and then; the final answer always goes through
@@ -672,6 +719,7 @@ def progress(id: str, note: str) -> str:  # noqa: A002 - nom imposé par le prot
             raise RelayError(tr("this message is not addressed to you", "ce message ne t'est pas adressé"))
         if not note.strip():
             raise RelayError(tr("empty note", "note vide"))
+        _not_cancelled(box, original)
         if (done := _outcome(box, original)) is not None:
             raise RelayError(
                 tr(f"request already closed by your reply: {done}", f"demande déjà close par ta réponse : {done}")
@@ -680,28 +728,258 @@ def progress(id: str, note: str) -> str:  # noqa: A002 - nom imposé par le prot
         box.event(original.id, "en cours", by=me, note=note.strip()[:PROGRESS_MAX])
         return {"id": original.id, "state": "en cours"}
 
-    return _call(action)
+    return _call(_under(id, action))
 
 
-@mcp.tool(annotations=_hints(WRITE, "Wait for the reply"))
-async def wait_reply(id: str, timeout_s: int = 300, ctx: Context | None = None) -> str:  # noqa: A002
+# Annulation (audit d'état de l'art du 27/10, comme /codex:cancel de codex-plugin-cc) : l'expéditeur retire une
+# demande que le destinataire n'a pas encore prise. Évènement « annulé » + marquée lue pour lui : elle sort de son
+# inbox, de la sonnette (relances) et du sidecar (livraison), tous menés par le non-lu. Déjà livrée ou sonnée, le
+# pair qui l'ouvre voit « cancelled » et reply/progress lui sont refusés.
+# Relecture de Codex du 27/10 : cancel et la prise en charge (read, progress, reply) n'étaient pas atomiques ; le SDK
+# lance les outils synchrones dans des fils, un read pouvait passer entre le contrôle « non lue » de cancel et son
+# évènement : le pair traitait une demande que l'hôte croyait retirée. Un verrou par demande les sérialise : lue puis
+# refusée à l'annulation, ou annulée puis vue « cancelled ». Tour 2 : verrou de fichier du système (LockFileEx,
+# flock), commun aux processus (un serveur stdio et le démon servent le même salon) et rendu par l'OS si l'un meurt ;
+# TAKING_SLOTS fichiers en tout (empreinte de l'id), jamais un fichier par demande.
+TAKING_SLOTS = 64
+TAKING_WAIT_S = 10.0
+
+
+@contextlib.contextmanager
+def _taking(box: Box, message_id: str) -> Any:
+    folder = box.root / "locks"
+    folder.mkdir(parents=True, exist_ok=True)
+    slot = zlib.crc32(message_id.encode()) % TAKING_SLOTS
+    fd = os.open(folder / f"demande-{slot:02d}.lock", os.O_RDWR | os.O_CREAT)
+    try:
+        deadline = time.monotonic() + TAKING_WAIT_S
+        while not _try_lock(fd):
+            if time.monotonic() > deadline:
+                raise RelayError(tr("request busy, try again", "demande occupée, réessaie"))
+            time.sleep(0.01)
+        try:
+            yield
+        finally:
+            _unlock(fd)
+    finally:
+        os.close(fd)
+
+
+def _try_lock(fd: int) -> bool:
+    try:
+        os.lseek(fd, 0, os.SEEK_SET)  # msvcrt verrouille à partir de la position courante
+        if sys.platform == "win32":
+            import msvcrt
+
+            msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        return False
+    return True
+
+
+def _unlock(fd: int) -> None:
+    if sys.platform == "win32":
+        import msvcrt
+
+        os.lseek(fd, 0, os.SEEK_SET)
+        msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+    else:
+        import fcntl
+
+        fcntl.flock(fd, fcntl.LOCK_UN)
+
+
+def _under(message_id: str, action: Any) -> Any:
+    def locked(me: str, box: Box) -> dict[str, Any]:
+        with _taking(box, message_id):
+            return action(me, box)
+
+    return locked
+
+
+def _cancelled(box: Box, message: Message) -> dict[str, Any] | None:
+    return next((e for e in box.events(message.id) if e.get("kind") == wake.CANCELLED), None)
+
+
+def _not_cancelled(box: Box, message: Message) -> None:
+    if (cancelled := _cancelled(box, message)) is not None:
+        raise RelayError(
+            tr(
+                f"request cancelled by {message.sender} at {cancelled.get('at')}: nothing to do, do not answer it",
+                f"demande annulée par {message.sender} le {cancelled.get('at')} : rien à faire, n'y réponds pas",
+            )
+        )
+
+
+@mcp.tool(annotations=_hints(WRITE, "Cancel a request"), structured_output=False)
+def cancel(id: str) -> str:  # noqa: A002 - nom imposé par le protocole du relais
+    """Withdraw a request you sent that the recipient has not taken yet: it leaves its inbox, nobody is woken for it
+    any more, and if it already reached the recipient's conversation, read and reply tell it the request is cancelled.
+    Refused once read, in progress or answered: too late, send a follow-up instead.
+
+    Args:
+        id: id returned by send.
+    """
+
+    def action(me: str, box: Box) -> dict[str, Any]:
+        message = box.get(id)
+        if message is None:
+            raise RelayError(tr(f"message {id} not found", f"message {id} introuvable"))
+        if message.sender != me:
+            raise RelayError(tr("only its sender can cancel a request", "seul son expéditeur annule une demande"))
+        if message.info:
+            raise RelayError(tr("for information: nothing to cancel", "pour info : rien à annuler"))
+        _not_cancelled(box, message)
+        if (outcome := _outcome(box, message)) is not None:
+            raise RelayError(tr(f"already answered ({outcome}): too late", f"déjà répondue ({outcome}) : trop tard"))
+        if working := _working(box, message):
+            raise RelayError(
+                tr(
+                    f"already in progress at {message.to} ({working.get('note')}): too late",
+                    f"déjà en cours chez {message.to} ({working.get('note')}) : trop tard",
+                )
+            )
+        if box.is_read(message):
+            raise RelayError(
+                tr(
+                    f"already read by {message.to} at {box.read_at(message)}: too late",
+                    f"déjà lue par {message.to} le {box.read_at(message)} : trop tard",
+                )
+            )
+        reached = bool((box.ring_state(message.id) or {}).get("attempt")) or any(
+            claim_label(c) == "delivered" for _, c in box.claims(message.id)
+        )
+        box.event(message.id, wake.CANCELLED, by=me)
+        box.mark_read(message)  # hors de son inbox, de la sonnette et du sidecar
+        data: dict[str, Any] = {"id": message.id, "to": message.to, "state": tr("cancelled", "annulé")}
+        if reached:
+            data["note"] = tr(
+                f"{message.to} was already woken: if it opens the request, it is told it is cancelled",
+                f"{message.to} était déjà réveillé : s'il ouvre la demande, il apprend qu'elle est annulée",
+            )
+        return data
+
+    return _noted("cancel", time.perf_counter(), _call(_under(id, action)), appel=id)
+
+
+@mcp.tool(annotations=_hints(WRITE, "Wait for the reply"), structured_output=False)
+async def wait_reply(id: str | list[str], timeout_s: int = 300, ctx: Context | None = None) -> str:  # noqa: A002
     """Wait for the answer to a message you sent (600 s max) and return it; it is marked read. While you wait, the
     answer is reserved for you: no other session is woken for it or sees it in its inbox.
     Status "restarting": the relay is switching to new code; call again (the answer is kept for you). Returned
     without an answer (timeout, unavailable): the one that arrives later is attached (late_replies) to your next call,
-    then marked read.
+    then marked read. Status "cancelled": you cancelled the request.
+    Several ids (send to a list): waits for all of them; status "success" once all answered, otherwise "partial"
+    (or the common status); `replies` gives each one's result in order.
 
     Args:
-        id: id returned by send.
+        id: id returned by send, or the list of ids (send to several recipients).
         timeout_s: maximum wait in seconds (1 to 600, default 300).
     """
+    if isinstance(id, str):
+        return _dump(await _wait_one(id, timeout_s, ctx))
+    ids = list(dict.fromkeys(id))
+    if not ids or len(ids) > len(AGENTS):
+        return _dump({"status": "error", "error": tr("id: 1 to 3 ids", "id : de 1 à 3 id")})
+    return await _wait_group(ids, timeout_s, ctx)
+
+
+async def _wait_group(ids: list[str], timeout_s: int, ctx: Context | None) -> str:
+    """Attente de plusieurs réponses. Relecture de Codex du 27/10 : une attente annulée par le client laissait ses
+    enfants tourner et marquer lues des réponses que personne ne recevait. Les enfants ne consomment rien
+    (held) : réponses marquées lues et réservations libérées ici, d'un coup, au moment de les rendre ;
+    annulée, chaque attente est arrêtée et suivie comme abandonnée (réponses jointes au prochain appel).
+    Tour 2 : toutes les demandes vérifiées à soi avant toute réservation (une erreur de paramètres ne libère plus celle
+    d'une autre session) ; nettoyage à l'abri de l'annulation AnyIO du SDK (CancelScope) ; une écriture ratée à la
+    remise n'empêche jamais de rendre ce qui est déjà marqué lu."""
+    try:
+        me, box = _me(), _box()
+        for message_id in ids:
+            original = box.get(message_id) if _ID_SHAPE.match(message_id) else None
+            if original is None or original.sender != me:
+                raise RelayError(
+                    tr(
+                        f"message {message_id} not found, or not sent by you",
+                        f"message {message_id} introuvable, ou pas envoyé par toi",
+                    )
+                )
+    except (RelayError, ValueError, OSError) as error:
+        return _dump({"status": "error", "error": str(error)})
+    held: set[str] = set()  # réservations réellement prises par les attentes du groupe (tour 3)
+    tasks = [asyncio.ensure_future(_wait_one(i, timeout_s, None, held=held)) for i in ids]
+    started = time.time()
+    limit = max(1, min(int(timeout_s), WAIT_MAX_S))
+    try:
+        while True:
+            # un seul signe de vie pour le groupe (le client coupe un outil muet depuis 300 s), toujours croissant
+            _, pending = await asyncio.wait(tasks, timeout=PROGRESS_S)
+            if not pending:
+                break
+            if ctx is not None:
+                try:
+                    await ctx.report_progress(time.time() - started, limit, tr("waiting for the replies", "en attente"))
+                except Exception:  # noqa: BLE001 - client sans jeton de progression : l'attente continue
+                    pass
+    except BaseException:
+        with anyio.CancelScope(shield=True):  # une seconde annulation n'interrompt plus le nettoyage
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            for message_id in ids:
+                await asyncio.to_thread(_abandoned, box, message_id)
+                if message_id in held:
+                    _release_wait(message_id)
+        raise
+    results = [{"id": i, **t.result()} for i, t in zip(ids, tasks, strict=True)]
+    # sur la boucle, sans attente entre le marquage « lu » et le retour ; jamais d'exception : tout est rendu
+    for result in results:
+        if result.get("status") == "success":
+            try:
+                if answer := box.get(str(result["reply"]["id"])):
+                    box.mark_read(answer)
+            except (RelayError, ValueError, OSError) as error:  # rendue quand même, restera non lue (inbox)
+                print(f"nexus-relay : réponse {result['id']} non marquée lue ({error})", file=sys.stderr, flush=True)
+        if result.get("status") == "error":  # panne en cours d'attente : sa réponse rendue au prochain appel
+            _abandoned(box, str(result["id"]))
+        if result["id"] in held and result.get("status") != "restarting":  # relance : gardée jusqu'à l'échéance
+            _release_wait(str(result["id"]))
+    statuses = {r.get("status") for r in results}
+    data: dict[str, Any] = {
+        "status": statuses.pop() if len(statuses) == 1 else "partial",
+        "answered": sum(r.get("status") == "success" for r in results),
+        "total": len(results),
+        "replies": results,
+    }
+    return _dump(_with_late(data, _late_replies(me, box)))
+
+
+def _release_wait(message_id: str) -> None:
+    try:
+        wake.wait_done(message_id)
+    except OSError as error:  # réservation restée jusqu'à son échéance, comme une attente seule (_wait_reply)
+        print(f"nexus-relay : réservation {message_id} non libérée ({error})", file=sys.stderr, flush=True)
+
+
+async def _wait_one(
+    id: str,  # noqa: A002
+    timeout_s: int,
+    ctx: Context | None,
+    held: set[str] | None = None,
+) -> dict[str, Any]:
+    consume = held is None
     started = time.perf_counter()
-    result = await _wait_reply(id, timeout_s, ctx)
-    data = json.loads(result)
+    data = json.loads(await _wait_reply(id, timeout_s, ctx, held))
     box = _box()
     original = box.get(id) if _ID_SHAPE.match(id) else None
     if original is not None and data.get("status") in ABANDONED:
         await asyncio.to_thread(_abandoned, box, id)
+    if not consume:  # attente groupée : réponses tardives collectées une fois, par le groupe
+        _journal_wait(data, original, started, id)
+        return data
     try:
         # sur la boucle, sans attente entre le marquage « lu » et le retour (relecture de Codex : dans un fil, un
         # appel annulé laissait le fil marquer lues des réponses que personne ne recevait) ; un sujet, quelques ms
@@ -709,18 +987,25 @@ async def wait_reply(id: str, timeout_s: int = 300, ctx: Context | None = None) 
     except RelayError:
         late = []
     if late:
-        result = _dump(_with_late(data, late))
+        data = _with_late(data, late)
+    _journal_wait(data, original, started, id)
+    return data
+
+
+def _journal_wait(data: dict[str, Any], original: Message | None, started: float, id: str) -> None:  # noqa: A002
     issue = WAIT_ISSUES.get(str(data.get("status")), "✗")
     why = data.get("reason") or data.get("error") or ("délai" if data.get("status") == "timeout" else None)
     _journal_note("wait_reply", original.to if original else None, issue, started, why, id)
-    return result
 
 
-WAIT_ISSUES = {"success": "✓", "unavailable": "✗", "timeout": "~", "restarting": "~"}
+WAIT_ISSUES = {"success": "✓", "unavailable": "✗", "timeout": "~", "restarting": "~", "cancelled": "~"}
 ABANDONED = ("timeout", "unavailable", "restarting")  # la session repart sans la réponse : rendue plus tard
 
 
-async def _wait_reply(id: str, timeout_s: int, ctx: Context | None) -> str:  # noqa: A002
+async def _wait_reply(id: str, timeout_s: int, ctx: Context | None, held: set[str] | None = None) -> str:  # noqa: A002
+    """held (attente groupée) : la réponse trouvée n'est ni marquée lue ni libérée de sa réservation, ajoutée à
+    held dès qu'elle est prise ; l'appelant marque et libère au moment de rendre."""
+    consume = held is None
     try:
         me, box = _me(), _box()
         original = box.get(id)
@@ -734,13 +1019,16 @@ async def _wait_reply(id: str, timeout_s: int, ctx: Context | None) -> str:  # n
         # réservée AVANT de regarder les réponses déjà là (relecture de Codex, 24/10) : une collecte de réponses
         # tardives d'une autre session ne peut plus la prendre entre les deux ; libérée aussi sur ce retour anticipé
         wake.wait_on(id, deadline + 5)
+        if held is not None:
+            held.add(id)
         try:
             late = [r for r in box.replies(id) if r.sender == original.to and r.to == me]
             # réponse arrivée après un premier wait_reply (point B bis) : rendue, même lue par une autre session
             if late:
                 answer = late[-1]
                 already = box.is_read(answer)
-                box.mark_read(answer)
+                if consume:
+                    box.mark_read(answer)
                 nonce = secrets.token_hex(4)
                 data = {"status": "success", "reply": _render(answer, nonce), "note": _peer_note(nonce)}
                 if already:
@@ -749,6 +1037,8 @@ async def _wait_reply(id: str, timeout_s: int, ctx: Context | None) -> str:  # n
                         f"déjà lue le {box.read_at(answer)} (par une autre session ?)",
                     )
                 return _dump(data)
+            if _cancelled(box, original) is not None:
+                return _dump({"status": "cancelled", "id": id, "track": _track(box, original)})
             beat = checked = time.time()
             seen: set[str] = set()
             while True:
@@ -757,7 +1047,8 @@ async def _wait_reply(id: str, timeout_s: int, ctx: Context | None) -> str:  # n
                 for answer in box.new_in_topic(original.topic, seen):
                     if answer.reply_to != id or answer.to != me or box.is_read(answer):
                         continue
-                    box.mark_read(answer)
+                    if consume:
+                        box.mark_read(answer)
                     nonce = secrets.token_hex(4)
                     return _dump({"status": "success", "reply": _render(answer, nonce), "note": _peer_note(nonce)})
                 if RESTART_PENDING.is_set():
@@ -779,6 +1070,8 @@ async def _wait_reply(id: str, timeout_s: int, ctx: Context | None) -> str:  # n
                     return _dump({"status": "timeout", "id": id, "track": _track(box, original)})
                 if time.time() - checked >= UNAVAILABLE_CHECK_S:
                     checked = time.time()
+                    if _cancelled(box, original) is not None:  # annulée par une autre session pendant l'attente
+                        return _dump({"status": "cancelled", "id": id, "track": _track(box, original)})
                     reason = await asyncio.to_thread(_unavailable, box, original)
                     if reason:  # point I du 20/10 : le lanceur le sait tout de suite, sans attendre l'échéance
                         return _dump(
@@ -799,7 +1092,7 @@ async def _wait_reply(id: str, timeout_s: int, ctx: Context | None) -> str:  # n
                         pass
                 await asyncio.sleep(WAIT_POLL_S)
         finally:
-            if not restarting:
+            if not restarting and consume:
                 try:
                     wake.wait_done(id)
                 except OSError as error:  # relecture de Codex : n'écrase pas une réponse déjà lue et rendue
@@ -816,6 +1109,8 @@ def _delivery(box: Box, message: Message) -> list[dict[str, Any]]:
 def _state_of(box: Box, message: Message) -> str:
     """Où en est le message, sans rien affirmer qu'on ne sait pas (point B du 20/10) ; échéance dépassée : préfixe
     « en retard »."""
+    if (cancelled := _cancelled(box, message)) is not None:
+        return tr(f"cancelled at {cancelled.get('at')}", f"annulé le {cancelled.get('at')}")
     outcome = _outcome(box, message)
     if outcome is not None:
         if outcome == "terminé":
@@ -1032,6 +1327,8 @@ def _incidents(box: Box, limit: int = 12) -> list[dict[str, Any]]:
         message = box.get(message_id)
         if message is None or any(r.sender == message.to for r in box.replies(message_id)):
             continue
+        if _cancelled(box, message) is not None:  # retirée par l'hôte : plus rien à attendre
+            continue
         at = str(item.pop("at", None) or "")
         if _incident_closed(box, message, at) or (item.pop("halt", False) and _halted(box, message) is None):
             continue  # arrêt d'un pair qui a repris depuis : levé tout de suite, sans attendre la surveillance
@@ -1042,7 +1339,7 @@ def _incidents(box: Box, limit: int = 12) -> list[dict[str, Any]]:
 
 
 @mcp.tool(annotations=_hints(READ_ONLY, "Track a message"))
-def track(id: str) -> str:  # noqa: A002
+def track(id: str) -> Annotated[CallToolResult, TrackOut]:  # noqa: A002
     """Follow a message: posted, delivered (Antigravity), wake attempts (Codex) and their reasons, read, answered.
 
     Args:
@@ -1055,10 +1352,10 @@ def track(id: str) -> str:  # noqa: A002
             raise RelayError(tr(f"message {id} not found", f"message {id} introuvable"))
         return {"id": id, "to": message.to, "topic": message.topic, **_track(box, message)}
 
-    return _call(action)
+    return _typed(_call(action))
 
 
-@mcp.tool(annotations=_hints(WRITE, "Reserve files"))
+@mcp.tool(annotations=_hints(WRITE, "Reserve files"), structured_output=False)
 def reserve(paths: list[str], reason: str, ttl_min: int = 60, exclusive: bool = True) -> str:
     r"""Reserve files BEFORE editing them: nobody else can reserve anything overlapping them while the reservation
     lives. Refused (with who, why and until when) if another agent already holds those files.
@@ -1072,7 +1369,7 @@ def reserve(paths: list[str], reason: str, ttl_min: int = 60, exclusive: bool = 
     return _call(lambda me, box: reservations_mod.reserve(box, me, paths, reason, ttl_min, exclusive))
 
 
-@mcp.tool(annotations=_hints(WRITE, "Release files"))
+@mcp.tool(annotations=_hints(WRITE, "Release files"), structured_output=False)
 def release(id: str | None = None) -> str:  # noqa: A002 - nom imposé par le protocole du relais
     """Release one of your reservations (id), or all of yours.
 
@@ -1083,15 +1380,15 @@ def release(id: str | None = None) -> str:  # noqa: A002 - nom imposé par le pr
 
 
 @mcp.tool(annotations=_hints(READ_ONLY, "File reservations"))
-def reservations() -> str:
+def reservations() -> Annotated[CallToolResult, ReservationsOut]:
     """Current file reservations of all three agents: who, what, why, until when."""
-    return _call(lambda me, box: {"active": _reservations(box)})
+    return _typed(_call(lambda me, box: {"active": _reservations(box)}))
 
 
 # Alias aux noms et paramètres de mcp_agent_mail (l'utilisateur, 26/10) : un agent habitué à agent_mail réserve sans
 # apprendre d'autres noms. project_key et agent_name acceptés, sans effet : le relais sait qui appelle (?agent=) et les
 # chemins sont absolus.
-@mcp.tool(annotations=_hints(WRITE, "Reserve files (mcp_agent_mail name)"))
+@mcp.tool(annotations=_hints(WRITE, "Reserve files (mcp_agent_mail name)"), structured_output=False)
 def file_reservation_paths(
     paths: list[str],
     reason: str = "",
@@ -1115,7 +1412,7 @@ def file_reservation_paths(
     return _call(lambda me, box: reservations_mod.reserve(box, me, paths, why, ttl_min, exclusive))
 
 
-@mcp.tool(annotations=_hints(WRITE, "Release files (mcp_agent_mail name)"))
+@mcp.tool(annotations=_hints(WRITE, "Release files (mcp_agent_mail name)"), structured_output=False)
 def release_file_reservations(
     paths: list[str] | None = None,
     file_reservation_ids: list[str] | None = None,
@@ -1154,7 +1451,9 @@ def _reservations(box: Box) -> list[dict[str, Any]]:
 
 
 @mcp.tool(annotations=_hints(READ_ONLY, "Search the room"))
-def search(query: str, topic: str | None = None, sender: str | None = None, limit: int = 20) -> str:
+def search(
+    query: str, topic: str | None = None, sender: str | None = None, limit: int = 20
+) -> Annotated[CallToolResult, SearchOut]:
     """Search the whole room history (accent and case insensitive; every word must match; "in quotes" = exact
     phrase). Most relevant then most recent first; nothing is marked read.
 
@@ -1189,11 +1488,11 @@ def search(query: str, topic: str | None = None, sender: str | None = None, limi
         ]
         return {"total": total, "hits": shown, "note": _peer_note(nonce)}
 
-    return _call(action)
+    return _typed(_call(action))
 
 
 @mcp.tool(annotations=_hints(READ_ONLY, "Summarize a topic"))
-def summary(topic: str) -> str:
+def summary(topic: str) -> Annotated[CallToolResult, SummaryOut]:
     """Summary of a topic without reading it all: participants, message count, closed or not, requests still
     unanswered (with their state), outcomes and votes of answered requests, latest messages. read(id) for details.
 
@@ -1210,6 +1509,8 @@ def summary(topic: str) -> str:
             return f"⟦relay:{nonce} …⟧ {search_mod.preview(message.text)} ⟦/relay:{nonce}⟧"
 
         messages = data["messages"]
+        # relecture de Codex du 27/10 : une demande annulée n'est plus ouverte (elle masquait les vraies)
+        data["open"] = [m for m in data["open"] if _cancelled(box, m) is None]
         return {
             "topic": name,
             "closed": box.topic_closed(name),
@@ -1239,14 +1540,14 @@ def summary(topic: str) -> str:
             "note": _peer_note(nonce),
         }
 
-    return _call(action)
+    return _typed(_call(action))
 
 
 @mcp.tool(annotations=_hints(READ_ONLY, "Relay status"))
-async def status() -> str:
+async def status() -> Annotated[CallToolResult, StatusOut]:
     """State of all three agents: unread messages, last wake (Codex, Antigravity), bell threads, Codex port,
     Antigravity sidecar, quotas. Off the server loop: reading quotas can take ~15 s."""
-    return await asyncio.to_thread(_status)
+    return _typed(await asyncio.to_thread(_status))
 
 
 def _status() -> str:
@@ -1339,7 +1640,7 @@ def _selftest_table(box: Box) -> list[dict[str, Any]]:
     ]
 
 
-@mcp.tool(annotations=_hints(WRITE, "Relay self-test"))
+@mcp.tool(annotations=_hints(WRITE, "Relay self-test"), structured_output=False)
 async def selftest(to: str | None = None, timeout_s: int = 420, ctx: Context | None = None) -> str:
     """Relay self-test: interface landmarks of Codex and Antigravity (expected buttons and menus found), then,
     with `to`, a real end-to-end wake: test message from you to `to`, wake, read, correlated reply, duration. Returns
@@ -1420,7 +1721,7 @@ async def _ping(box: Box, me: str, to: str, limit: int, ctx: Context | None) -> 
         wake.wait_done(ping.id)
 
 
-@mcp.tool(annotations=_hints(READ_ONLY, "Find a button or menu"))
+@mcp.tool(annotations=_hints(READ_ONLY, "Find a button or menu"), structured_output=False)
 def where(app: str, what: str) -> str:
     """Where a button or menu is in Codex or Antigravity, from the latest map of its interface: path (page, menu,
     submenu), relay landmark (NEW_CHAT, ARCHIVE, MODE, CHAT_ACTIONS...), stable attributes and the gestures that reach
@@ -1437,7 +1738,7 @@ def where(app: str, what: str) -> str:
         return _dump({"status": "error", "error": str(error)})
 
 
-@mcp.tool(annotations=_hints(WRITE, "Map an app interface"))
+@mcp.tool(annotations=_hints(WRITE, "Map an app interface"), structured_output=False)
 async def survey(app: str) -> str:
     """Map the interface of Codex or Antigravity now (otherwise done automatically when its version changes):
     pages and menus opened, read and closed with Escape, never an action; refused while the user is in the app; view

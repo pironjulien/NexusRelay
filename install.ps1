@@ -287,6 +287,12 @@ if ($null -ne $packTargets -and $packTargets -notcontains 'antigravity') {
 
 # --- Codex : serveur par un plugin perso de Codex (.mcp.json : url http://127.0.0.1:16181/mcp?agent=codex,
 #     bearer_token_env_var NEXUS_MCP_TOKEN), voir README ; plus de table [mcp_servers] ici.
+
+# --- Hook d'édition (nexus_relay.edit_guard) chez Codex et Antigravity : refus d'un fichier réservé par un autre agent,
+#     réservation automatique sinon. Claude Code l'a par le plugin nexus-relay du catalogue nexus.
+& $python -B (Join-Path $project 'scripts\register_hooks.py') --backups $backups --python $python
+if ($LASTEXITCODE) { throw 'Hook d''édition incomplet (voir ci-dessus).' }
+
 if (-not $SkipTests) {
     & (Get-Process -Id $PID).Path -NoProfile -File (Join-Path $project 'test.ps1')
     if ($LASTEXITCODE) { throw 'test.ps1 échoue : installation incomplète.' }
