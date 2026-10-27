@@ -502,17 +502,30 @@ def inbox() -> str:
 
     def action(me: str, box: Box) -> dict[str, Any]:
         nonce = secrets.token_hex(4)
-        items, hidden = [], 0
-        for message in box.unread(me):
-            if wake.awaited(message.reply_to):
-                hidden += 1
-                continue
-            items.append(_render(message, nonce, full=False))
-            # 27/10 (✉26 dans la barre) : une réponse ou un « pour info » vu en liste est remis ; une demande attend
-            # read ou reply, qui la marquent lue
-            if message.reply_to or message.info:
-                box.mark_read(message)
-        result: dict[str, Any] = {"unread": items, "note": _peer_note(nonce)}
+        items, hidden, consumed = [], 0, 0
+        result: dict[str, Any] = {}
+        try:
+            for message in box.unread(me):
+                if wake.awaited(message.reply_to):
+                    hidden += 1
+                    continue
+                item = _render(message, nonce, full=False)
+                # 27/10 (✉26 dans la barre) : une réponse ou un « pour info » vu en liste est remis ; une demande
+                # attend read ou reply, qui la marquent lue
+                if message.reply_to or message.info:
+                    box.mark_read(message)
+                    consumed += 1
+                items.append(item)
+        except (RelayError, ValueError, OSError) as error:
+            # relecture de Codex, 27/10 : une erreur en cours de liste faisait jeter par _call les aperçus déjà
+            # marqués lus (lus, jamais montrés) ; comme pour late_replies, ce qui est consommé est toujours rendu
+            if not consumed:
+                raise
+            result["error"] = tr(
+                f"list interrupted, the rest stays unread: {error}",
+                f"liste interrompue, la suite reste non lue : {error}",
+            )
+        result.update({"unread": items, "note": _peer_note(nonce)})
         if hidden:
             result["hidden"] = tr(
                 f"{hidden} message(s) hidden (reply awaited by a session)",

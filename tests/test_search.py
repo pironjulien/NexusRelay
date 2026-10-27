@@ -192,3 +192,70 @@ def test_message_illisible_ignore_comme_avant(isolated: Path):
     _corpus(box)
     (box.root / "messages" / "20260101T000000000-abcdef.claude.codex.relais.json").write_text("{", encoding="utf-8")
     assert _indexed(box, "reveil") == _legacy(box, "reveil")
+
+
+def test_inventaire_refait_sous_le_verrou(isolated: Path, monkeypatch: pytest.MonkeyPatch):
+    """Relecture de Codex, 27/10 : l'inventaire pris avant BEGIN IMMEDIATE retirait de l'index un message qu'un autre
+    processus venait de déposer et d'indexer entre l'inventaire et la lecture de l'index."""
+    box = Box(isolated / "boite")
+    _corpus(box)
+    search_mod.sync(box)
+    folder = box.root / "messages"
+    real = type(folder).glob
+    added: list[str] = []
+
+    def glob(self: Path, pattern: str, *args: object, **kwargs: object):  # type: ignore[no-untyped-def]
+        found = list(real(self, pattern, *args, **kwargs))
+        if self == folder and pattern == "*.json" and not added:
+            added.append("")  # une seule fois (le dépôt et l'autre rattrapage relisent le dossier)
+            added[0] = box.post("codex", "claude", "Arrivé pendant l'inventaire", "relais").id
+            message = box.get(added[0])
+            assert message is not None
+            name = next(folder.glob(f"{message.id}.*.json")).name
+            with closing(search_mod._connect(box)) as other:  # « autre processus » : sa connexion, pas notre verrou
+                other.execute(
+                    "INSERT INTO messages (name, id, sender, topic, plain) VALUES (?, ?, ?, ?, ?)",
+                    (name, message.id, message.sender, message.topic, search_mod.bare(message.text)),
+                )
+        return iter(found)
+
+    monkeypatch.setattr(type(folder), "glob", glob)
+    with closing(search_mod._connect(box)) as db:
+        search_mod._sync(box, db)
+        monkeypatch.setattr(type(folder), "glob", real)
+        # l'index, sans nouveau rattrapage (qui le remettrait) : le message existe, il doit y être resté
+        assert [row[0] for row in db.execute("SELECT id FROM messages WHERE id = ?", added)] == added
+
+
+def test_ouvertures_simultanees_d_une_base_neuve(isolated: Path):
+    """Relecture de Codex, 27/10 : PRAGMA journal_mode=WAL sans protection, « database is locked » à 12 fils."""
+    import threading
+
+    errors: list[BaseException] = []
+    for trial in range(21):
+        box = Box(isolated / f"boite{trial}")
+        barrier = threading.Barrier(12)
+
+        def open_once(box: Box = box, barrier: threading.Barrier = barrier) -> None:
+            barrier.wait()
+            try:
+                search_mod._connect(box).close()
+            except BaseException as error:  # noqa: BLE001 - relevée par l'assertion
+                errors.append(error)
+
+        threads = [threading.Thread(target=open_once) for _ in range(12)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+    assert errors == []
+
+
+def test_terme_avec_nul_cherche_par_instr(isolated: Path):
+    """Relecture de Codex, 27/10 : un caractère NUL faisait planter FTS5 (« unterminated string »)."""
+    box = Box(isolated / "boite")
+    _corpus(box)
+    nul = box.post("claude", "codex", "avant\x00apres", "relais")
+    assert search_mod.search_page(box, "reveil\x00codex") == (0, [])
+    total, hits = search_mod.search_page(box, "avant\x00apres")
+    assert total == 1 and hits[0][0].id == nul.id

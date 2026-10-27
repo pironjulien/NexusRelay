@@ -12,9 +12,11 @@ Sans accents ni casse ; tous les mots demandés doivent y être ; "entre guillem
 
 from __future__ import annotations
 
+import random
 import re
 import sqlite3
 import threading
+import time
 import unicodedata
 from contextlib import closing
 from pathlib import Path
@@ -26,6 +28,7 @@ from .lang import tr
 SNIPPET = 89  # caractères de part et d'autre du premier mot trouvé
 PREVIEW = 233
 TRIGRAM = 3  # le tokeniseur trigram ne cherche que des chaînes de 3 caractères au moins ; en dessous : instr()
+OPEN_WAIT_S = 30  # attente maximale d'une base occupée (verrou SQLite, initialisation simultanée)
 SCHEMA = 1  # PRAGMA user_version : un autre numéro = index reconstruit
 _SYNC_LOCK = threading.Lock()  # un seul rattrapage à la fois dans ce processus (les autres : verrou de SQLite)
 _DDL = (
@@ -78,40 +81,66 @@ def index_path(box: Box) -> Path:
     return box.root / "index" / "search.sqlite3"
 
 
+def _busy(error: sqlite3.OperationalError) -> bool:
+    text = str(error).lower()
+    return "locked" in text or "busy" in text
+
+
+def _prepare(db: sqlite3.Connection) -> None:
+    """WAL et schéma. Passer en WAL demande un verrou exclusif que SQLite n'attend pas toujours (busy_timeout ignoré) :
+    plusieurs ouvertures simultanées d'une base neuve → « database is locked » (relecture de Codex, 27/10)."""
+    if str(db.execute("PRAGMA journal_mode").fetchone()[0]).lower() != "wal":
+        db.execute("PRAGMA journal_mode=WAL")  # lecteurs jamais bloqués par l'écrivain (démon, sessions stdio)
+    if db.execute("PRAGMA user_version").fetchone()[0] != SCHEMA:
+        db.execute("BEGIN IMMEDIATE")
+        try:  # relu sous le verrou : un autre processus a pu le créer entre-temps
+            if db.execute("PRAGMA user_version").fetchone()[0] != SCHEMA:
+                for statement in _DDL:
+                    db.execute(statement)
+                db.execute(f"PRAGMA user_version = {SCHEMA}")
+            db.execute("COMMIT")
+        except BaseException:
+            db.execute("ROLLBACK")
+            raise
+
+
 def _connect(box: Box) -> sqlite3.Connection:
+    """Connexion prête ; l'initialisation occupée par un autre fil ou processus est retentée, dans la limite de
+    OPEN_WAIT_S (valable entre processus : seul SQLite arbitre)."""
     path = index_path(box)
     path.parent.mkdir(parents=True, exist_ok=True)
-    db = sqlite3.connect(path, timeout=30, isolation_level=None)
-    try:
-        db.execute("PRAGMA journal_mode=WAL")  # lecteurs jamais bloqués par l'écrivain (démon, sessions stdio)
-        if db.execute("PRAGMA user_version").fetchone()[0] != SCHEMA:
-            db.execute("BEGIN IMMEDIATE")
-            try:  # relu sous le verrou : un autre processus a pu le créer entre-temps
-                if db.execute("PRAGMA user_version").fetchone()[0] != SCHEMA:
-                    for statement in _DDL:
-                        db.execute(statement)
-                    db.execute(f"PRAGMA user_version = {SCHEMA}")
-                db.execute("COMMIT")
-            except BaseException:
-                db.execute("ROLLBACK")
+    deadline = time.monotonic() + OPEN_WAIT_S
+    while True:
+        db = sqlite3.connect(path, timeout=OPEN_WAIT_S, isolation_level=None)
+        try:
+            _prepare(db)
+            return db
+        except sqlite3.OperationalError as error:
+            db.close()
+            if not _busy(error) or time.monotonic() >= deadline:
                 raise
-    except BaseException:
-        db.close()
-        raise
-    return db
+        except BaseException:
+            db.close()
+            raise
+        time.sleep(random.uniform(0.01, 0.0618))
+
+
+def _inventory(box: Box) -> dict[str, Path]:
+    return {path.name: path for path in box.root.joinpath("messages").glob("*.json")}
 
 
 def _sync(box: Box, db: sqlite3.Connection) -> int:
-    """Ajoute les fichiers de message absents de l'index, retire ceux qui ont disparu ; rend le nombre ajouté."""
+    """Ajoute les fichiers de message absents de l'index, retire ceux qui ont disparu ; rend le nombre ajouté.
+    Les nouveaux messages (immuables) sont lus hors verrou ; l'inventaire qui décide des retraits et la lecture de
+    l'index se refont sous BEGIN IMMEDIATE, exclusif entre processus (relecture de Codex, 27/10 : un inventaire pris
+    avant le verrou retirait de l'index un message qu'un autre processus venait d'y ajouter)."""
     with _SYNC_LOCK:
-        names = {path.name: path for path in box.root.joinpath("messages").glob("*.json")}
+        names = _inventory(box)
         known = {row[0] for row in db.execute("SELECT name FROM messages")}
-        fresh = sorted(set(names) - known)
-        gone = known - set(names)
-        if not fresh and not gone:
+        if names.keys() == known:
             return 0
-        rows = []
-        for name in fresh:
+        rows = {}
+        for name in sorted(set(names) - known):
             data = read_json(names[name])
             try:
                 message = Message.from_json(data) if data else None
@@ -119,18 +148,22 @@ def _sync(box: Box, db: sqlite3.Connection) -> int:
                 message = None
             if message is None:
                 continue  # illisible : réessayé à la prochaine recherche (la boîte l'ignore aussi)
-            rows.append((name, message.id, message.sender, message.topic, bare(message.text)))
+            rows[name] = (name, message.id, message.sender, message.topic, bare(message.text))
         db.execute("BEGIN IMMEDIATE")
         try:
+            names = _inventory(box)  # sous le verrou : ce qui existe vraiment au moment d'écrire
+            known = {row[0] for row in db.execute("SELECT name FROM messages")}
+            gone = known - names.keys()
+            fresh = [row for name, row in rows.items() if name in names and name not in known]
             db.executemany("DELETE FROM messages WHERE name = ?", [(name,) for name in gone])
             db.executemany(
-                "INSERT OR IGNORE INTO messages (name, id, sender, topic, plain) VALUES (?, ?, ?, ?, ?)", rows
+                "INSERT OR IGNORE INTO messages (name, id, sender, topic, plain) VALUES (?, ?, ?, ?, ?)", fresh
             )
             db.execute("COMMIT")
         except BaseException:
             db.execute("ROLLBACK")
             raise
-        return len(rows)
+        return len(fresh)
 
 
 def sync(box: Box) -> int:
@@ -142,13 +175,14 @@ def sync(box: Box) -> int:
 def _candidates(box: Box, wanted: list[str], topic: str | None, sender: str | None) -> list[tuple[str, str, str]]:
     """(nom du fichier, id, texte replié) des messages qui contiennent chaque terme (FTS5 dès 3 caractères, instr
     en dessous)."""
-    long = [term for term in wanted if len(term) >= TRIGRAM]
+    # NUL (U+0000) : FTS5 coupe la chaîne de requête (« unterminated string », relecture de Codex 27/10) → instr()
+    long = [term for term in wanted if len(term) >= TRIGRAM and "\x00" not in term]
     where, args = [], []
     if long:
         where.append("rowid IN (SELECT rowid FROM fts WHERE fts MATCH ?)")
         args.append(" AND ".join('"' + term.replace('"', '""') + '"' for term in long))
     for term in wanted:
-        if len(term) < TRIGRAM:
+        if term not in long:
             where.append("instr(plain, ?) > 0")
             args.append(term)
     if topic:

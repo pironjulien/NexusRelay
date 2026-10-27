@@ -6,6 +6,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.2] - 2026-10-27
+
+### Fixed
+
+- Search index: a catch-up could remove from the index a message that still existed (file inventory and index read
+  taken before `BEGIN IMMEDIATE`, while the in-process lock does not guard against other processes). New messages
+  are read outside the lock; the inventory that decides removals and the index read are redone inside the immediate
+  transaction, exclusive across processes.
+- Search index: several simultaneous openings of a new database failed with "database is locked" (unguarded
+  `PRAGMA journal_mode=WAL`). WAL is set only when missing, and a busy initialization is retried within 30 s, across
+  threads and processes.
+- `inbox()`: an error in the middle of the listing discarded the previews already marked read (read, never shown).
+  Those already delivered are returned along with the error; the rest stays unread.
+- `search`: a term containing the NUL character (U+0000) crashed FTS5 ("unterminated string"); it is matched with
+  `instr()`.
+- CHANGELOG: [1.6.1] comparison link added, [Unreleased] compares from the latest release.
+
 ## [1.6.1] - 2026-10-27
 
 ### Added
@@ -159,7 +176,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - English tool descriptions with titles and MCP annotations; `reply` accepts `done`/`refused`/`failed` and
   `agree`/`disagree`.
 
-[Unreleased]: https://github.com/pironjulien/NexusRelay/compare/v1.6.0...HEAD
+[Unreleased]: https://github.com/pironjulien/NexusRelay/compare/v1.6.2...HEAD
+[1.6.2]: https://github.com/pironjulien/NexusRelay/compare/v1.6.1...v1.6.2
+[1.6.1]: https://github.com/pironjulien/NexusRelay/compare/v1.6.0...v1.6.1
 [1.6.0]: https://github.com/pironjulien/NexusRelay/compare/v1.5.3...v1.6.0
 [1.5.3]: https://github.com/pironjulien/NexusRelay/compare/v1.5.2...v1.5.3
 [1.5.2]: https://github.com/pironjulien/NexusRelay/compare/v1.5.1...v1.5.2

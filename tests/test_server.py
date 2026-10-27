@@ -729,3 +729,26 @@ def test_issues_et_votes_en_anglais(monkeypatch: pytest.MonkeyPatch):
     assert call(server.track(second["id"]))["state"] == "répondu : échoué"
     assert call(server.track(third["id"]))["state"] == "répondu"  # done par défaut
     assert call(server.read(agreed["id"]))["message"]["vote"] == "accord"
+
+
+def test_inbox_rend_les_messages_deja_lus_si_la_liste_echoue(monkeypatch: pytest.MonkeyPatch):
+    """Relecture de Codex, 27/10 : une erreur après des marquages « lu » faisait jeter les aperçus (lus, jamais vus)."""
+    as_agent(monkeypatch, "codex")
+    call(server.send("claude", "premier", topic="t", info=True))
+    call(server.send("claude", "second", topic="t", info=True))
+    as_agent(monkeypatch, "claude")
+    box = server._box()
+    real = server.Box.mark_read
+    marked: list[str] = []
+
+    def flaky(self, message) -> None:  # type: ignore[no-untyped-def]
+        if marked:
+            raise OSError("disque plein")
+        real(self, message)
+        marked.append(message.id)
+
+    monkeypatch.setattr(server.Box, "mark_read", flaky)
+    result = call(server.inbox())
+    assert [m["id"] for m in result["unread"]] == marked and "disque plein" in result["error"]
+    monkeypatch.setattr(server.Box, "mark_read", real)
+    assert len(box.unread("claude")) == 1  # le second reste non lu, remis au prochain inbox
