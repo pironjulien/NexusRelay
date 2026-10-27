@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.3] - 2026-10-27
+
+### Changed
+
+- Sharper Antigravity and Codex plugin logos (256 px): the julienpiron.fr medallion rebuilt at 600 px in the icon kit, sharp up to 512 px instead of a 240 px picture enlarged.
+
 ## [1.5.2] - 2026-10-27
 
 ### Changed
