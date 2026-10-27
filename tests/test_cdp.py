@@ -168,7 +168,7 @@ def test_codex_lance_par_windows_avec_son_identite_store(monkeypatch: pytest.Mon
 
     commands: list[str] = []
     monkeypatch.setattr(cdp, "_ps", lambda command, timeout=30.0: commands.append(command) or "4242")
-    monkeypatch.setattr(uia, "user32", lambda: type("U", (), {"GetForegroundWindow": staticmethod(lambda: 0)})())
+    monkeypatch.setattr(uia, "user32", type("U", (), {"GetForegroundWindow": staticmethod(lambda: 0)}))
     monkeypatch.setattr(uia, "windows", lambda process, hidden=False: [7])
     minimized: list[int] = []
     monkeypatch.setattr(uia, "minimize", minimized.append)
@@ -1117,7 +1117,7 @@ def test_figement_vu_par_ishungappwindow(monkeypatch: pytest.MonkeyPatch):
     from nexus_relay import uia
 
     monkeypatch.setattr(uia, "windows", lambda process, hidden=False: [11, 12])
-    monkeypatch.setattr(uia, "user32", lambda: type("U", (), {"IsHungAppWindow": staticmethod(lambda h: h == 12)})())
+    monkeypatch.setattr(uia, "user32", type("U", (), {"IsHungAppWindow": staticmethod(lambda h: h == 12)}))
     assert cdp.app_hung("Antigravity.exe")
     monkeypatch.setattr(uia, "windows", lambda process, hidden=False: [11])
     assert not cdp.app_hung("Antigravity.exe")

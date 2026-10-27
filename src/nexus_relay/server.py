@@ -445,7 +445,12 @@ REVIEW_ASK = re.compile(
 REVIEW_HEAD = 160  # caractères du début du message où la demande est cherchée
 # relecture de Codex du 24/10 : un nom sans extension (Dockerfile:12) compte ; une heure (12:30) ou une URL
 # (https://x.org:443) non ; « Antigravity » n'est pas une gravité ; « Pas RAS » n'est pas un verdict
-FILE_LINE = re.compile(r"(?<![\w:/.\\-])(?:[A-Za-z]:[/\\])?(?:[\w.\\-]+[/\\])*[\w.-]*[A-Za-z][\w.-]*:\d+(?:-\d+)?\b")
+# segments et séparateurs sans caractère commun, première lettre du nom fixée (alerte CodeQL py/redos) : « -\-\-\… »
+# faisait un retour arrière exponentiel quand « \ » pouvait être pris dans le segment comme dans le séparateur ;
+# tout ce que l'ancienne forme reconnaissait l'est encore (comparaison exhaustive), en temps linéaire
+FILE_LINE = re.compile(
+    r"(?<![\w:/.\\-])(?:[A-Za-z]:[/\\]+|\\[/\\]*)?(?:[\w.-]+[/\\]+)*(?:(?![A-Za-z])[\w.-])*[A-Za-z][\w.-]*:\d+(?:-\d+)?\b"
+)
 SEVERITY = re.compile(
     r"\b(gravité|gravite|critique|bloquante?|majeure?|mineure?|haute|moyenne|basse|faible|grave|sévère|severe"
     r"|high|medium|low|critical|severity)\b|\bP[0-3]\b",

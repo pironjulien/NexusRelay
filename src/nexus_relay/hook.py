@@ -58,7 +58,7 @@ def _note_path(box: Box, session: str) -> Path:
                 if time.time() - old.stat().st_mtime > KEEP_S:
                     old.unlink()
             except OSError:
-                pass
+                pass  # note déjà effacée ou prise : le ménage reprendra au prochain passage
     return folder / f"{safe}.json"
 
 

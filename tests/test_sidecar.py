@@ -227,12 +227,11 @@ def test_arret_entre_soumission_et_acquittement():
 
     write_state(box._claim_path(message.id, 1), {**claim, "pid": 4_000_000})  # processus mort
     assert "incertaine" in server._state_of(box, message)
-    car, api = Sidecar(box, FakeApi(), log=lambda _: None), None  # type: ignore[arg-type]
+    car = Sidecar(box, FakeApi(), log=lambda _: None)  # type: ignore[arg-type]
     car.step()
     assert car.api.calls == []  # type: ignore[attr-defined]
     assert box.claim_of(message.id, 1)["phase"] == "uncertain"  # type: ignore[index]
     assert box.has_event(message.id, "livraison incertaine")
-    del api
 
 
 def test_nouvelle_sonnette_relivree_par_le_sidecar():
@@ -395,6 +394,8 @@ def test_erreur_avant_l_envoi_est_un_echec_connu():
 
 def test_battement_dans_son_propre_fil(monkeypatch):
     """Tour 2 : un appel agentapi de 2 min arrêtait le battement ; le sidecar était cru mort, Antigravity relancé."""
+    import pytest
+
     from nexus_relay import sidecar as module
 
     car, box, _ = sidecar()
@@ -412,17 +413,13 @@ def test_battement_dans_son_propre_fil(monkeypatch):
 
     monkeypatch.setattr(module.threading, "Thread", Thread)
     monkeypatch.setattr(car, "step", stop)
-    try:
+    with pytest.raises(KeyboardInterrupt):
         car.run()
-    except KeyboardInterrupt:
-        pass
     (beat,) = started
     assert beat["daemon"] and "battement" in beat["name"]
     monkeypatch.setattr(module.time, "sleep", stop)
-    try:
+    with pytest.raises(KeyboardInterrupt):
         beat["target"]()
-    except KeyboardInterrupt:
-        pass
     assert (box.state("sidecar") or {}).get("pid")
 
 

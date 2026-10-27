@@ -55,6 +55,8 @@ def test_relecture_conforme_acceptee_du_premier_coup(monkeypatch: pytest.MonkeyP
         ("https://example.org:443 — gravité faible", False),
         ("Réunion à 12:30, gravité haute", False),
         ("C:\\Dev\\x\\main.rs:40-42 — gravité moyenne", True),
+        ("\\\\serveur\\partage\\a.py:3 — gravité basse", True),  # chemin UNC
+        ("C:\\\\Dev\\\\x\\\\main.rs:40 — gravité basse", True),  # chemin échappé (JSON)
         # relecture d'Antigravity du 24/10
         ("Relecture du commit abc :\nLes tests passent.\nRien d'important.", True),
         ("Bilan : aucun défaut", True),
@@ -66,6 +68,16 @@ def test_relecture_conforme_acceptee_du_premier_coup(monkeypatch: pytest.MonkeyP
 )
 def test_controle_qualite_faux_positifs_et_negatifs(text: str, complete: bool):
     assert server._review_complete(text) is complete
+
+
+@pytest.mark.parametrize("unit", ["-\\", "a\\", "a-", "1-"])
+def test_controle_qualite_en_temps_lineaire(unit: str):
+    """Alerte CodeQL py/redos : « -\\ » répété sans « :ligne » faisait un retour arrière exponentiel."""
+    import time
+
+    start = time.perf_counter()
+    assert not server._review_complete(" " + unit * 20_000 + "!")
+    assert time.perf_counter() - start < 1.0
 
 
 @pytest.mark.parametrize(

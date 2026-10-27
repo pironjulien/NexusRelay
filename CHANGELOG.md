@@ -6,6 +6,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.3] - 2026-10-27
+
+### Fixed
+- Reviews: the `file:line` reference finder no longer takes exponential time on a crafted peer reply (ReDoS found
+  by CodeQL: 1,000 repetitions of `-\` blocked it for more than a minute); a few more path forms are recognized.
+
+### Changed
+- CodeQL findings addressed: reasons written in silent `except` blocks, tests tidied; the others dismissed on GitHub
+  with their reason.
+
 ## [1.8.2] - 2026-10-27
 
 ### Added
@@ -235,7 +245,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - English tool descriptions with titles and MCP annotations; `reply` accepts `done`/`refused`/`failed` and
   `agree`/`disagree`.
 
-[Unreleased]: https://github.com/pironjulien/NexusRelay/compare/v1.8.2...HEAD
+[Unreleased]: https://github.com/pironjulien/NexusRelay/compare/v1.8.3...HEAD
+[1.8.3]: https://github.com/pironjulien/NexusRelay/releases/tag/v1.8.3
 [1.8.2]: https://github.com/pironjulien/NexusRelay/releases/tag/v1.8.2
 [1.6.2]: https://github.com/pironjulien/NexusRelay/compare/v1.6.1...v1.6.2
 [1.6.1]: https://github.com/pironjulien/NexusRelay/compare/v1.6.0...v1.6.1

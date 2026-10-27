@@ -45,7 +45,7 @@ def _newest_rollouts(root: Path, limit: int = 8) -> list[Path]:
                 try:
                     written.append((path.stat().st_mtime, path))
                 except OSError:
-                    pass
+                    pass  # journal déplacé ou effacé pendant le parcours : simplement ignoré
     picked = [p for _, p in sorted(born, reverse=True)[:limit]] + [p for _, p in sorted(written, reverse=True)[:limit]]
     return list(dict.fromkeys(picked))
 

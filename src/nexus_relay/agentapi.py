@@ -188,7 +188,7 @@ class AgentApi:
             try:
                 process.communicate(timeout=10)
             except subprocess.TimeoutExpired:
-                pass
+                pass  # déjà tué : on n'attend pas plus ses tubes, l'erreur de délai suit
             raise AgentApiError(
                 tr(
                     f"agentapi {args[0]}: timed out ({self.timeout:.0f} s)",

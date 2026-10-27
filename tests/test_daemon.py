@@ -117,8 +117,11 @@ def test_une_seule_instance(tmp_path: Path):
     finally:
         held.close()
     again = daemon.lock(tmp_path / "daemon.lock")
-    assert again is not None
-    again.close()
+    try:
+        assert again is not None
+    finally:
+        if again is not None:
+            again.close()
 
 
 def test_spec_declare_la_demande_suivie_par_le_demon():

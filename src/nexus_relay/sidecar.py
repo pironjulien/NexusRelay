@@ -410,7 +410,7 @@ class Sidecar:
                 try:
                     self.box.set_state("sidecar", {"at": now_iso(), "pid": os.getpid()})
                 except OSError:
-                    pass
+                    pass  # battement manqué (fichier pris) : le suivant le remplace, le fil ne meurt jamais
                 time.sleep(BEAT_S)
 
         threading.Thread(target=heartbeat, name="nexus-relay-sidecar-battement", daemon=True).start()
@@ -418,7 +418,7 @@ class Sidecar:
         try:
             mark_restartable("sidecar")
         except OSError:
-            pass
+            pass  # marque facultative : sans elle, install.ps1 arrête ce sidecar de force au lieu de le prévenir
         while True:
             try:
                 self.step()
@@ -455,7 +455,7 @@ def main() -> None:
             with log_file.open("a", encoding="utf-8") as handle:
                 handle.write(stamped + "\n")
         except OSError:
-            pass
+            pass  # journal fichier indisponible : la ligne est déjà sur stderr
 
     Sidecar(Box(), AgentApi(resolve_command()), log, host_gone=watch_host()).run()
 
