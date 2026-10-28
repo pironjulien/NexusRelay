@@ -77,6 +77,16 @@ def test_codex_table_ajoutee_relue_et_remplacee(tmp_path: Path):
     assert list((tmp_path / "b").iterdir())  # sauvegarde avant écriture
 
 
+@pytest.mark.parametrize("catalog", ["nexus", "nexus-plugins"])
+def test_codex_plugin_deja_actif(tmp_path: Path, catalog: str):
+    # plugin nexus-relay de n'importe quel catalogue (NexusSystem le propose depuis le 28/10) : aucun second serveur
+    folder = tmp_path / ".codex"
+    folder.mkdir()
+    (folder / "config.toml").write_text(f'[plugins."nexus-relay@{catalog}"]\nenabled = true\n', encoding="utf-8")
+    assert rc.codex(tmp_path, 16181, tmp_path / "b") == rc.PLUGIN
+    assert "mcp_servers" not in tomllib.loads((folder / "config.toml").read_text(encoding="utf-8"))
+
+
 def test_codex_absent(tmp_path: Path):
     assert rc.codex(tmp_path, 16181, tmp_path / "b") is None
 

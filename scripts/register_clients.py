@@ -122,7 +122,9 @@ def codex(home: Path, port: int, backups: Path) -> str | None:
     config = folder / "config.toml"
     text = config.read_text(encoding="utf-8-sig") if config.exists() else ""
     data = tomllib.loads(text)
-    if (data.get("plugins") or {}).get(f"{NAME}@nexus", {}).get("enabled"):
+    # nexus-relay plugin of any catalog (« nexus » privé, « nexus-plugins » de NexusSystem depuis le 28/10)
+    plugins = data.get("plugins") or {}
+    if any(key.split("@")[0] == NAME and (value or {}).get("enabled") for key, value in plugins.items()):
         return PLUGIN
     current = data.get("mcp_servers", {}).get(NAME)
     if not ours(current):

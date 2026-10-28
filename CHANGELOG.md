@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.6] - 2026-10-28
+
+### Fixed
+- Codex: a nexus-relay plugin from any catalog (including `nexus-plugins`, the NexusSystem catalog that offers it
+  since 28/10) is recognised, so the install no longer adds a second server to config.toml.
+
 ## [1.8.5] - 2026-10-28
 
 ### Fixed
