@@ -6,6 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Signed releases: the files PyPI serves (wheel, sdist) are attached to each release with their Sigstore attestation
+  and SHA256SUMS.txt (`release-assets.yml`; verify with `gh attestation verify <file> --repo pironjulien/NexusRelay`).
+  1.8.4 was signed afterwards.
+
 ## [1.8.4] - 2026-10-28
 
 ### Changed
