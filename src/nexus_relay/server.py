@@ -390,7 +390,7 @@ def send(
         targets = _recipients(to)
         extra: dict[str, Any] = {}
         widened: list[str] = []
-        if not info and (review if review is not None else bool(REVIEW_ASK.search(text.strip()[:REVIEW_HEAD]))):
+        if not info and (review if review is not None else _asks_review(text)):
             extra["review"] = True
             # Règle de Julien du 28/10 : une relecture passe par les DEUX pairs, avis indépendants ; le relais l'impose
             # au lieu de compter sur la mémoire de l'hôte (Codex seul sollicité trois fois de suite ce jour-là).
@@ -464,6 +464,22 @@ REVIEW_ASK = re.compile(
     r"(?:^|[.!?:]\s+)(?:tour \d+ de (?:ta |la )?)?(relecture|relis|relire|revue|review)\b", re.IGNORECASE
 )
 REVIEW_HEAD = 160  # caractères du début du message où la demande est cherchée
+# Verdict DEMANDÉ d'une relecture, la formule de l'hôte (« Attendu : « feu vert sur … » ou fichier:ligne… »), où
+# qu'elle soit dans le message (28/10 : « Seconde relecture… » envoyée à Codex seul n'était pas élargie aux deux pairs).
+# Jamais une simple mention : « j'ai déjà donné mon feu vert sur… », « le format fichier:ligne », un qualificatif devant
+# le mot (« Nouvelle revue de presse ») ne sont pas des demandes (relectures de Codex).
+REVIEW_VERDICT = re.compile(
+    # blancs jamais répartis entre deux \s* voisins (temps linéaire, relecture de Codex : quadratique sinon)
+    r"\b(?:attendu|expected)\s*:\s*(?:[«\"“']\s*)?(?:(?:un|a)\s+)?(?:feu vert|green light)\b",
+    re.IGNORECASE,
+)
+
+
+def _asks_review(text: str) -> bool:
+    """Demande de relecture : dite au début du message, ou verdict de relecture attendu n'importe où."""
+    return bool(REVIEW_ASK.search(text.strip()[:REVIEW_HEAD]) or REVIEW_VERDICT.search(text))
+
+
 # relecture de Codex du 24/10 : un nom sans extension (Dockerfile:12) compte ; une heure (12:30) ou une URL
 # (https://x.org:443) non ; « Antigravity » n'est pas une gravité ; « Pas RAS » n'est pas un verdict
 # segments et séparateurs sans caractère commun, première lettre du nom fixée (alerte CodeQL py/redos) : « -\-\-\… »

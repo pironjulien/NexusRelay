@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 
 import pytest
 from conftest import as_agent, call
@@ -80,12 +81,34 @@ def test_controle_qualite_en_temps_lineaire(unit: str):
     assert time.perf_counter() - start < 1.0
 
 
+def test_formule_de_verdict_en_temps_lineaire():
+    # relecture de Codex du 28/10 : « Attendu: » suivi de 16 000 blancs prenait 4 s (retour arrière quadratique)
+    text = "Attendu:" + " " * 50_000 + "x"
+    started = time.perf_counter()
+    assert not server._asks_review(text)
+    assert time.perf_counter() - started < 0.5
+
+
 @pytest.mark.parametrize(
     ("text", "review"),
     [
         ("Relecture croisée, sans rien modifier. Dépôt X.", True),
         ("Tour 2 de ta relecture, sans rien modifier.", True),
         ("Relis le diff de 2832bc7 et dis ce qui casse.", True),
+        (
+            "Seconde relecture (lecture seule) : commit 6a151e9. Attendu : « feu vert sur 6a151e9 » ou fichier:ligne.",
+            True,
+        ),
+        # relecture de Codex du 28/10 : un qualificatif devant le mot ne suffit pas
+        ("Nouvelle revue de presse : résume les liens reçus ce matin.", False),
+        ("Dernière relecture terminée : tu peux lancer le banc.", False),
+        # verdict attendu n'importe où, quel que soit le premier mot (28/10)
+        ("Point sur le commit 3 : regarde-le. Attendu : « feu vert sur 3 » ou fichier:ligne, scénario, gravité.", True),
+        ("Contrôle du diff. " + "Contexte. " * 30 + "Expected: green light on 4, or file:line.", True),
+        # une mention n'est pas une demande (relecture de Codex du 28/10)
+        ("J'ai déjà donné mon feu vert sur le commit abc123 ; mesure seulement la latence du banc.", False),
+        ("Mesure le banc. La doc de sortie impose le format fichier:ligne pour les diagnostics.", False),
+        ("Mesure le banc : le green light on 5 est déjà reçu.", False),
         ("Merci. J'ai fait la revue du code, tu peux reprendre les mesures du banc.", False),
         ("Mesure le banc. " + "Contexte. " * 30 + "La relecture viendra plus tard.", False),
     ],

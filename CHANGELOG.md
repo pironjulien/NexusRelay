@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.5] - 2026-10-28
+
+### Fixed
+- Reviews: a message that asks for a verdict ("Expected: green light on …", or its French form) is a review request
+  wherever that phrase is written, while a mere mention ("I already gave my green light on…") is not; a "second review" sent to one peer was not widened to both.
+
 ### Added
 - Signed releases: the files PyPI serves (wheel, sdist) are attached to each release with their Sigstore attestation
   and SHA256SUMS.txt (`release-assets.yml`; verify with `gh attestation verify <file> --repo pironjulien/NexusRelay`).
