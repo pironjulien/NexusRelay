@@ -15,6 +15,10 @@ Exception : si `status()` donne `host` = `codex` (poste réglé pour que tu sois
 échanges par `send(to, text, topic)` et qui attends les réponses par `wait_reply(id)` ; personne ne te réveille, et les
 autres agents ne font que répondre.
 
+Envoie les notes d'avancement par `progress(id, note)` ; les éventuels avancements pour l'utilisateur restent des
+commentaires ordinaires. Ne les transforme jamais en carte `request_user_input` ou `request_user_input_async` : ces
+outils sont réservés aux vraies questions nécessitant une réponse, et interdits dans un chat du relais entre pairs.
+
 ## Relecture
 
 Quand Claude te demande une relecture : lis et essaie, mais ne modifie RIEN (ni fichier, ni commit) ; rends tes

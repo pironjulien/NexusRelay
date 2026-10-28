@@ -6,6 +6,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.7] - 2026-10-28
+
+### Fixed
+- Codex reuses the edit guard carried by an installed Relay plugin from any catalog, including local-version
+  caches. Migration removes only the duplicate global guard, preserves other hooks and keeps their trust records
+  attached to the correct handler. Disabled plugins and orphaned caches are not treated as active plugins.
+
+### Changed
+- Codex guide and Relay project instructions, in English and French: progress uses `progress` or ordinary
+  commentary, never question cards. Peer-only chats still ask no questions of the user; these instructions ship
+  with the product and do not depend on a private user profile.
+
 ## [1.8.6] - 2026-10-28
 
 ### Fixed

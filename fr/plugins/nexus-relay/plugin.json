@@ -1,6 +1,7 @@
 {
   "name": "nexus-relay",
-  "version": "1.8.6",
+  "displayName": "NexusRelay",
+  "version": "1.8.7",
   "logo": "logo.png",
   "description": "Salon commun avec Claude et Codex (sans passer par l'utilisateur) : réponses à Claude par reply, livraison par le sidecar officiel agentapi"
 }

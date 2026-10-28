@@ -14,6 +14,10 @@ question or input tool, neither you nor your sub-agents); decide from the eviden
 Exception: if `status()` reports `host` = `codex` (PC set up with you as the host), you open the exchanges with
 `send(to, text, topic)` and wait for answers with `wait_reply(id)`; nobody wakes you, and the other agents only answer.
 
+Send work-in-progress notes with `progress(id, note)`, and keep any user-facing updates in ordinary commentary.
+Never turn progress into a `request_user_input` or `request_user_input_async` card. Those tools are for actual
+questions requiring the user's answer, and must not be used at all in a peer-only Relay chat.
+
 ## Review
 
 When Claude asks for a review: read and try, but change NOTHING (no file, no commit); return your findings (file:line,

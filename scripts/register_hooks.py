@@ -5,7 +5,8 @@ Antigravity; Claude Code gets it from the nexus-relay plugin of the nexus catalo
   ([hooks.state."<file>:pre_tool_use:<group>:0"] trusted_hash). Codex runs a non-managed hook only once trusted, the
   trust being the hash of the hook's normalized definition: sha256 of its sorted compact JSON
   (codex-rs/hooks/src/engine/discovery.rs hook_hash, codex-rs/config/src/fingerprint.rs version_for_toml). Written
-  here, as /hooks would after a review: the definition is this installer's own.
+  here, as /hooks would after a review: the definition is this installer's own. When the installed Codex nexus-relay
+  plugin declares the guard itself, our global entry and its trust are removed instead. Disabled plugins stay disabled.
 - Antigravity: ~/.gemini/config/hooks.json, hook "nexus-relay-edit-guard", matcher of its file-writing tools.
 
 Our entries are recognized by "nexus_relay.edit_guard" in their command and replaced in place; nothing else in these
@@ -41,7 +42,11 @@ def command(python: str, agent: str) -> str:
 
 
 def ours(group: object) -> bool:
-    return isinstance(group, dict) and any(MARK in str(h.get("command", "")) for h in group.get("hooks") or [])
+    return isinstance(group, dict) and any(our_handler(h) for h in group.get("hooks") or [])
+
+
+def our_handler(handler: object) -> bool:
+    return isinstance(handler, dict) and MARK in str(handler.get("command", ""))
 
 
 def codex_hash(matcher: str, handler: dict) -> str:
@@ -53,14 +58,142 @@ def codex_hash(matcher: str, handler: dict) -> str:
 
 def toml_literal(text: str) -> str:
     if "'" in text or "\n" in text:
-        raise ValueError(f"path not writable as a TOML literal key: {text}")
+        return json.dumps(text, ensure_ascii=False)
     return f"'{text}'"
+
+
+def manifest_carries_guard(manifest: Path) -> bool:
+    try:
+        data = json.loads(manifest.read_text(encoding="utf-8-sig"))
+        if not isinstance(data, dict) or data.get("name") != "nexus-relay":
+            return False
+        hooks = data.get("hooks") or {}
+        events = hooks.get("hooks") if isinstance(hooks, dict) else None
+        return isinstance(events, dict) and any(
+            ours(group) and group.get("matcher") == CODEX_MATCHER for group in events.get("PreToolUse") or []
+        )
+    except (OSError, ValueError):
+        return False
+
+
+def relay_plugins(config: dict) -> dict[str, dict]:
+    return {
+        name: settings
+        for name, settings in (config.get("plugins") or {}).items()
+        if name.split("@", 1)[0] == "nexus-relay" and isinstance(settings, dict)
+    }
+
+
+def carried_by_plugin(folder: Path, config: dict) -> bool:
+    """Personal source or installed repo-marketplace copy; an orphaned cache is not an installed plugin.
+
+    Codex installs local marketplace entries into cache/<marketplace>/<name>/local (OpenAI's plugin packaging docs).
+    The personal generator writes its source and installed copy together, retaining its historical source lookup.
+    """
+    plugins = relay_plugins(config)
+    active = [name for name, settings in plugins.items() if settings.get("enabled", True)]
+    if not plugins or "nexus-relay@personal" in active:
+        if manifest_carries_guard(folder / "plugins" / "nexus-relay" / ".codex-plugin" / "plugin.json"):
+            return True
+    for name in active:
+        parts = name.split("@", 1)
+        if len(parts) != 2 or parts[1] in {"", ".", ".."} or any(c in parts[1] for c in "/\\"):
+            continue
+        manifest = folder / "plugins" / "cache" / parts[1] / "nexus-relay" / "local" / ".codex-plugin" / "plugin.json"
+        if manifest_carries_guard(manifest):
+            return True
+    return False
+
+
+TABLE_HEADER = re.compile(r"(?m)^[ \t]*\[[^\r\n]*(?:\r?\n|$)")
+
+
+def move_trust(text: str, remap: dict[str, str | None]) -> str:
+    """Move only affected trust sections when deleting handlers shifts their global group/handler indexes."""
+    expected = tomllib.loads(text)
+    state = expected.get("hooks", {}).get("state", {})
+    moved = {key: value for key, value in state.items() if key not in remap}
+    moved.update({target: state[key] for key, target in remap.items() if target is not None and key in state})
+    if state:
+        expected["hooks"]["state"] = moved
+    matches = list(TABLE_HEADER.finditer(text))
+    parts = [text[: matches[0].start()] if matches else text]
+    for index, match in enumerate(matches):
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
+        header = match.group()
+        try:
+            keys = tomllib.loads(header).get("hooks", {}).get("state", {})
+        except ValueError:
+            keys = {}
+        key = next(iter(keys)) if isinstance(keys, dict) and len(keys) == 1 else None
+        if key is not None and key in remap:
+            target = remap[key]
+            if target is not None:
+                parts.append(f"[hooks.state.{toml_literal(target)}]\n" + text[match.end() : end])
+        else:
+            parts.append(text[match.start() : end])
+    result = "".join(parts)
+    # Empty state tables may disappear after removing our final entry.
+    actual = tomllib.loads(result)
+    for parsed in (actual, expected):
+        if parsed.get("hooks", {}).get("state") == {}:
+            parsed["hooks"].pop("state")
+        if parsed.get("hooks") == {}:
+            parsed.pop("hooks")
+    if actual != expected:
+        raise ValueError("could not preserve the unrelated Codex hook trust sections")
+    return result
+
+
+def codex_drop(folder: Path, backups: Path, reason: str = "carried by the nexus-relay plugin") -> str:
+    """Remove all our global handlers, preserving other handlers and their trust even when their indexes move."""
+    hooks_path = folder / "hooks.json"
+    data = json.loads(hooks_path.read_text(encoding="utf-8-sig")) if hooks_path.exists() else {}
+    groups = (data.get("hooks") or {}).get("PreToolUse") or []
+    if not any(ours(group) for group in groups):
+        return reason
+    kept, remap = [], {}
+    for index, group in enumerate(groups):
+        handlers = group.get("hooks") or []
+        remaining = [handler for handler in handlers if not our_handler(handler)]
+        for handler_index, handler in enumerate(handlers):
+            key = f"{hooks_path}:pre_tool_use:{index}:{handler_index}"
+            if our_handler(handler):
+                remap[key] = None
+            elif remaining:
+                new_index = sum(not our_handler(h) for h in handlers[:handler_index])
+                remap[key] = f"{hooks_path}:pre_tool_use:{len(kept)}:{new_index}"
+        if remaining or not ours(group):
+            kept.append({**group, "hooks": remaining} if ours(group) else group)
+    if kept:
+        data["hooks"]["PreToolUse"] = kept
+    else:
+        del data["hooks"]["PreToolUse"]
+    config = folder / "config.toml"
+    text, updated = "", ""
+    if config.exists():
+        text = config.read_text(encoding="utf-8-sig")
+        updated = move_trust(text, remap)
+    backup(hooks_path, backups)
+    write_atomic(hooks_path, json.dumps(data, indent=2, ensure_ascii=False) + "\n")
+    if updated != text:
+        backup(config, backups)
+        write_atomic(config, updated)
+    return f"{reason}, global entry removed from {hooks_path}"
 
 
 def codex(home: Path, python: str, backups: Path) -> str | None:
     folder = Path(os.environ.get("CODEX_HOME") or home / ".codex")
     if not folder.is_dir():
         return None
+    config = folder / "config.toml"
+    text = config.read_text(encoding="utf-8-sig") if config.exists() else ""
+    settings = tomllib.loads(text)
+    plugins = relay_plugins(settings)
+    if plugins and not any(plugin.get("enabled", True) for plugin in plugins.values()):
+        return codex_drop(folder, backups, "kept disabled (nexus-relay plugin)")
+    if carried_by_plugin(folder, settings):
+        return codex_drop(folder, backups)
     hooks_path = folder / "hooks.json"
     data = json.loads(hooks_path.read_text(encoding="utf-8-sig")) if hooks_path.exists() else {}
     events = data.setdefault("hooks", {})
@@ -75,9 +208,7 @@ def codex(home: Path, python: str, backups: Path) -> str | None:
         groups[index] = group
     key = f"{hooks_path}:pre_tool_use:{index}:0"
     trusted = codex_hash(CODEX_MATCHER, handler)
-    config = folder / "config.toml"
-    text = config.read_text(encoding="utf-8-sig") if config.exists() else ""
-    state = tomllib.loads(text).get("hooks", {}).get("state", {})
+    state = settings.get("hooks", {}).get("state", {})
     if not changed_hooks and (state.get(key) or {}).get("trusted_hash") == trusted:
         return "already declared and trusted"
     if changed_hooks:
