@@ -18,12 +18,16 @@ from nexus_relay.box import Box
 def _fill(monkeypatch: pytest.MonkeyPatch) -> dict[str, str]:
     ids = {}
     ids["a"] = call(
-        server.send("codex", "Relecture du dépôt NexusBrowser : sécurité des jetons", topic="nexusbrowser")
+        server.send(
+            "codex", "Relecture du dépôt NexusBrowser : sécurité des jetons", topic="nexusbrowser", review=False
+        )
     )["id"]
     ids["b"] = call(server.send("antigravity", "Banc NexusWindows : mesure des clics", topic="nexuswindows"))["id"]
     time.sleep(1.1)  # horodatage à la seconde : c vient après a et b
     ids["c"] = call(
-        server.send("codex", "Seconde relecture : la SECURITE du pont, jetons et cookies", topic="nexusbrowser")
+        server.send(
+            "codex", "Seconde relecture : la SECURITE du pont, jetons et cookies", topic="nexusbrowser", review=False
+        )
     )["id"]
     as_agent(monkeypatch, "codex")
     ids["r"] = call(server.reply(ids["a"], "src/pont.py:12 jeton visible, gravité haute", vote="désaccord"))["id"]

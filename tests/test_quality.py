@@ -111,3 +111,16 @@ def test_relecture_explicite_ou_ecartee(monkeypatch: pytest.MonkeyPatch):
     as_agent(monkeypatch, "claude")
     other = _review(monkeypatch, "Relecture finie de ton côté ? Rends juste le SHA.", review=False)
     assert call(server.reply(other["id"], "abc1234"))
+
+
+def test_une_relecture_passe_toujours_par_les_deux_pairs(monkeypatch: pytest.MonkeyPatch):
+    # règle de Julien du 28/10 : avis indépendants de Codex ET d'Antigravity, imposés par le relais
+    sent = call(server.send("codex", "Relecture du commit 1afe2d7, sans rien modifier.", topic="relais"))
+    assert sent["to"] == "codex" and len(sent["ids"]) == 2 and "antigravity" in sent["widened"]
+    peer = server._box().get(sent["ids"][1])
+    assert peer is not None
+    assert peer.to == "antigravity" and peer.extra.get("review")
+    both = call(server.send(["codex", "antigravity"], "Relecture du commit 2.", topic="relais"))
+    assert len(both["ids"]) == 2 and "widened" not in both
+    plain = call(server.send("codex", "Banc : mesure des clics", topic="relais"))
+    assert "widened" not in plain and "ids" not in plain  # pas une relecture : un seul destinataire

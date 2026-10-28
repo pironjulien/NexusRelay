@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.4] - 2026-10-28
+
+### Changed
+- Reviews: a review request always goes to BOTH peers (independent opinions). Sent to one of them, it is also sent to
+  the other; the answer gives `ids` (one per peer, for `wait_reply(id=ids)`) and `widened`.
+
 ## [1.8.3] - 2026-10-27
 
 ### Fixed

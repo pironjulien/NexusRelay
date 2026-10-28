@@ -379,7 +379,9 @@ def send(
         files: attachments, absolute paths (images included: the recipient sees them through read); copied into the
             room when sent.
         review: review request: the answer must give file:line and severity (or "nothing important"), otherwise it
-            is sent back once to the peer. Omitted: inferred from the text ("review", "relis", "relecture").
+            is sent back once to the peer. Omitted: inferred from the text ("review", "relis", "relecture"). A review
+            always goes to BOTH peers (independent opinions): a review sent to one of them is
+            also sent to the other, and the answer lists one id per peer (wait_reply(id=ids)).
     """
 
     def action(me: str, box: Box) -> dict[str, Any]:
@@ -387,8 +389,13 @@ def send(
             _host_only(me)
         targets = _recipients(to)
         extra: dict[str, Any] = {}
+        widened: list[str] = []
         if not info and (review if review is not None else bool(REVIEW_ASK.search(text.strip()[:REVIEW_HEAD]))):
             extra["review"] = True
+            # Règle de Julien du 28/10 : une relecture passe par les DEUX pairs, avis indépendants ; le relais l'impose
+            # au lieu de compter sur la mémoire de l'hôte (Codex seul sollicité trois fois de suite ce jour-là).
+            widened = [agent for agent in AGENTS if agent != me and agent not in targets]
+            targets += widened
         if due_min is not None:
             if not 1 <= int(due_min) <= 24 * 60:
                 raise RelayError(tr("due_min: 1 to 1440 minutes", "due_min : de 1 à 1440 minutes"))
@@ -410,12 +417,26 @@ def send(
                     **_attached(message),
                 }
             )
+        note = (
+            {
+                "ids": [s["id"] for s in sent],
+                "widened": tr(
+                    f"review: also sent to {', '.join(widened)} (a review always goes to both peers; "
+                    "wait_reply(id=ids) waits for both)",
+                    f"relecture : envoyée aussi à {', '.join(widened)} (une relecture passe toujours par les deux "
+                    "pairs ; wait_reply(id=ids) attend les deux)",
+                ),
+            }
+            if widened
+            else {}
+        )
         if isinstance(to, str):
-            return sent[0]
+            return {**sent[0], **note}
         return {
             "ids": [s["id"] for s in sent],
             "topic": name,
             "messages": sent,
+            **({"widened": note["widened"]} if widened else {}),
             "note": tr(
                 "one message per recipient; wait_reply(id=ids) waits for all the answers",
                 "un message par destinataire ; wait_reply(id=ids) attend toutes les réponses",
