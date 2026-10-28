@@ -19,6 +19,7 @@ permissions:
 
 jobs:
   sign:
+    if: github.repository == 'pironjulien/NexusRelay'
     runs-on: ubuntu-latest
     permissions:
       contents: write
