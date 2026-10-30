@@ -164,6 +164,20 @@ public sealed class InstallerTests : IDisposable
     }
 
     [Fact]
+    public void Shared_token_remains_readable_while_other_installers_resolve_it()
+    {
+        string profile = Path.Combine(iso.Root, "active-consumer");
+        string token = Path.Combine(profile, ".nexus", "mcp-token.txt");
+        Directory.CreateDirectory(Path.GetDirectoryName(token)!);
+        File.WriteAllText(token, new string('b', 64));
+        // A live consumer can keep a readable handle while another installer resolves the same existing token.
+        // Locking the token itself denies this handle; a stable sibling lock only serializes the installers.
+        using var consumer = File.Open(token, FileMode.Open, FileAccess.Read, FileShare.Read);
+        Assert.EndsWith(new string('b', 64), Token(profile));
+        Assert.Equal(new string('b', 64), File.ReadAllText(token));
+    }
+
+    [Fact]
     public void Downloaded_code_is_never_run_in_memory()
     {
         // Microsoft Defender flags these forms (Trojan:Win32/Commando.A!ml, 30/10): installers run files with -File.

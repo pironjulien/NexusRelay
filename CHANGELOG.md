@@ -6,6 +6,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.10.3] - 2026-10-30
+
+### Fixed
+- Shared-token initialization uses a stable sibling `.lock` file. Concurrent installers still create one token, while
+  daemons and clients can read an existing token throughout another installation. The lock file is kept, never deleted.
+- A regression test holds an existing token open for reading while an installer resolves it; this failed when the
+  installer locked the token itself.
+
 ## [1.10.2] - 2026-10-30
 
 ### Fixed
