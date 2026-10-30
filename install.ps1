@@ -223,7 +223,9 @@ try {
 # restart_request : la demande de relance que suit le démon. Un superviseur la prend juste avant de le lancer (avant de
 # relire la spec) : ce lancement la satisfait, le démon neuf ne se relance pas aussitôt.
 $daemonRequest = Join-Path $mailbox 'daemon-restart.request'
-$spec = [ordered]@{ port = $port; exe = $nativeExe; args = @(); env = $daemonEnv; restart_request = $daemonRequest }
+# Clé python : doublon de exe, encore exigé par le superviseur NexusPoste déployé le 30/10 (sa source lit exe) ; à
+# retirer quand le poste aura un superviseur qui lit exe.
+$spec = [ordered]@{ port = $port; exe = $nativeExe; python = $nativeExe; args = @(); env = $daemonEnv; restart_request = $daemonRequest }
 $specChanged = Write-IfChanged $specPath ($spec | ConvertTo-Json -Depth 5)
 # Réglages relus (host et token_file viennent peut-être d'y être écrits) ; seul le moteur natif existe désormais.
 $currentSettings = Read-LocalSettings

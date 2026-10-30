@@ -185,7 +185,7 @@ public sealed class InstallerTests : IDisposable
         Assert.Contains(@"$mailbox = Join-Path $HOME '.nexus\relay'", install);
         Assert.Contains("$daemonEnv.NEXUS_RELAY_HOME = $mailbox", install);
         Assert.Contains("exe = $nativeExe", install);
-        Assert.DoesNotContain("python =", install);
+        Assert.Contains("python = $nativeExe", install);  // duplicate of exe for the deployed workstation supervisor
     }
 
     [Fact]

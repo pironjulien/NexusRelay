@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The native C# (.NET 10) engine is now the only engine: daemon, Antigravity sidecar, edit guard, host notice and
   commit guard. `install.ps1` no longer needs uv nor Python: it builds `native/` with `dotnet publish` (build outputs
   under `~\.nexus\build\nexusrelay`) or takes the self-contained engine of a release (`bin\`), installs it as an
-  immutable version, and declares the daemon with the `exe` key of its supervisor spec. A stable path
+  immutable version, and declares the daemon with the `exe` key of its supervisor spec (`python` repeats it for workstation supervisors that predate `exe`). A stable path
   `~\.nexus\nexus-relay\bin\NexusRelay.exe` (a copy of the version in service, swapped by rename so a running guard is never broken) is what hooks call.
 - Settings, client and hook registration are engine commands: `NexusRelay.exe --settings`, `--register-clients`,
   `--register-hooks` (same files, same backups, same Codex trust preservation as before). A Codex plugin that still
