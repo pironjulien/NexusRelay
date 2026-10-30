@@ -1,6 +1,8 @@
 """Hook PreToolUse commun à Claude Code, Codex et Antigravity : avant qu'un agent modifie un fichier, refus si un AUTRE
 agent l'a réservé ; sinon le fichier lui est réservé (AUTO_REASON, AUTO_TTL_MIN, prolongé à chaque modification),
-libéré par le hook post-commit une fois commité. Le 27/10, la copie de travail d'Antigravity, jamais réservée, s'était
+libéré par le hook post-commit une fois commité. Les hooks de fin d'outil et de session libèrent aussi les tentatives
+sans changement, après preuve que les fichiers sont propres ; une autre session et les réservations manuelles restent.
+Le 27/10, la copie de travail d'Antigravity, jamais réservée, s'était
 glissée dans un commit de Claude : la réservation ne dépend plus de la mémoire de l'agent. La garde de commit
 (reservations --staged) reste le second rideau.
 
@@ -54,7 +56,22 @@ def session(event: dict[str, Any]) -> str | None:
     return str(value) if value else None
 
 
-def decide(agent: str, files: list[str], box: Box | None = None, conversation: str | None = None) -> str | None:
+def invocation(agent: str, event: dict[str, Any]) -> str | None:
+    """Stable id shared by the before/after event; no guessed id from file names or timestamps."""
+    if agent == "antigravity":
+        value = event.get("stepIdx")
+        return f"step:{value}" if isinstance(value, int) and not isinstance(value, bool) else None
+    value = event.get("tool_use_id") or event.get("tool_call_id")
+    return str(value) if value else None
+
+
+def decide(
+    agent: str,
+    files: list[str],
+    box: Box | None = None,
+    conversation: str | None = None,
+    tool: str | None = None,
+) -> str | None:
     """Raison du refus, ou None : fichiers libres, désormais réservés à `agent` et à sa conversation (une autre
     conversation du même agent est refusée comme un autre agent)."""
     if not files:
@@ -88,6 +105,8 @@ def decide(agent: str, files: list[str], box: Box | None = None, conversation: s
             reservations.AUTO_REASON,
             AUTO_TTL_MIN,
             session=conversation,
+            automatic=True,
+            tool=tool,
         )
     except RelayError as error:  # réservé entre-temps par un autre agent
         return str(error)
@@ -112,7 +131,16 @@ def main(argv: list[str] | None = None) -> int:
     try:
         agent = normalize_agent(args[0]) if args else reservations.whoami()
         event = json.loads(sys.stdin.buffer.read().decode("utf-8") or "{}")
-        reason = decide(agent, targets(agent, event), conversation=session(event))
+        if "--finish-tool" in args or "--finish-session" in args:
+            reservations.finish_edits(
+                agent,
+                session(event),
+                tool=invocation(agent, event),
+                session_ended="--finish-session" in args,
+            )
+            sys.stdout.write("{}")  # neutral JSON object accepted by all three hook schemas
+            return 0
+        reason = decide(agent, targets(agent, event), conversation=session(event), tool=invocation(agent, event))
     except Exception as error:  # noqa: BLE001 - un hook ne bloque jamais le travail sur une erreur du relais
         print(f"Nexus Relay edit_guard: {error}", file=sys.stderr)
         return 0

@@ -633,6 +633,8 @@ def send_in_new_chat(
     restore_first: Callable[[], Any] | None = None,
     report: dict[str, Any] | None = None,
     existing: str | None = None,
+    prepare_new: Callable[[], bool] | None = None,
+    context_valid: Callable[[], bool] = lambda: True,
 ) -> dict[str, Any]:
     """Nouveau chat (ou, avec `existing`, le chat déjà ouvert du sujet), texte inséré et relu, Entrée, envoi vérifié
     (champ vidé, texte affiché) ; projet (`restore_first`) puis vue de l'utilisateur rendus sur TOUS les chemins, succès ou
@@ -664,7 +666,7 @@ def send_in_new_chat(
                     "reason": tr("topic chat not reopened", "chat du sujet pas rouvert"),
                     "injected": False,
                 }
-        elif not _click(page, new_chat):
+        elif not (prepare_new() if prepare_new is not None else _click(page, new_chat)):
             return {
                 "status": "failed",
                 "reason": tr(f'button "{new_chat[0]}" not found', f"bouton « {new_chat[0]} » introuvable"),
@@ -687,6 +689,12 @@ def send_in_new_chat(
                     "the new chat already holds a draft (the user's?): nothing typed",
                     "le nouveau chat contient déjà un brouillon (celui de l'utilisateur ?) : rien tapé",
                 ),
+                "injected": False,
+            }
+        if not context_valid():
+            return {
+                "status": "failed",
+                "reason": "Configured project identity not confirmed before insertion",
                 "injected": False,
             }
         if returned():  # l'utilisateur revenu pendant la préparation : on ne tape pas devant lui
@@ -713,6 +721,12 @@ def send_in_new_chat(
             }
         if returned():
             return {"status": "deferred", "reason": _user_back(), "injected": False}
+        if not context_valid():
+            return {
+                "status": "failed",
+                "reason": "Configured project identity changed before submission",
+                "injected": False,
+            }
         entered = True
         page.call("Input.dispatchKeyEvent", type="rawKeyDown", key="Enter", code="Enter", windowsVirtualKeyCode=13)
         page.call("Input.dispatchKeyEvent", type="char", key="Enter", text="\r")
@@ -918,7 +932,8 @@ def _press(page: Any, element_js: str) -> bool:
     les menus de l'appli ignorent un click() JavaScript."""
     center = page.eval(
         f"(() => {{ const e = {element_js}; if (!e) return null; const r = e.getBoundingClientRect();"
-        " return r.width ? [r.x + r.width / 2, r.y + r.height / 2] : null })()"
+        " const x=r.x+r.width/2,y=r.y+r.height/2,top=document.elementFromPoint(x,y);"
+        " return r.width && r.height && top && (top===e || e.contains(top)) ? [x,y] : null })()"
     )
     if not center:
         return False
@@ -1002,6 +1017,16 @@ def _topic_chat(ids: list[str], page: Any) -> tuple[str | None, str | None, bool
     known = (box.topic_state(message.topic, "codex") or {}).get("conversation")
     if not known:
         return message.topic, None, False
+    from .codex_app import _db_threads, _norm, home
+    from .codex_space import configured, owns
+
+    row = (_db_threads(home()) or {}).get(str(known))
+    if (
+        row is not None
+        and not row["archived"]
+        and (not owns(str(known), box) or _norm(row["cwd"]) != _norm(str(configured()["path"])))
+    ):
+        return message.topic, None, True
 
     def visible() -> bool:
         return any(conv == known for _, conv, _ in row_conversations(page))
@@ -1065,10 +1090,40 @@ def _remember_chat(topic: str, conversation: str) -> None:
         )
 
 
+def project_evidence(page: Any, space: dict[str, Any]) -> dict[str, Any] | None:
+    evidence = page.eval(
+        """(()=>{const id=__ID__;const rows=[...document.querySelectorAll('[data-app-action-sidebar-project-id]')]
+        .filter(e=>e.getClientRects().length&&e.getAttribute('data-app-action-sidebar-project-id')===id);
+        if(rows.length!==1)return {count:rows.length};let e=rows[0];for(let j=0;j<8&&e;j++,e=e.parentElement){
+        const k=Object.keys(e).find(k=>k.startsWith('__reactFiber'));let f=k?e[k]:null;
+        for(let i=0;i<8&&f;i++,f=f.return){const g=f.memoizedProps?.project?.group;
+        if(g?.projectId===id&&typeof g.path==='string')return {count:1,id:g.projectId,path:g.path,label:g.label};}}
+        return {count:1};})()""".replace("__ID__", json.dumps(space["project_id"]))
+    )
+    return evidence if isinstance(evidence, dict) else None
+
+
+def project_matches(evidence: dict[str, Any] | None, space: dict[str, Any]) -> bool:
+    from .codex_app import _norm
+
+    return bool(
+        evidence
+        and evidence.get("count") == 1
+        and evidence.get("id") == space["project_id"]
+        and evidence.get("label") == space["label"]
+        and isinstance(evidence.get("path"), str)
+        and _norm(evidence["path"]) == _norm(space["path"])
+    )
+
+
 @one_at_a_time(_deferred)
 def wake_codex(ids: Iterable[str] = (), port: int = CODEX_PORT) -> dict[str, Any]:
     """Réveil réel de Codex par son port : le waker du relais (wake.py)."""
     ids = list(ids)
+    from . import codex_space
+
+    space = codex_space.configured()
+    relay_new_chat = codex_space.labels()
     try:
         if user_in_codex():
             return {
@@ -1104,7 +1159,7 @@ def wake_codex(ids: Iterable[str] = (), port: int = CODEX_PORT) -> dict[str, Any
                 ),
             }
         text = wake_text(ids)
-        relay_button = f"(() => !!({_BUTTON})({json.dumps(list(RELAY_NEW_CHAT))}))()"
+        relay_button = f"(() => !!({_BUTTON})({json.dumps(list(relay_new_chat))}))()"
         # 21/10 : juste après le passage du mode ChatGPT au mode Codex, la liste des projets se dessine en différé ; lue
         # aussitôt, elle disait le projet « absent » à chaque essai (le mode de l'utilisateur rendu ensuite, la course revenait
         # au suivant) : 9 min de réveils ratés. On lui laisse le temps de paraître.
@@ -1126,10 +1181,10 @@ def wake_codex(ids: Iterable[str] = (), port: int = CODEX_PORT) -> dict[str, Any
             return {
                 "status": "failed",
                 "reason": tr(
-                    f'Codex project "{RELAY_PROJECT}" missing from the app (sidebar visible): recreate it once '
-                    f"(File > New project, folder {Path.home() / '.nexus' / 'relay' / 'codex-projet'})",
-                    f"projet Codex « {RELAY_PROJECT} » absent de l'appli (barre latérale visible) : le recréer "
-                    f"une fois (Fichier > Nouveau projet, dossier {Path.home() / '.nexus' / 'relay' / 'codex-projet'})",
+                    f'Codex project "{space["label"]}" missing from the app (sidebar visible): recreate it once '
+                    f"(File > New project, folder {space['path']})",
+                    f"projet Codex « {space['label']} » absent de l'appli (barre latérale visible) : le recréer "
+                    f"une fois (Fichier > Nouveau projet, dossier {space['path']})",
                 ),
                 "injected": False,
             }
@@ -1153,19 +1208,50 @@ def wake_codex(ids: Iterable[str] = (), port: int = CODEX_PORT) -> dict[str, Any
                 "reason": tr("topic chat in the middle of a turn", "chat du sujet en plein tour"),
                 "injected": False,
             }
+
+        def valid() -> bool:
+            return not space["explicit"] or (
+                project_matches(project_evidence(page, space), space)
+                and (
+                    selected_conversation(page) == existing
+                    if existing
+                    else selected_conversation(page) is None and current_project(page) == space["label"]
+                )
+            )
+
+        def prepare() -> bool:
+            if not project_matches(project_evidence(page, space), space):
+                return False
+            if selected_conversation(page) is None and current_project(page) == space["label"]:
+                return False  # An existing same-label draft has no proven UUID; preserve it.
+            roots = (
+                "[...document.querySelectorAll('[data-sidebar-project-container-id]')].filter(e=>e.getClientRects().length&&"
+                f"e.getAttribute('data-sidebar-project-container-id')==={json.dumps('project:' + space['project_id'])})"
+            )
+            button = (
+                f"(()=>{{const roots={roots};if(roots.length!==1)return null;const buttons=[...roots[0].querySelectorAll('button,[role=button]')]"
+                f".filter(e=>e.getClientRects().length&&{json.dumps(relay_new_chat)}.includes((e.getAttribute('aria-label')||'').trim()));"
+                "return buttons.length===1?buttons[0]:null})()"
+            )
+            return _press(page, button) and bool(_until(valid, STEP_WAIT_S))
+
         result = send_in_new_chat(
             page,
             text,
             ids[0] if ids else "Nexus Relay",
-            new_chat=RELAY_NEW_CHAT,
+            new_chat=relay_new_chat,
             present=user_in_codex,
             restore_first=lambda: restore_project(page, project),
             report=report,
             existing=existing,
+            prepare_new=prepare if space["explicit"] else None,
+            context_valid=valid,
         )
         if topic and report.get("conversation") and result.get("status") in ("started", "uncertain"):
             try:
                 _remember_chat(topic, str(report["conversation"]))
+                if result.get("status") == "started":
+                    codex_space.remember(topic, str(report["conversation"]))
             except Exception as error:  # noqa: BLE001 - message parti : l'issue du transport reste, jamais « failed »
                 report["remember_error"] = f"{type(error).__name__}: {error}"  # (sinon il serait réinjecté)
         answer = {**result, **report, "via": "cdp", "launched": ready.get("launched", False), "reused": bool(existing)}

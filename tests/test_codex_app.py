@@ -232,6 +232,11 @@ def _codex_page(monkeypatch: pytest.MonkeyPatch, mode_ok: bool = True) -> dict[s
 
 def test_archivage_par_l_appli_rend_le_mode_de_utilisateur(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     """Vu le 20/10 : le mode ChatGPT de l'utilisateur restait en mode Codex après un rangement."""
+    from nexus_relay import codex_space
+
+    monkeypatch.setattr(
+        codex_space, "owns", lambda conversation, box=None: True
+    )  # transport boundary; ownership is separately tested against SQLite
     _rollout(tmp_path, "019a-un", str(codex_app.relay_dir()), *_turn(time.time() - 60))
     state = _codex_page(monkeypatch)
     side = Sidebar(tmp_path, {"019a-un": "t1"})

@@ -521,6 +521,8 @@ def _host_only(me: str) -> None:
     qui réveille quelqu'un ; les autres répondent (reply) ou écrivent pour info. L'hôte n'est jamais sonné : plus de
     cascade possible."""
     host = relay_host()
+    if host in ("all", "peers", "trinite", "*"):
+        return
     if me != host:
         raise RelayError(
             tr(
@@ -1412,13 +1414,14 @@ def reserve(paths: list[str], reason: str, ttl_min: int = 60, exclusive: bool = 
 
 
 @mcp.tool(annotations=_hints(WRITE, "Release files"), structured_output=False)
-def release(id: str | None = None) -> str:  # noqa: A002 - nom imposé par le protocole du relais
+def release(id: str | None = None, force: bool = False) -> str:  # noqa: A002 - nom imposé par le protocole du relais
     """Release one of your reservations (id), or all of yours.
 
     Args:
         id: reservation to release (optional: all of yours).
+        force: host only, on the user's request: release another agent's reservation by its id (traced, files untouched).
     """
-    return _call(lambda me, box: {"released": reservations_mod.release(box, me, id)})
+    return _call(lambda me, box: {"released": reservations_mod.release(box, me, id, force)})
 
 
 @mcp.tool(annotations=_hints(READ_ONLY, "File reservations"))
@@ -1632,6 +1635,9 @@ def _status() -> str:
                 "fermé (raccourcis configurés avec --remote-debugging-port=9227)",
             )
         )
+        from .codex_space import configured as codex_execution_space
+
+        agents["codex"]["execution_space"] = codex_execution_space()
         agents["codex"]["credits"] = credits.codex_usage()
         agents["antigravity"]["credits"] = (
             credits.antigravity_usage(box) if cdp.agy_page_url() else box.state("antigravity-usage")

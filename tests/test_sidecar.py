@@ -48,7 +48,7 @@ def test_une_conversation_par_sujet_gardee():
     car, box, api = sidecar()
     first = box.post("claude", "antigravity", "q1", "nexuswindows")
     car.step()
-    second = box.post("codex", "antigravity", "q2", "nexuswindows")
+    second = box.post("claude", "antigravity", "q2", "nexuswindows")
     car.step()
     assert [c[:2] for c in api.calls] == [("new", CONV_A), ("send", CONV_A)]
     assert f'read(id="{first.id}")' in api.calls[0][2] and f'read(id="{second.id}")' in api.calls[1][2]

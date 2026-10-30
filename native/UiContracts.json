@@ -1,0 +1,106 @@
+{
+  "snapshot": "(scope) => {\n  const vis = e => e.getClientRects().length > 0 && getComputedStyle(e).visibility !== 'hidden';\n  const VOLATILE = /^data-(state|selected|tooltip-id|radix|base-ui|disabled|highlighted|orientation|side|align|open)/;\n  const RANDOM = /^:r|[0-9a-f]{8}-[0-9a-f]{4}|^[0-9a-f]{16,}$/i;\n  const root = scope ? [...document.querySelectorAll(scope)].filter(vis) : [document];\n  const IMPLICIT = {BUTTON: 'button', A: 'link', INPUT: 'textbox', TEXTAREA: 'textbox', SELECT: 'combobox'};\n  const TEXT_ROLES = ['button', 'link', 'menuitem', 'menuitemcheckbox', 'menuitemradio', 'tab', 'option', 'treeitem',\n    'checkbox', 'radio', 'switch'];\n  // routes internes seulement (ids de conversation masqués) ; tout le reste : « externe »\n  const route = h => /^\\/(?!\\/)/.test(h) ? h.split(/[?#]/)[0].replace(/\\/c\\/[^/]+/, '/c/*').slice(0, 60)\n    : (h.startsWith('#') ? '#' : 'externe');\n  const region = e => {\n    for (let p = e.parentElement; p; p = p.parentElement) {\n      const r = p.getAttribute('role'), t = p.tagName;\n      if (['menu', 'listbox', 'dialog', 'navigation', 'tablist', 'menubar'].includes(r) || ['NAV', 'ASIDE', 'HEADER', 'MAIN', 'FOOTER'].includes(t))\n        return (r || t.toLowerCase()) + (p.getAttribute('aria-label') ? ':' + p.getAttribute('aria-label') : '');\n    }\n    return '';\n  };\n  const out = [], seen = new Set();\n  for (const base of root) for (const e of base.querySelectorAll(\n      'button, a[href], input, textarea, select, [role], [aria-label], [data-testid], [contenteditable=true], [aria-haspopup]')) {\n    if (seen.has(e) || !vis(e) || e.closest('[data-ending-style], [data-closed]')) continue;\n    seen.add(e);\n    const role = e.getAttribute('role') || IMPLICIT[e.tagName] || (e.isContentEditable ? 'textbox' : '');\n    const aria = (e.getAttribute('aria-label') || e.getAttribute('title') || e.getAttribute('placeholder') || '').trim();\n    const field = ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.tagName) || e.isContentEditable;\n    const text = TEXT_ROLES.includes(role) && !field ? (e.innerText || '').trim().split('\\n')[0].trim().slice(0, 80) : '';\n    if (!role && !aria && !e.getAttribute('data-testid')) continue;\n    if (['presentation', 'none', 'group', 'generic', 'img', 'separator'].includes(role) && !aria) continue;\n    const data = {};\n    for (const a of e.attributes) if (a.name.startsWith('data-') && !VOLATILE.test(a.name))\n      data[a.name] = RANDOM.test(a.value) || /title|name|label/.test(a.name) ? '*' : a.value.slice(0, 60);  // titres de l'utilisateur : jamais stockés\n    const item = {role, aria, text: aria && text === aria ? '' : text, data, region: region(e)};\n    if (e.getAttribute('aria-haspopup')) item.popup = e.getAttribute('aria-haspopup');\n    if (e.getAttribute('aria-current') || e.getAttribute('aria-selected') === 'true') item.current = true;\n    if (e.getAttribute('href')) item.href = route(e.getAttribute('href'));\n    out.push(item);\n    if (out.length >= 1500) break;\n  }\n  return out;\n}",
+  "layers": "[...document.querySelectorAll('[role=menu], [role=listbox], [role=dialog]')].filter(e => e.getClientRects().length && !e.hasAttribute('data-ending-style') && !e.hasAttribute('data-closed')).length",
+  "draft": "(() => [...document.querySelectorAll('[contenteditable=true], textarea')].filter(e => e.getClientRects().length).some(e => ((e.value ?? e.innerText) || '').trim().length > 0))()",
+  "agy_running": "!![...document.querySelectorAll('button')].find(b => b.getClientRects().length && /^(Stop execution|Stop generating|Stop)$/i.test((b.getAttribute('aria-label') || '').trim()))",
+  "danger": "envoy|send|archiv|supprim|delete|remove|retir|déconnect|deconnect|log ?out|sign ?out|quitter|quit|exit|acheter|buy|upgrade|abonn|install|réinitial|reset|feedback|commentaire|signaler|report|stop|arrêt|changer de compte|switch account|ajouter un compte|add account|nouvel|nouveau|nouvelle|new |fermer|close|dupliquer|duplicate|clear|effac|vider|purg|trash|corbeille|run\\b|lancer|exécut|execut|start|play|revoke|révoqu|disconnect|import|export|download|télécharg",
+  "landmarks": {
+    "codex": {
+      "NEW_CHAT": {
+        "role": "button",
+        "labels": [
+          "Nouveau chat",
+          "New chat"
+        ]
+      },
+      "MODE": {
+        "popup": "menu",
+        "aria_re": "^(Changer de mode|Switch mode)"
+      },
+      "CHAT_ACTIONS": {
+        "popup": "menu",
+        "labels": [
+          "Actions du chat",
+          "Chat actions"
+        ],
+        "unless": [
+          "Aucun chat",
+          "No chats"
+        ],
+        "needs": "chat_open"
+      },
+      "ARCHIVE": {
+        "labels": [
+          "Archiver le chat",
+          "Archive chat",
+          "Archiver",
+          "Archive"
+        ],
+        "unless": [
+          "Aucun chat",
+          "No chats"
+        ]
+      },
+      "COMPOSER": {
+        "role": "textbox"
+      }
+    },
+    "antigravity": {
+      "NEW_CHAT": {
+        "labels": [
+          "New Conversation",
+          "Nouvelle conversation"
+        ]
+      },
+      "ARCHIVE": {
+        "data": {
+          "data-testid": "conversation-archive-button"
+        },
+        "unless": [
+          "No conversations",
+          "Aucune conversation"
+        ]
+      },
+      "MORE_OPTIONS": {
+        "data": {
+          "data-testid": "conversation-kebab"
+        },
+        "unless": [
+          "No conversations",
+          "Aucune conversation"
+        ]
+      },
+      "COMPOSER": {
+        "aria_re": "^(Message input|Saisie du message)"
+      },
+      "SEND": {
+        "data": {
+          "data-testid": "send-button"
+        }
+      }
+    }
+  },
+  "apps": {
+    "codex": {
+      "pages": "[data-sidebar-destination^='builtin:']",
+      "subpages": "[role=tablist]:not([aria-label*='chat' i]) [role=tab], [data-settings-panel-slug]:not([data-settings-panel-slug=account])",
+      "menu_pages": [
+        "Paramètres",
+        "Settings"
+      ],
+      "reveal": "[data-app-action-sidebar-thread-row]",
+      "triggers": {},
+      "js_open": false
+    },
+    "antigravity": {
+      "pages": "[data-testid=history-button], [data-testid=automations-button], a[href='/customizations'], [data-testid=settings-button]",
+      "subpages": "[data-testid^=settings-nav-item-]:not([data-testid$=Account]):not([data-testid*=Feedback])",
+      "menu_pages": [],
+      "reveal": "a[href^='/c/']",
+      "triggers": {
+        "data-testid": "title-menu-bar-item"
+      },
+      "js_open": true
+    }
+  }
+}

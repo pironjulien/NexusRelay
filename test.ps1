@@ -41,6 +41,22 @@ function Invoke-Step([string]$name, [scriptblock]$step) {
     if ($LASTEXITCODE) { Write-Error "$name : échec (code $LASTEXITCODE)." -ErrorAction Continue; exit $LASTEXITCODE }
 }
 
+$nativeCsproj = Join-Path $root 'native\NexusRelay.csproj'
+if (Test-Path $nativeCsproj) {
+    $nativeBuild = Join-Path $env:LOCALAPPDATA "NexusRelay\test-build-$PID"
+    $nativeOut = Join-Path $env:LOCALAPPDATA "NexusRelay\test-output-$PID"
+    $env:NEXUS_RELAY_TEST_EXE = Join-Path $nativeOut 'NexusRelay.exe'
+    Invoke-Step 'dotnet publish (native)' {
+        dotnet publish $nativeCsproj -c Release -o $nativeOut "-p:BaseIntermediateOutputPath=$nativeBuild\obj\" "-p:BaseOutputPath=$nativeBuild\bin\" --nologo -v q
+    }
+    Invoke-Step 'native --runtime-selftest' {
+        & (Join-Path $nativeOut 'NexusRelay.exe') --runtime-selftest | Out-Null
+    }
+    Invoke-Step 'native --selftest' {
+        & (Join-Path $nativeOut 'NexusRelay.exe') --selftest | Out-Null
+    }
+}
+
 Invoke-Step 'ruff check' { uv run --frozen --project $root ruff check $root }
 Invoke-Step 'ruff format' { uv run --frozen --project $root ruff format --check $root }
 Invoke-Step 'pyright' { uv run --frozen --project $root pyright --project $root --pythonpath $pythonExe }
@@ -51,5 +67,7 @@ Remove-Item -Recurse -Force $basetemp -ErrorAction SilentlyContinue
 
 $stray = Get-ChildItem $root -Recurse -Force -Directory -Filter '__pycache__' -ErrorAction SilentlyContinue
 if ($stray) { Write-Error "__pycache__ dans le dépôt : $($stray.FullName -join ', ')" -ErrorAction Continue; exit 1 }
+$strayNative = Get-ChildItem (Join-Path $root 'native') -Directory -Include 'bin', 'obj' -Force -ErrorAction SilentlyContinue
+if ($strayNative) { Write-Error "bin/obj dans native (OneDrive) : $($strayNative.FullName -join ', ')" -ErrorAction Continue; exit 1 }
 Write-Host 'NexusRelay : contrôle complet vert.'
 exit 0

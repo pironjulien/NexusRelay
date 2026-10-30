@@ -82,3 +82,15 @@ def test_reglage_host_lu_dans_les_fichiers(tmp_path: Path):
     path.write_text(json.dumps({"host": "codex"}), encoding="utf-8")
     environ: dict[str, str] = {}
     assert settings.apply(environ, [path]) == {"NEXUS_RELAY_HOST": "codex"}
+
+
+def test_trinite_symetrique_tous_hotes(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("NEXUS_RELAY_HOST", "all")
+    assert relay_host() == "all"
+    assert set(wake.wakeable()) == {"codex", "antigravity"}
+    as_agent(monkeypatch, "antigravity")
+    sent = call(server.send("codex", "q", topic="t"))
+    assert sent["id"]
+    as_agent(monkeypatch, "codex")
+    sent2 = call(server.send("claude", "q2", topic="t2"))
+    assert sent2["id"]

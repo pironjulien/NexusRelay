@@ -13,8 +13,8 @@
 #  - Antigravity : plugin ~\.gemini\config\plugins\nexus-relay (serveur MCP par URL, skill,
 #    sidecar permanent « nexus-relay/relay ») et son activation dans ~\.gemini\config\config.json, dans le projet
 #    Antigravity « Nexus Relay » (créé ici, dossier ~\.nexus\relay\agy-projet)
-#  - Codex : dossier du projet « Nexus Relay » (~\.nexus\relay\codex-projet) ; le projet lui-même s'ajoute une fois
-#    dans l'appli Codex (« Ajouter un projet »), voir README
+#  - Codex : espace explicite par chemin, nom et identifiant officiel (par exemple un projet existant Documents) ;
+#    le dossier historique Nexus Relay reste le défaut des installations sans choix, voir README
 #  - tests hors ligne (sauf -SkipTests)
 #  - -Register (installation publique, get.ps1) : jeton créé s'il n'y en a aucun (~\.nexus\nexus-relay\token.txt, noté
 #    dans settings.json), variable utilisateur NEXUS_MCP_TOKEN posée, serveur déclaré à Claude Code et Codex
@@ -25,7 +25,7 @@
 #    NEXUS_PACK_HOST, sinon le premier agent présent parmi les IA choisies (Claude Code, Codex, Antigravity)
 # Windows PowerShell 5.1 ou PowerShell 7.
 # Usage : powershell -NoProfile -File install.ps1 [-SkipTests] [-TokenFile <chemin>] [-Register]
-param([switch]$SkipTests, [string]$TokenFile, [switch]$Register)
+param([switch]$SkipTests, [string]$TokenFile, [switch]$Register, [switch]$PrepareOnly, [ValidateSet('python', 'native')][string]$Runtime)
 $ErrorActionPreference = 'Stop'
 
 $project = $PSScriptRoot
@@ -36,6 +36,15 @@ $pycache = Join-Path $cache 'pycache'
 $backups = Join-Path $state 'backups'
 $mailbox = Join-Path $HOME '.nexus\relay'
 New-Item -ItemType Directory -Force $state, $cache, $backups, $mailbox | Out-Null
+. (Join-Path $project 'scripts\Restart-Relay.ps1')
+. (Join-Path $project 'scripts\Configure-AntigravityRelay.ps1')
+. (Join-Path $project 'scripts\Resolve-RelayPath.ps1')
+$previousSpecPath = Join-Path $HOME '.nexus\daemons\specs\nexus-relay.json'
+$previousSpec = if (Test-Path -LiteralPath $previousSpecPath) { Get-Content -LiteralPath $previousSpecPath -Raw | ConvertFrom-RelayJson } else { $null }
+$daemonOwner = if (-not $PrepareOnly -and $previousSpec) { Get-RelayRestartOwner -Mailbox $mailbox -Name daemon -ExpectedExecutable ([string]$previousSpec.python) -Port ([int]$previousSpec.port) } else { $null }
+$previousSidecarPath = Join-Path $HOME '.gemini\config\plugins\nexus-relay\sidecars\relay\sidecar.json'
+$previousSidecar = if (Test-Path -LiteralPath $previousSidecarPath) { Get-Content -LiteralPath $previousSidecarPath -Raw | ConvertFrom-RelayJson } else { $null }
+$sidecarOwner = if (-not $PrepareOnly -and $previousSidecar) { Get-RelayRestartOwner -Mailbox $mailbox -Name sidecar -ExpectedExecutable ([string]$previousSidecar.command) } else { $null }
 
 $uv = (Get-Command uv -ErrorAction SilentlyContinue).Source
 if (-not $uv) { throw "uv introuvable : l'installer (https://docs.astral.sh/uv/) puis relancer." }
@@ -52,6 +61,45 @@ if (-not (Test-Path (Join-Path $venv 'Scripts\python.exe'))) {
 }
 & $uv sync --locked --project $project
 if ($LASTEXITCODE) { throw 'uv sync a échoué.' }
+# The chosen runtime is durable across logons/syncs. Building a candidate never activates it.
+$runtimeSettingsPath = Join-Path $state 'settings.json'
+$runtimeSettings = if (Test-Path $runtimeSettingsPath) { Get-Content -LiteralPath $runtimeSettingsPath -Raw | ConvertFrom-RelayJson } else { [pscustomobject]@{} }
+if (-not $Runtime) { $Runtime = if ($runtimeSettings.PSObject.Properties['runtime']) { [string]$runtimeSettings.runtime } else { 'python' } }
+if ($Runtime -notin @('python', 'native')) { throw 'Runtime du relais invalide.' }
+$nativeCsproj = Join-Path $project 'native\NexusRelay.csproj'
+$nativeExe = $null
+if ((Test-Path $nativeCsproj) -and (Get-Command dotnet.exe -ErrorAction SilentlyContinue)) {
+    # Immutable, content-addressed binaries: publishing cannot overwrite a running DLL or apphost.
+    $nativeHashes = Get-ChildItem (Join-Path $project 'native') -File | Where-Object Extension -in @('.cs', '.csproj', '.json') | Sort-Object Name | ForEach-Object { (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash }
+    $nativeDigest = [Security.Cryptography.SHA256]::Create().ComputeHash([Text.Encoding]::UTF8.GetBytes(($nativeHashes -join '')))
+    $nativeKey = (-join ($nativeDigest | ForEach-Object { $_.ToString('x2') })).Substring(0, 16)
+    $nativeBuild = Join-Path $env:LOCALAPPDATA 'NexusRelay\build'
+    $nativeOut = Join-Path $env:LOCALAPPDATA "NexusRelay\versions\$nativeKey"
+    $nativeExe = Join-Path $nativeOut 'NexusRelay.exe'
+    $nativeComplete = Join-Path $nativeOut 'publish.complete'
+    if (-not ((Test-Path -LiteralPath $nativeExe) -and (Test-Path -LiteralPath (Join-Path $nativeOut 'NexusRelay.dll')) -and (Test-Path -LiteralPath $nativeComplete))) {
+        & dotnet.exe publish $nativeCsproj -c Release -o $nativeOut "-p:BaseIntermediateOutputPath=$nativeBuild\obj\" "-p:BaseOutputPath=$nativeBuild\bin\" --nologo -v q
+        if ($LASTEXITCODE) { throw 'dotnet publish (native) a échoué.' }
+        [IO.File]::WriteAllText($nativeComplete, $nativeKey, [Text.UTF8Encoding]::new($false))
+    }
+    # Packaged Codex redirects new AppData files into its MSIX cache. External hosts need the actual opened path,
+    # not the logical path that exists only from the installer's package view.
+    $nativeExe = Resolve-RelayPath -Path $nativeExe
+}
+if ($Runtime -eq 'native' -and -not $nativeExe) { throw '.NET 10 SDK requis pour le moteur natif.' }
+if ($PrepareOnly) {
+    if (-not $nativeExe) { throw 'Candidat natif absent.' }
+    & $nativeExe --selftest | Out-Null
+    if ($LASTEXITCODE) { throw 'Autotest du candidat natif en échec.' }
+    & $nativeExe --runtime-selftest | Out-Null
+    if ($LASTEXITCODE) { throw 'Autotest des workers du candidat natif en échec.' }
+    Write-Host "NEXUS_RELAY_NATIVE_CANDIDATE $nativeExe"
+    Write-Host 'Candidat préparé et testé ; runtime, spec, plugins et processus en service inchangés.'
+    exit 0
+}
+$runtimeSettings | Add-Member -NotePropertyName runtime -NotePropertyValue $Runtime -Force
+$runtimeSettings | Add-Member -NotePropertyName installed_source -NotePropertyValue $project -Force
+if ($nativeExe) { $runtimeSettings | Add-Member -NotePropertyName native_root -NotePropertyValue (Split-Path (Split-Path (Split-Path $nativeExe))) -Force }
 
 $python = Join-Path $venv 'Scripts\python.exe'
 # Sidecar sans aucune fenêtre : pythonw.exe (aucune console à créer, même si Antigravity n'en fournit pas ; Windows
@@ -61,6 +109,10 @@ $pythonw = Join-Path $venv 'Scripts\pythonw.exe'
 if (-not (Test-Path $pythonw)) { throw "pythonw.exe absent de $venv : environnement à recréer." }
 $utf8 = [Text.UTF8Encoding]::new($false)
 New-Item -ItemType Directory -Force (Join-Path $HOME '.nexus\relay\codex-projet') | Out-Null  # dossier du projet Codex du relais
+$installedHooks = Join-Path $state 'hooks'
+New-Item -ItemType Directory -Force $installedHooks | Out-Null
+Copy-Item -LiteralPath (Join-Path $project 'scripts\invoke-hook.ps1') -Destination (Join-Path $installedHooks 'invoke-hook.ps1') -Force
+Copy-Item -LiteralPath (Join-Path $project 'scripts\Resolve-RelayPath.ps1') -Destination (Join-Path $installedHooks 'Resolve-RelayPath.ps1') -Force
 $stampTime = Get-Date -Format 'yyyyMMdd-HHmmss'
 
 function Save-Backup([string]$path, [string]$name) {
@@ -99,7 +151,7 @@ $serverArgs = @('-B', '-m', 'nexus_relay.server')
 $port = 16181
 $settingsPath = Join-Path $state 'settings.json'
 # Réglages effectifs (fichier de ce PC, puis celui du dépôt ; variables développées) : une seule lecture, celle du démon.
-$settings = (& $python -B -m nexus_relay.settings) | ConvertFrom-Json
+$settings = (& $python -B -m nexus_relay.settings) | ConvertFrom-RelayJson
 if ($LASTEXITCODE) { throw 'Lecture des réglages du poste : échec (nexus_relay.settings).' }
 # Langue des consignes déployées (réglage `lang`) : anglais par défaut ; `fr` prend la copie française du dossier fr\
 # du dépôt quand elle existe (skill d'Antigravity, consignes des chats de Codex).
@@ -122,7 +174,7 @@ if ($Register -and -not $tokenFile) {
         [IO.File]::WriteAllText($tokenFile, (-join ($bytes | ForEach-Object { $_.ToString('x2') })), $utf8)
         Write-Host "Jeton du démon créé : $tokenFile"
     }
-    $local = if (Test-Path $settingsPath) { [IO.File]::ReadAllText($settingsPath) | ConvertFrom-Json } else { [pscustomobject]@{} }
+    $local = if (Test-Path $settingsPath) { [IO.File]::ReadAllText($settingsPath) | ConvertFrom-RelayJson } else { [pscustomobject]@{} }
     $local | Add-Member -NotePropertyName token_file -NotePropertyValue $tokenFile -Force
     [IO.File]::WriteAllText($settingsPath, ($local | ConvertTo-Json -Depth 5), $utf8)
 }
@@ -141,7 +193,7 @@ if ($Register -and -not $settings.host) {
         @($present.Keys | Where-Object { $present[$_] -and ($null -eq $packTargets -or $packTargets -contains $_) } | ForEach-Object { $agentOf[$_] }) | Select-Object -First 1
     }
     if ($chosenHost) {
-        $local = if (Test-Path $settingsPath) { [IO.File]::ReadAllText($settingsPath) | ConvertFrom-Json } else { [pscustomobject]@{} }
+        $local = if (Test-Path $settingsPath) { [IO.File]::ReadAllText($settingsPath) | ConvertFrom-RelayJson } else { [pscustomobject]@{} }
         $local | Add-Member -NotePropertyName host -NotePropertyValue $chosenHost -Force
         [IO.File]::WriteAllText($settingsPath, ($local | ConvertTo-Json -Depth 5), $utf8)
         $settings | Add-Member -NotePropertyName host -NotePropertyValue $chosenHost -Force
@@ -162,39 +214,51 @@ if ($settings.codex_router) { $daemonEnv.NEXUS_RELAY_CODEX_ROUTER = [string]$set
 if ($settings.codex_router_start) { $daemonEnv.NEXUS_RELAY_CODEX_ROUTER_START = @($settings.codex_router_start) -join ';' }
 if ($settings.host) { $daemonEnv.NEXUS_RELAY_HOST = [string]$settings.host }
 if ($settings.lang) { $daemonEnv.NEXUS_RELAY_LANG = [string]$settings.lang }
+foreach ($entry in @{codex_workspace='NEXUS_RELAY_CODEX_WORKSPACE'; codex_project='NEXUS_RELAY_CODEX_PROJECT'; codex_project_id='NEXUS_RELAY_CODEX_PROJECT_ID'; wake_since='NEXUS_RELAY_WAKE_SINCE'}.GetEnumerator()) { if ($settings.($entry.Key)) { $daemonEnv[$entry.Value] = [string]$settings.($entry.Key) } }
 # Boîte épinglée : le démon lit celle où ce script dépose ses demandes, quel que soit l'environnement de son lanceur
 # (relecture de Codex, 27/10 : un NEXUS_RELAY_HOME hérité du superviseur l'envoyait ailleurs).
 $daemonEnv.NEXUS_RELAY_HOME = $mailbox
+$daemonEnv.NEXUS_RELAY_SOURCE_ROOT = $project
+if ($Runtime -eq 'native') {
+    $priorEnvironment = @{}
+    try {
+        foreach ($key in @('NEXUS_RELAY_HOME','NEXUS_RELAY_CODEX_WORKSPACE','NEXUS_RELAY_CODEX_PROJECT','NEXUS_RELAY_CODEX_PROJECT_ID')) {
+            $priorEnvironment[$key] = [Environment]::GetEnvironmentVariable($key, 'Process')
+            [Environment]::SetEnvironmentVariable($key, [string]$daemonEnv[$key], 'Process')
+        }
+        & $nativeExe --register-known-relay-chats | Out-Null
+        if ($LASTEXITCODE) { throw 'Vérification des anciens chats Relay en échec ; aucune appropriation par dossier seul.' }
+    } finally { foreach ($key in $priorEnvironment.Keys) { [Environment]::SetEnvironmentVariable($key, $priorEnvironment[$key], 'Process') } }
+}
 # restart_request : la demande de relance que suit le démon. Un superviseur la prend juste avant de le lancer (avant de
 # relire la spec) : ce lancement la satisfait, le démon neuf ne se relance pas aussitôt (CI du 27/10, 1.8.0).
 $daemonRequest = Join-Path $mailbox 'daemon-restart.request'
-$spec = [ordered]@{ port = $port; python = $python; args = $serverArgs; env = $daemonEnv; restart_request = $daemonRequest }
+$daemonExe = if ($Runtime -eq 'native') { $nativeExe } else { $python }
+$daemonArgs = if ($Runtime -eq 'native') { @() } else { $serverArgs }
+$spec = [ordered]@{ port = $port; python = $daemonExe; args = @($daemonArgs); env = $daemonEnv; restart_request = $daemonRequest }
 $specChanged = Write-IfChanged (Join-Path $HOME '.nexus\daemons\specs\nexus-relay.json') ($spec | ConvertTo-Json -Depth 5)
+# Hooks follow this setting and resolve their native executable through the spec. Publish the spec first: during
+# the short transition old Python hooks remain valid, whereas selecting native against a Python spec would fail.
+[IO.File]::WriteAllText($runtimeSettingsPath, ($runtimeSettings | ConvertTo-Json -Depth 10), [Text.UTF8Encoding]::new($false))
 # Nouveau code : demande de relance au démon, jamais d'arrêt forcé. Il ne se relance que si son code a changé, une fois
 # aucun appel en cours, et le superviseur le relance. Vu le 20/10 : l'arrêt forcé ici coupait les wait_reply de 600 s
 # à chaque installation d'une autre session (ECONNRESET, puis « server not connected »).
-# Processus d'avant la relance par demande (pas de marqueur à leur PID, ni à celui de leur lanceur) : arrêtés de force
-# une dernière fois, leur relanceur les remet sur le nouveau code (tour 5 : sinon l'ancien code restait pour toujours).
-function Stop-Legacy([string]$pattern, [string]$name) {
-    $procs = @(Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match $pattern })
-    $known = 0
-    $null = [int]::TryParse("$(Get-Content (Join-Path $mailbox "$name-restart.pid") -Raw -ErrorAction SilentlyContinue)".Trim(), [ref]$known)
-    $spare = @($known) + @($procs | Where-Object { $_.ProcessId -eq $known } | ForEach-Object { $_.ParentProcessId })
-    $procs | Where-Object { $_.ProcessId -notin $spare } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
-}
-Stop-Legacy 'nexus_relay\.server --http' 'daemon'
-Stop-Legacy 'nexus_relay\.sidecar' 'sidecar'
+# Ownership was checked before changing the runtime: executable/module, listening port, PID and birth vs marker.
+# An unknown legacy process is never terminated. The request addresses only the verified process and drains work.
 # Réglages du démon changés (Python, arguments, environnement) : relance forcée, le code seul ne le dirait pas.
 $forced = $specChanged -or "$(Get-Content $daemonRequest -Raw -ErrorAction SilentlyContinue)".StartsWith('force')  # tour 6
-[IO.File]::WriteAllText($daemonRequest, "$(if ($forced) { 'force' } else { 'code' }) $(Get-Date -Format o)", $utf8)
+$targetFingerprint = if ($Runtime -eq 'native') { "sha256:$((Get-FileHash -LiteralPath ([IO.Path]::ChangeExtension($nativeExe, '.dll')) -Algorithm SHA256).Hash.ToLowerInvariant()) " } else { '' }
+$null = Request-RelayRestart -RequestPath $daemonRequest -Owner $daemonOwner -Kind $(if ($forced) { 'force' } else { 'code' }) -Fingerprint $targetFingerprint
 # Pareil pour le sidecar d'Antigravity : il sort entre deux livraisons si son code a changé, Antigravity le relance
 # (restart_policy « always »). Tour 5 : l'arrêt forcé ici laissait une livraison en cours « incertaine », jamais rejouée.
-[IO.File]::WriteAllText((Join-Path $mailbox 'sidecar-restart.request'), "code $(Get-Date -Format o)", $utf8)
+$null = Request-RelayRestart -RequestPath (Join-Path $mailbox 'sidecar-restart.request') -Owner $sidecarOwner -Kind $(if ($specChanged) { 'force' } else { 'code' }) -Fingerprint $targetFingerprint
 # Sans superviseur des démons Nexus : tâche « Nexus Relay » à l'ouverture de session, qui lance le petit superviseur du
 # relais (nexus_relay.daemon : lit la spec ci-dessus, relance le démon quand il s'arrête), puis lancée tout de suite.
 if (-not (Get-ScheduledTask -TaskName 'Nexus MCP Daemons' -ErrorAction SilentlyContinue)) {
     $taskName = 'Nexus Relay'
-    $action = New-ScheduledTaskAction -Execute $pythonw -Argument '-B -m nexus_relay.daemon' -WorkingDirectory $state
+    $supervisorExe = if ($Runtime -eq 'native') { $nativeExe } else { $pythonw }
+    $supervisorArgs = if ($Runtime -eq 'native') { '--daemon' } else { '-B -m nexus_relay.daemon' }
+    $action = New-ScheduledTaskAction -Execute $supervisorExe -Argument $supervisorArgs -WorkingDirectory $state
     $trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
     $settingsTask = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
         -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew -Hidden
@@ -230,9 +294,9 @@ if ($null -ne $packTargets -and $packTargets -notcontains 'antigravity') {
     $sidecar = [ordered]@{
         display_name = 'Nexus Relay'
         description = 'Livre à Antigravity les messages de Claude (boîte ~\.nexus\relay) par agentapi, une conversation par sujet dans le projet Nexus Relay ; une livraison incertaine n''est jamais rejouée.'
-        command = $pythonw
-        args = @('-B', '-m', 'nexus_relay.sidecar')
-        env = [ordered]@{ PYTHONUTF8 = '1'; PYTHONDONTWRITEBYTECODE = '1'; PYTHONPYCACHEPREFIX = $pycache; NEXUS_RELAY_HOME = $mailbox }
+        command = $(if ($Runtime -eq 'native') { $nativeExe } else { $pythonw })
+        args = @($(if ($Runtime -eq 'native') { '--sidecar' } else { '-B'; '-m'; 'nexus_relay.sidecar' }))
+        env = [ordered]@{ PYTHONUTF8 = '1'; PYTHONDONTWRITEBYTECODE = '1'; PYTHONPYCACHEPREFIX = $pycache; NEXUS_RELAY_HOME = $mailbox; NEXUS_RELAY_HOST = [string]$settings.host; NEXUS_RELAY_WAKE_SINCE = [string]$settings.wake_since; NEXUS_RELAY_SOURCE_ROOT = $project }
         restart_policy = 'always'
     }
     if (Write-IfChanged (Join-Path $plugin 'sidecars\relay\sidecar.json') ($sidecar | ConvertTo-Json -Depth 10)) { $copied++ }
@@ -249,7 +313,7 @@ if ($null -ne $packTargets -and $packTargets -notcontains 'antigravity') {
     New-Item -ItemType Directory -Force $projectsDir | Out-Null
     $projectId = $null
     foreach ($file in Get-ChildItem $projectsDir -Filter *.json -ErrorAction SilentlyContinue) {
-        $candidate = Get-Content -LiteralPath $file.FullName -Raw | ConvertFrom-Json
+        $candidate = Get-Content -LiteralPath $file.FullName -Raw | ConvertFrom-RelayJson
         if ($candidate.id -and [string]$candidate.name -eq $relayProjectName) { $projectId = [string]$candidate.id }
     }
     if (-not $projectId) {
@@ -267,27 +331,14 @@ if ($null -ne $packTargets -and $packTargets -notcontains 'antigravity') {
     # Sidecar activé dans config.json (doc officielle : sidecars.<id>.enabled + projectId). Rien d'autre n'est touché ;
     # Un outil qui réécrit ce fichier doit garder la clé sidecars.
     $configPath = Join-Path $agyRoot 'config.json'
-    $config = if (Test-Path $configPath) { [IO.File]::ReadAllText($configPath) | ConvertFrom-Json } else { [PSCustomObject]@{} }
-    $entry = if ($config.PSObject.Properties['sidecars']) { $config.sidecars.'nexus-relay/relay' } else { $null }
-    $knownProject = $entry -and $entry.projectId -eq $projectId
-    $ready = $entry -and $entry.enabled -eq $true -and $knownProject
-    $pluginOff = $config.PSObject.Properties['plugins'] -and $config.plugins.PSObject.Properties['nexus-relay'] -and
-        $config.plugins.'nexus-relay'.enabled -eq $false
-    if ($ready -and -not $pluginOff) {
-        Write-Host "Antigravity : sidecar nexus-relay/relay déjà activé (projet $($entry.projectId))."
-    } else {
+    $config = if (Test-Path $configPath) { [IO.File]::ReadAllText($configPath) | ConvertFrom-RelayJson } else { [PSCustomObject]@{} }
+    $activation = Set-AntigravityRelayActivation -Config $config -ProjectId $projectId
+    if ($activation.Disabled) { Write-Host 'Antigravity : choix de désactivation du plugin ou du sidecar conservé.' }
+    elseif ($activation.Changed) {
         if (Test-Path $configPath) { Save-Backup $configPath 'antigravity-config' }
-        if (-not $config.PSObject.Properties['sidecars']) { $config | Add-Member sidecars ([PSCustomObject]@{}) }
-        if (-not $entry) {
-            $entry = [PSCustomObject]@{}
-            $config.sidecars | Add-Member -NotePropertyName 'nexus-relay/relay' -NotePropertyValue $entry
-        }
-        $entry | Add-Member -NotePropertyName enabled -NotePropertyValue $true -Force
-        if (-not $knownProject) { $entry | Add-Member -NotePropertyName projectId -NotePropertyValue $projectId -Force }
-        if ($pluginOff) { $config.plugins.'nexus-relay'.enabled = $true }
-        [IO.File]::WriteAllText($configPath, ($config | ConvertTo-Json -Depth 100), $utf8)
-        Write-Host "Antigravity : sidecar nexus-relay/relay activé (projet $($entry.projectId)), rechargé à chaud par Antigravity."
-    }
+        [IO.File]::WriteAllText($configPath, ($activation.Config | ConvertTo-Json -Depth 100), $utf8)
+        Write-Host "Antigravity : plugin et sidecar nexus-relay/relay activés (projet $projectId), rechargés à chaud par Antigravity."
+    } else { Write-Host "Antigravity : plugin et sidecar nexus-relay/relay déjà activés (projet $projectId)." }
 }
 
 # --- Codex : serveur par un plugin perso de Codex (.mcp.json : url http://127.0.0.1:16181/mcp?agent=codex,
@@ -295,7 +346,8 @@ if ($null -ne $packTargets -and $packTargets -notcontains 'antigravity') {
 
 # --- Hook d'édition (nexus_relay.edit_guard) chez Codex et Antigravity : refus d'un fichier réservé par un autre agent,
 #     réservation automatique sinon. Claude Code l'a par le plugin nexus-relay du catalogue nexus.
-& $python -B (Join-Path $project 'scripts\register_hooks.py') --backups $backups --python $python
+$guardRuntimeArgs = @('--wrapper', (Join-Path $installedHooks 'invoke-hook.ps1'))
+& $python -B (Join-Path $project 'scripts\register_hooks.py') --backups $backups --python $python @guardRuntimeArgs
 if ($LASTEXITCODE) { throw 'Hook d''édition incomplet (voir ci-dessus).' }
 
 if (-not $SkipTests) {

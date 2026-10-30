@@ -31,14 +31,14 @@ from typing import Any
 
 from .box import Box, RelayError, read_json, write_state
 from .lang import tr
-from .paths import normalize_party
+from .paths import normalize_party, relay_host
 
 MAX_PATHS = 32
 # contrôle puis écriture d'un seul tenant : le démon sert plusieurs appels à la fois (_LOCK), et les hooks d'édition
 # (edit_guard, processus à part) réservent aussi (_between_processes)
 _LOCK = threading.Lock()
 TTL_MIN, TTL_MAX = 1, 24 * 60
-# réservation posée par le hook d'édition (edit_guard) ; libérée par le hook post-commit une fois ses fichiers commités
+# motif historique ; les nouveaux hooks posent aussi le marqueur automatic et suivent les appels en vol
 AUTO_REASON = "modification en cours (réservation automatique)"
 
 
@@ -230,6 +230,9 @@ def reserve(
     ttl_min: int = 60,
     exclusive: bool = True,
     session: str | None = None,
+    *,
+    automatic: bool = False,
+    tool: str | None = None,
 ) -> dict[str, Any]:
     agent = normalize_party(agent)
     if not paths or len(paths) > MAX_PATHS:
@@ -243,7 +246,7 @@ def reserve(
     wanted = sorted({norm(p): clean(p) for p in paths}.values(), key=norm)
     session = str(session).strip()[:120] if session else None
     with _LOCK, _between_processes(box):
-        return _reserve(box, agent, wanted, reason, ttl_min, exclusive, session)
+        return _reserve(box, agent, wanted, reason, ttl_min, exclusive, session, automatic, tool)
 
 
 def holder(record: dict[str, Any], agent: str) -> str:
@@ -253,7 +256,15 @@ def holder(record: dict[str, Any], agent: str) -> str:
 
 
 def _reserve(
-    box: Box, agent: str, wanted: list[str], reason: str, ttl_min: int, exclusive: bool, session: str | None
+    box: Box,
+    agent: str,
+    wanted: list[str],
+    reason: str,
+    ttl_min: int,
+    exclusive: bool,
+    session: str | None,
+    automatic: bool = False,
+    tool: str | None = None,
 ) -> dict[str, Any]:
     if clash := _conflicts(box, agent, wanted, exclusive, session):
         lines = [
@@ -273,7 +284,11 @@ def _reserve(
         (
             r
             for r in active(box, at)
-            if r["agent"] == agent and r.get("session") == session and sorted(norm(p) for p in r["paths"]) == key
+            if r["agent"] == agent
+            and r.get("session") == session
+            and bool(r.get("automatic")) == automatic
+            and (r.get("reason") == AUTO_REASON) == (reason == AUTO_REASON)
+            and sorted(norm(p) for p in r["paths"]) == key
         ),
         None,
     )
@@ -288,6 +303,16 @@ def _reserve(
         "expires": _iso(at + int(ttl_min) * 60),
         "expires_at": at + int(ttl_min) * 60,
     }
+    if automatic:
+        # A manual reservation is never converted to an automatic one. Pending calls accumulate: completion of
+        # one parallel edit must not release a second edit which has not run yet.
+        record["automatic"] = True
+        record["absent_at_start"] = (same or {}).get(
+            "absent_at_start", [norm(p) for p in wanted if not os.path.lexists(p)]
+        )
+        record["pending_tools"] = sorted({*((same or {}).get("pending_tools") or []), *([tool] if tool else [])})
+        if not tool:
+            record["pending_unknown"] = True
     write_state(_folder(box) / f"{record['id']}.json", record)
     _purge(box, at)
     return record
@@ -312,14 +337,23 @@ def _purge(box: Box, at: float) -> None:
                 path.unlink()
 
 
-def release(box: Box, agent: str, reservation: str | None = None) -> list[str]:
-    """Libère une réservation de `agent` (par son id), ou toutes les siennes."""
+def release(box: Box, agent: str, reservation: str | None = None, force: bool = False) -> list[str]:
+    """Libère une réservation de `agent` (par son id), ou toutes les siennes. `force` : l'hôte reprend, à la demande de
+    l'utilisateur, la réservation d'un autre agent absent (30/10 : réservations automatiques de Codex bloquant un commit
+    pendant une heure) ; tracée (released_by), les fichiers restent tels quels."""
     agent = normalize_party(agent)
+    if force and (not reservation or relay_host() not in (agent, "all")):
+        raise RelayError(
+            tr(
+                "release force: host only, with the reservation id",
+                "release force : réservé à l'hôte, avec l'id de la réservation",
+            )
+        )
     with _LOCK, _between_processes(box):
-        return _release(box, agent, reservation)
+        return _release(box, agent, reservation, force)
 
 
-def _release(box: Box, agent: str, reservation: str | None) -> list[str]:
+def _release(box: Box, agent: str, reservation: str | None, force: bool = False) -> list[str]:
     held = active(box)
     if reservation:
         target = next((r for r in held if r["id"] == reservation), None)
@@ -330,6 +364,11 @@ def _release(box: Box, agent: str, reservation: str | None) -> list[str]:
                     f"réservation {reservation} introuvable ou déjà finie",
                 )
             )
+        if force and target["agent"] != agent:
+            write_state(
+                _folder(box) / f"{target['id']}.json", {**target, "released": _iso(now()), "released_by": agent}
+            )
+            return [target["id"]]
         if target["agent"] != agent:
             raise RelayError(
                 tr(
@@ -359,6 +398,101 @@ def blocking(agent: str, files: list[str], box: Box | None = None, session: str 
         for f in files
         if any(overlap(theirs, os.path.abspath(f)) for theirs in r["paths"])
     ]
+
+
+def _unchanged(path: str, absent_at_start: bool) -> bool:
+    """Positive proof only: an unwritten creation, or an ordinary tracked file clean in both Git indexes.
+
+    Unknown repositories, untracked/ignored changes, directories, symlinks, skip-worktree and assume-unchanged
+    entries remain reserved. No Git refresh/index lock, external diff or fsmonitor is needed. Content hashing uses
+    the repository's normal clean conversion (including its configured Git filters).
+    """
+    if any(c in path for c in "*?") or os.path.isdir(path) or os.path.islink(path):
+        return False
+    if os.path.normcase(os.path.realpath(path)) != os.path.normcase(os.path.abspath(path)):
+        return False
+    directory = os.path.dirname(path)
+    while not os.path.isdir(directory):
+        parent = os.path.dirname(directory)
+        if parent == directory:
+            return False
+        directory = parent
+
+    def git(*args: str) -> str:
+        return subprocess.run(
+            ["git", "--literal-pathspecs", "-c", "core.fsmonitor=false", "-C", directory, *args],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=True,
+            timeout=5,
+            env={**os.environ, "GIT_OPTIONAL_LOCKS": "0"},
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        ).stdout
+
+    try:
+        tracked = git("ls-files", "--stage", "-v", "-z", "--", path)
+        unwritten = not tracked and absent_at_start and not os.path.lexists(path)
+        ordinary = tracked.startswith("H ") and len(tracked.split("\0")) == 2
+        if not (unwritten or ordinary):
+            return False
+        if git("status", "--porcelain=v1", "--untracked-files=all", "--ignored", "--", path):
+            return False
+        if unwritten:
+            return True
+        fields = tracked.split("\t", 1)[0].split()
+        if len(fields) != 4 or fields[1] not in {"100644", "100755"} or fields[3] != "0":
+            return False
+        # Git status can trust cached size/mtime even when bytes changed (reproduced on Windows). Hash the real
+        # content through Git's clean conversion, so normal CRLF/attributes do not become false dirty changes.
+        return git("hash-object", f"--path={path}", "--", path).strip() == fields[2]
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def finish_edits(
+    agent: str,
+    session: str | None,
+    *,
+    tool: str | None = None,
+    session_ended: bool = False,
+    box: Box | None = None,
+) -> list[str]:
+    """Owner completion releases only proven clean automatic reservations, never another session's work.
+
+    A tool completion needs the invocation id recorded before execution. Stop only rechecks completed calls: some
+    hosts give a parent session id to live subagents, so Stop must never clear a pending or unidentified call.
+    """
+    if not session or not (session_ended or tool):
+        return []
+    box, agent = box or Box(), normalize_party(agent)
+    session = str(session).strip()[:120]
+    ended = []
+    with _LOCK, _between_processes(box):
+        for record in active(box):
+            if (
+                record["agent"] != agent
+                or record.get("session") != session
+                or not record.get("automatic")
+                or record.get("reason") != AUTO_REASON
+            ):
+                continue
+            pending = set(record.get("pending_tools") or [])
+            if not session_ended:
+                if tool not in pending:
+                    continue
+                pending.remove(tool)
+            record["pending_tools"] = sorted(pending)
+            clean = (
+                not record["pending_tools"]
+                and not record.get("pending_unknown")
+                and all(_unchanged(path, norm(path) in record.get("absent_at_start", [])) for path in record["paths"])
+            )
+            if clean:
+                record["released"] = _iso(now())
+                ended.append(record["id"])
+            write_state(_folder(box) / f"{record['id']}.json", record)
+    return ended
 
 
 # Exécutables dont descend une commande → agent qui la lance. Git ne le dit pas : les trois commitent sous l'identité
@@ -460,14 +594,25 @@ SESSION_VARS = {
 
 def session_from_env(agent: str) -> str | None:
     """Conversation de l'agent qui lance la commande (git et ses hooks), ou None : inconnue."""
-    names = ["NEXUS_RELAY_SESSION", *([SESSION_VARS[agent]] if agent in SESSION_VARS else [])]
+    # Codex emits session_id=CODEX_SESSION_ID for hooks, including calls routed from its subagents.
+    # Their CODEX_THREAD_ID names the child execution, not the reservation owner. Keep the same canonical
+    # owner as the hook while retaining the CLI's older thread-only environment as a fallback.
+    names = [
+        "NEXUS_RELAY_SESSION",
+        *(["CODEX_SESSION_ID"] if agent == "codex" else []),
+        *([SESSION_VARS[agent]] if agent in SESSION_VARS else []),
+    ]
     return next((value.strip() for name in names if (value := os.environ.get(name, "")).strip()), None)
 
 
 def release_committed(agent: str, files: list[str], box: Box | None = None, session: str | None = None) -> list[str]:
-    """Libère les réservations AUTOMATIQUES de `agent` (de sa conversation quand elle est connue) dont tous les
-    fichiers viennent d'être commités (hook post-commit) : le travail n'est plus en cours. Ses réservations faites à la
-    main restent."""
+    """Release completed automatic edits of this exact session, only if committed paths have no dirty remainder.
+
+    Unknown/mismatched session and pending calls cannot prove ownership/completion (notably inherited parent ids
+    in child shells). Manual and legacy reservations without lifecycle metadata keep their owner/TTL fallback.
+    """
+    if not session or not (session := str(session).strip()[:120]):
+        return []
     box = box or Box()
     agent = normalize_party(agent)
     done = set(map(norm, files))
@@ -476,9 +621,13 @@ def release_committed(agent: str, files: list[str], box: Box | None = None, sess
             r["id"]
             for r in active(box)
             if r["agent"] == agent
-            and not other_holder(r, agent, session)
+            and r.get("session") == session
+            and r.get("automatic")
             and r.get("reason") == AUTO_REASON
+            and not r.get("pending_tools")
+            and not r.get("pending_unknown")
             and all(norm(p) in done for p in r["paths"])
+            and all(_unchanged(p, True) for p in r["paths"])
         ]
         return [done_id for rid in ended for done_id in _release(box, agent, rid)]
 

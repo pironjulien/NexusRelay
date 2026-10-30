@@ -26,7 +26,7 @@ clipboard.
 flowchart LR
     C["Claude Code<br/>(host)"] -- "send / wait_reply" --> D["nexus-relay daemon<br/>127.0.0.1:16181"]
     D -- "one immutable JSON<br/>per message" --> B[("~/.nexus/relay")]
-    D -- "debug port 9223:<br/>new chat in project<br/>'Nexus Relay'" --> X["Codex app"]
+    D -- "debug port 9223:<br/>configured execution workspace" --> X["Codex app"]
     D -- "sidecar + agentapi" --> A["Antigravity"]
     X -- "read / reply" --> D
     A -- "read / reply" --> D
@@ -34,7 +34,7 @@ flowchart LR
 
 1. Claude calls `send(to, text, topic)`. The message is written to the local room, one file per message.
 2. The daemon rings the recipient with a short note that only cites the message id, never its content: Codex gets a
-   new chat in its "Nexus Relay" project, Antigravity gets it through the relay's sidecar.
+   chat in its explicitly configured execution workspace, Antigravity gets it through the relay's sidecar.
 3. The recipient calls `read(id)` and answers with `reply(id, text)`. Claude waits with `wait_reply(id)`.
 4. Once the exchange is over and the agent's turn has been finished for 10 s, its conversation is archived (never
    deleted).
@@ -43,6 +43,16 @@ One agent is the host, Claude by default: only the host opens an exchange, and i
 answers). The other agents can only reply (or post for information), so agents never trigger each other in a loop.
 Without Claude Code, the installer makes the first agent found the host (Codex, then Antigravity); the `host` setting
 changes it.
+
+The Codex workspace may be an existing project such as Documents. Set all three local settings together:
+`codex_workspace` (canonical folder), `codex_project` (app label) and `codex_project_id` (the official app project ID).
+The relay checks the ID and folder before typing. Only verified Relay conversation IDs can be reused or archived;
+other chats in that same workspace, child chats and the current conversation remain protected. Without an explicit
+workspace, the compatibility default remains the dedicated `Nexus Relay` project.
+
+`install.ps1 -Runtime native` selects the C# daemon, sidecar and hook dispatcher. Subsequent installations preserve
+that choice. Native builds and immutable installed versions stay under `%LOCALAPPDATA%\NexusRelay`, outside OneDrive.
+The qualification report distinguishes isolated protocol/DOM tests, real app observations and completed live actions.
 
 ## Requirements
 
@@ -277,6 +287,20 @@ install made by the one-line installer (`%LOCALAPPDATA%\NexusRelay\app`) updates
   host, a message to Claude waits in its inbox.
 
 ## Development
+
+Automatic edit reservations end after a completed/no-op tool call, or at the end of its owner's turn, only when
+Git proves the files are clean. Dirty, staged, untracked or ignored files stay reserved. A manual reservation and
+another conversation's work are never released by these finalizers. Parallel edit calls stay protected until all
+their completion events arrive. An unwritten creation can be released; unknown/non-Git paths are kept conservatively.
+
+This requires the lifecycle hooks to be active: `PreToolUse` runs `python -I -B -m nexus_relay.edit_guard <agent>`,
+`PostToolUse` adds `--finish-tool`, and `Stop` adds `--finish-session`. Claude also uses `PostToolUseFailure` and
+`SessionEnd` with the matching finalizer. Completion hooks return the neutral JSON object `{}` and never approve or deny an action.
+Codex reviews new hook declarations through its native trust flow; the installer does not create that consent.
+Stop only rechecks calls already completed: some hosts share the parent's session id with live subagents, so an
+in-flight call is never cleared by its parent's Stop. If an invocation id or completion event is unavailable, the
+reservation requires its owner's explicit release or TTL expiry. Old reservations without lifecycle metadata and abrupt exits are
+not purged on a guess.
 
 ```powershell
 pwsh -NoProfile -File test.ps1   # ruff, pyright, pytest — offline, never touches the real apps

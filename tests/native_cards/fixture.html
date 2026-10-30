@@ -1,0 +1,16 @@
+<!doctype html><html lang="fr"><meta charset="utf-8"><title>Isolated Relay card fixture</title>
+<style>body{font:16px sans-serif}button,a{margin:8px;padding:8px} [hidden]{display:none!important}</style>
+<nav><button data-testid="history-button" data-view="history">Historique</button><button data-testid="settings-button" data-view="settings">Paramètres</button><a href="/outside" data-testid="external">External action</a></nav>
+<button data-testid="title-menu-bar-item" aria-haspopup="menu">Fichier</button>
+<button aria-haspopup="listbox" id="model">Choisir modèle</button>
+<div id="menu" role="menu" hidden><button role="menuitem">Lecture</button><button role="menuitem">Envoyer</button></div>
+<main><button data-testid="settings-nav-item-Notifications" data-view="notifications" hidden>Notifications</button><button data-testid="settings-nav-item-Account" data-view="account" hidden>Account</button><button id="send">Send message</button><textarea id="draft"></textarea></main>
+<script>
+window.__events=[];window.__scenario='normal';
+function view(){document.querySelector('[data-view=notifications]').hidden=location.hash!=='#settings';document.querySelector('[data-view=account]').hidden=location.hash!=='#settings';}
+document.querySelectorAll('[data-view]').forEach(e=>e.onclick=()=>{window.__events.push('navigate:'+e.dataset.view);location.hash=e.dataset.view;view();});
+document.querySelector('[data-testid=title-menu-bar-item]').onclick=()=>{window.__events.push('menu');document.getElementById('menu').hidden=!document.getElementById('menu').hidden;};
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){window.__events.push('escape');document.getElementById('menu').hidden=true;}});
+document.querySelectorAll('[role=menuitem],#model,#send,[data-testid=external]').forEach(e=>e.onclick=()=>window.__events.push('FORBIDDEN:'+e.textContent));
+window.addEventListener('popstate',view);window.addEventListener('hashchange',view);view();
+</script></html>

@@ -133,6 +133,19 @@ def test_on_ne_libere_pas_la_reservation_d_un_autre(tmp_path: Path, monkeypatch:
     held = call(server.reserve([str(tmp_path / "a.py")], "x"))
     as_agent(monkeypatch, "antigravity")
     assert "pas à toi" in json.loads(server.release(held["id"]))["error"]
+    assert "hôte" in json.loads(server.release(held["id"], force=True))["error"]
+
+
+def test_l_hote_reprend_une_reservation_sur_demande(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    path = str(tmp_path / "a.py")
+    as_agent(monkeypatch, "codex")
+    held = call(server.reserve([path], "travail laissé"))
+    as_agent(monkeypatch, "claude")
+    assert "hôte" in json.loads(server.release(force=True))["error"]  # jamais « toutes » de force
+    assert call(server.release(held["id"], force=True))["released"] == [held["id"]]
+    record = json.loads((Path(server.Box().root) / "reservations" / f"{held['id']}.json").read_text(encoding="utf-8"))
+    assert record["released_by"] == "claude" and record["agent"] == "codex"
+    assert call(server.reserve([path], "reprise"))
 
 
 def test_expiree_ne_bloque_plus(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):

@@ -25,6 +25,10 @@ def isolated(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         "NEXUS_RELAY_CODEX_ROUTER",
         "NEXUS_RELAY_CODEX_ROUTER_START",
         "NEXUS_RELAY_HOST",
+        "NEXUS_RELAY_CODEX_WORKSPACE",
+        "NEXUS_RELAY_CODEX_PROJECT",
+        "NEXUS_RELAY_CODEX_PROJECT_ID",
+        "NEXUS_RELAY_WAKE_SINCE",
     ):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("NEXUS_RELAY_HOME", str(tmp_path / "relay"))
@@ -33,6 +37,7 @@ def isolated(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setenv("NEXUS_RELAY_AGENT", "claude")
     monkeypatch.setenv("NEXUS_RELAY_LANG", "fr")  # textes des tests historiques ; l'anglais par défaut a ses tests
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex-home"))  # jamais la base ni les journaux du vrai Codex
+    monkeypatch.setenv("NEXUS_RELAY_KEYPAD_QUOTA", str(tmp_path / "keypad-quota.json"))
     monkeypatch.setenv("NEXUS_RELAY_CODEX_PORT", "1")  # port fermé : jamais la vraie appli Codex
     monkeypatch.delenv("NEXUS_RELAY_AGENTAPI", raising=False)
     from nexus_relay import cdp, credits, foreground_lock, server, wake

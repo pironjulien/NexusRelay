@@ -1,0 +1,4 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>WinExe</OutputType><TargetFramework>net10.0-windows</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable><AllowUnsafeBlocks>true</AllowUnsafeBlocks></PropertyGroup>
+  <ItemGroup><Compile Include="..\..\native\DetachedProcess.cs" Link="DetachedProcess.cs" /><Compile Include="..\..\native\UserApplication.cs" Link="UserApplication.cs" /></ItemGroup>
+</Project>

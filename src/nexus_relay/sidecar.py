@@ -240,7 +240,12 @@ class Sidecar:
         """Messages non lus pour Antigravity dont la livraison en cours n'a pas de propriétaire, par sujet ; un sujet
         sans message à réponse attend."""
         topics: dict[str, list[Message]] = {}
+        from .codex_space import accepts_created
+        from .paths import relay_host
+
         for message in self.box.unread(AGENT):
+            if (relay_host() != "all" and message.sender != relay_host()) or not accepts_created(message.created):
+                continue
             attempt = self.attempt(message)
             if attempt == 1 and self.box.has_event(message.id, "livré"):
                 continue  # livré avant les livraisons à propriétaire (salon d'avant le 20/10)
@@ -378,9 +383,9 @@ class Sidecar:
         return not finished and last is not None and self.clock() - last > ZOMBIE_S
 
     def _quota_exhausted(self) -> str | None:
-        from .credits import exhausted
+        from .credits import cached_antigravity_usage, exhausted
 
-        return exhausted("antigravity", self.box.state("antigravity-usage"))
+        return exhausted("antigravity", cached_antigravity_usage(self.box))
 
     def step(self) -> list[dict[str, Any]]:
         if not self._recovered:
@@ -444,6 +449,9 @@ class Sidecar:
 
 
 def main() -> None:
+    from .settings import apply
+
+    apply()  # Same explicit host/workspace/cutoff settings as the shared daemon, including after a hot reload.
     data_dir = Path(os.environ.get("ANTIGRAVITY_EXECUTABLE_DATA_DIR") or Path.home() / ".nexus" / "relay" / "sidecar")
     data_dir.mkdir(parents=True, exist_ok=True)
     log_file = data_dir / "sidecar.log"

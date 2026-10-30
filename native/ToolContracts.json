@@ -1,0 +1,2140 @@
+[
+  {
+    "name": "send",
+    "description": "Post a message for another agent in the TOPIC's room; the recipient is woken automatically. Returns its id\n(for wait_reply). Several recipients (cross review): the same message to each, one id per recipient (ids);\nwait_reply(id=ids) waits for all the answers.\n\nArgs:\n    to: \"claude\", \"antigravity\" (agy) or \"codex\" (chatgpt); or a list, e.g. [\"codex\", \"antigravity\"].\n    text: self-contained, precise message (context, question, files or commits concerned).\n    topic: short topic (lowercase, digits, -), e.g. \"nexuswindows\"; one topic per project.\n    info: True = for information only, nobody is woken (closing note, final agreement).\n    due_min: optional deadline in minutes: past it without an answer, track reports \"late\".\n    files: attachments, absolute paths (images included: the recipient sees them through read); copied into the\n        room when sent.\n    review: review request: the answer must give file:line and severity (or \"nothing important\"), otherwise it\n        is sent back once to the peer. Omitted: inferred from the text (\"review\", \"relis\", \"relecture\"). A review\n        always goes to BOTH peers (independent opinions): a review sent to one of them is\n        also sent to the other, and the answer lists one id per peer (wait_reply(id=ids)).\n",
+    "inputSchema": {
+      "properties": {
+        "to": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          ],
+          "title": "To"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        },
+        "topic": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Topic"
+        },
+        "info": {
+          "default": false,
+          "title": "Info",
+          "type": "boolean"
+        },
+        "due_min": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Due Min"
+        },
+        "files": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Files"
+        },
+        "review": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Review"
+        }
+      },
+      "required": [
+        "to",
+        "text"
+      ],
+      "title": "sendArguments",
+      "type": "object"
+    },
+    "annotations": {
+      "title": "Send a message",
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "close",
+    "description": "Close a topic (host only): its Codex and Antigravity conversations are archived (never deleted) once their\nturn is over and the user is out of the app; its open incidents leave status (track keeps them). A new send on\nthis topic reopens it in a fresh conversation. Without close, a topic conversation is archived after 12 h\nwithout messages.\n\nArgs:\n    topic: the topic to close.\n",
+    "inputSchema": {
+      "properties": {
+        "topic": {
+          "title": "Topic",
+          "type": "string"
+        }
+      },
+      "required": [
+        "topic"
+      ],
+      "title": "closeArguments",
+      "type": "object"
+    },
+    "annotations": {
+      "title": "Close a topic",
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "inbox",
+    "description": "Your unread messages (preview); read(id) reads one in full. Replies and FYI messages are marked read once\nlisted (read(id) still gives them in full); requests stay unread until read. Replies another session is waiting\nfor (wait_reply) are not listed.",
+    "inputSchema": {
+      "properties": {},
+      "title": "inboxArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$defs": {
+        "Attachment": {
+          "properties": {
+            "name": {
+              "title": "Name",
+              "type": "string"
+            },
+            "mime": {
+              "title": "Mime",
+              "type": "string"
+            },
+            "size": {
+              "title": "Size",
+              "type": "integer"
+            },
+            "path": {
+              "title": "Path",
+              "type": "string"
+            }
+          },
+          "title": "Attachment",
+          "type": "object"
+        },
+        "RenderedMessage": {
+          "properties": {
+            "id": {
+              "title": "Id",
+              "type": "string"
+            },
+            "from": {
+              "title": "From",
+              "type": "string"
+            },
+            "to": {
+              "title": "To",
+              "type": "string"
+            },
+            "topic": {
+              "title": "Topic",
+              "type": "string"
+            },
+            "created": {
+              "title": "Created",
+              "type": "string"
+            },
+            "text": {
+              "title": "Text",
+              "type": "string"
+            },
+            "reply_to": {
+              "title": "Reply To",
+              "type": "string"
+            },
+            "vote": {
+              "title": "Vote",
+              "type": "string"
+            },
+            "state": {
+              "title": "State",
+              "type": "string"
+            },
+            "due": {
+              "title": "Due",
+              "type": "string"
+            },
+            "quality": {
+              "title": "Quality",
+              "type": "string"
+            },
+            "info": {
+              "title": "Info",
+              "type": "boolean"
+            },
+            "attachments": {
+              "items": {
+                "$ref": "#/$defs/Attachment"
+              },
+              "title": "Attachments",
+              "type": "array"
+            },
+            "cancelled": {
+              "title": "Cancelled",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "from",
+            "to",
+            "topic",
+            "created",
+            "text"
+          ],
+          "title": "RenderedMessage",
+          "type": "object"
+        }
+      },
+      "properties": {
+        "status": {
+          "const": "success",
+          "title": "Status",
+          "type": "string"
+        },
+        "late_replies": {
+          "items": {
+            "$ref": "#/$defs/RenderedMessage"
+          },
+          "title": "Late Replies",
+          "type": "array"
+        },
+        "late_note": {
+          "title": "Late Note",
+          "type": "string"
+        },
+        "unread": {
+          "items": {
+            "$ref": "#/$defs/RenderedMessage"
+          },
+          "title": "Unread",
+          "type": "array"
+        },
+        "note": {
+          "title": "Note",
+          "type": "string"
+        },
+        "hidden": {
+          "title": "Hidden",
+          "type": "string"
+        },
+        "error": {
+          "title": "Error",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "unread",
+        "note"
+      ],
+      "title": "InboxOut",
+      "type": "object"
+    },
+    "annotations": {
+      "title": "Unread messages",
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "read",
+    "description": "Read a message in full; if it is addressed to you, it is marked read. Attachments: their local path (open\nthem with your own tools) and, for images, the image itself after the text.\n\nArgs:\n    id: message id.\n",
+    "inputSchema": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "readArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$defs": {
+        "Attachment": {
+          "properties": {
+            "name": {
+              "title": "Name",
+              "type": "string"
+            },
+            "mime": {
+              "title": "Mime",
+              "type": "string"
+            },
+            "size": {
+              "title": "Size",
+              "type": "integer"
+            },
+            "path": {
+              "title": "Path",
+              "type": "string"
+            }
+          },
+          "title": "Attachment",
+          "type": "object"
+        },
+        "RenderedMessage": {
+          "properties": {
+            "id": {
+              "title": "Id",
+              "type": "string"
+            },
+            "from": {
+              "title": "From",
+              "type": "string"
+            },
+            "to": {
+              "title": "To",
+              "type": "string"
+            },
+            "topic": {
+              "title": "Topic",
+              "type": "string"
+            },
+            "created": {
+              "title": "Created",
+              "type": "string"
+            },
+            "text": {
+              "title": "Text",
+              "type": "string"
+            },
+            "reply_to": {
+              "title": "Reply To",
+              "type": "string"
+            },
+            "vote": {
+              "title": "Vote",
+              "type": "string"
+            },
+            "state": {
+              "title": "State",
+              "type": "string"
+            },
+            "due": {
+              "title": "Due",
+              "type": "string"
+            },
+            "quality": {
+              "title": "Quality",
+              "type": "string"
+            },
+            "info": {
+              "title": "Info",
+              "type": "boolean"
+            },
+            "attachments": {
+              "items": {
+                "$ref": "#/$defs/Attachment"
+              },
+              "title": "Attachments",
+              "type": "array"
+            },
+            "cancelled": {
+              "title": "Cancelled",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "from",
+            "to",
+            "topic",
+            "created",
+            "text"
+          ],
+          "title": "RenderedMessage",
+          "type": "object"
+        }
+      },
+      "properties": {
+        "status": {
+          "const": "success",
+          "title": "Status",
+          "type": "string"
+        },
+        "late_replies": {
+          "items": {
+            "$ref": "#/$defs/RenderedMessage"
+          },
+          "title": "Late Replies",
+          "type": "array"
+        },
+        "late_note": {
+          "title": "Late Note",
+          "type": "string"
+        },
+        "message": {
+          "$ref": "#/$defs/RenderedMessage"
+        },
+        "note": {
+          "title": "Note",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "message",
+        "note"
+      ],
+      "title": "ReadOut",
+      "type": "object"
+    },
+    "annotations": {
+      "title": "Read a message",
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "reply",
+    "description": "Answer a message addressed to you, in the same topic; the original is marked read and the sender is woken.\nA reply closes the request: to say you are still working on it, use progress.\n\nArgs:\n    id: id of the message you answer.\n    text: your complete answer (for refused or failed: the reason).\n    info: True if your answer expects nothing back (final agreement, closing note): the other agent is not woken.\n    vote: \"agree\" or \"disagree\" (review), optional.\n    state: outcome of the request: \"done\" (default), \"refused\" (you will not do it) or \"failed\" (tried, did not\n        work).\n    files: attachments, absolute paths (screenshots, logs); copied into the room.\n",
+    "inputSchema": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        },
+        "info": {
+          "default": false,
+          "title": "Info",
+          "type": "boolean"
+        },
+        "vote": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Vote"
+        },
+        "state": {
+          "default": "done",
+          "title": "State",
+          "type": "string"
+        },
+        "files": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Files"
+        }
+      },
+      "required": [
+        "id",
+        "text"
+      ],
+      "title": "replyArguments",
+      "type": "object"
+    },
+    "annotations": {
+      "title": "Reply to a message",
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "progress",
+    "description": "Say you are working on a request addressed to you (not final, nobody is woken): track and wait_reply show\nit to the sender. Call it at the start of a long task, then now and then; the final answer always goes through\nreply.\n\nArgs:\n    id: request id.\n    note: where you stand, in one sentence (500 characters max).\n",
+    "inputSchema": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "note": {
+          "title": "Note",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "note"
+      ],
+      "title": "progressArguments",
+      "type": "object"
+    },
+    "annotations": {
+      "title": "Report progress",
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "cancel",
+    "description": "Withdraw a request you sent that the recipient has not taken yet: it leaves its inbox, nobody is woken for it\nany more, and if it already reached the recipient's conversation, read and reply tell it the request is cancelled.\nRefused once read, in progress or answered: too late, send a follow-up instead.\n\nArgs:\n    id: id returned by send.\n",
+    "inputSchema": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "cancelArguments",
+      "type": "object"
+    },
+    "annotations": {
+      "title": "Cancel a request",
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "wait_reply",
+    "description": "Wait for the answer to a message you sent (600 s max) and return it; it is marked read. While you wait, the\nanswer is reserved for you: no other session is woken for it or sees it in its inbox.\nStatus \"restarting\": the relay is switching to new code; call again (the answer is kept for you). Returned\nwithout an answer (timeout, unavailable): the one that arrives later is attached (late_replies) to your next call,\nthen marked read. Status \"cancelled\": you cancelled the request.\nSeveral ids (send to a list): waits for all of them; status \"success\" once all answered, otherwise \"partial\"\n(or the common status); `replies` gives each one's result in order.\n\nArgs:\n    id: id returned by send, or the list of ids (send to several recipients).\n    timeout_s: maximum wait in seconds (1 to 600, default 300).\n",
+    "inputSchema": {
+      "properties": {
+        "id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          ],
+          "title": "Id"
+        },
+        "timeout_s": {
+          "default": 300,
+          "title": "Timeout S",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "wait_replyArguments",
+      "type": "object"
+    },
+    "annotations": {
+      "title": "Wait for the reply",
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "track",
+    "description": "Follow a message: posted, delivered (Antigravity), wake attempts (Codex) and their reasons, read, answered.\n\nArgs:\n    id: message id.\n",
+    "inputSchema": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "trackArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$defs": {
+        "Attachment": {
+          "properties": {
+            "name": {
+              "title": "Name",
+              "type": "string"
+            },
+            "mime": {
+              "title": "Mime",
+              "type": "string"
+            },
+            "size": {
+              "title": "Size",
+              "type": "integer"
+            },
+            "path": {
+              "title": "Path",
+              "type": "string"
+            }
+          },
+          "title": "Attachment",
+          "type": "object"
+        },
+        "RenderedMessage": {
+          "properties": {
+            "id": {
+              "title": "Id",
+              "type": "string"
+            },
+            "from": {
+              "title": "From",
+              "type": "string"
+            },
+            "to": {
+              "title": "To",
+              "type": "string"
+            },
+            "topic": {
+              "title": "Topic",
+              "type": "string"
+            },
+            "created": {
+              "title": "Created",
+              "type": "string"
+            },
+            "text": {
+              "title": "Text",
+              "type": "string"
+            },
+            "reply_to": {
+              "title": "Reply To",
+              "type": "string"
+            },
+            "vote": {
+              "title": "Vote",
+              "type": "string"
+            },
+            "state": {
+              "title": "State",
+              "type": "string"
+            },
+            "due": {
+              "title": "Due",
+              "type": "string"
+            },
+            "quality": {
+              "title": "Quality",
+              "type": "string"
+            },
+            "info": {
+              "title": "Info",
+              "type": "boolean"
+            },
+            "attachments": {
+              "items": {
+                "$ref": "#/$defs/Attachment"
+              },
+              "title": "Attachments",
+              "type": "array"
+            },
+            "cancelled": {
+              "title": "Cancelled",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "from",
+            "to",
+            "topic",
+            "created",
+            "text"
+          ],
+          "title": "RenderedMessage",
+          "type": "object"
+        }
+      },
+      "properties": {
+        "status": {
+          "const": "success",
+          "title": "Status",
+          "type": "string"
+        },
+        "late_replies": {
+          "items": {
+            "$ref": "#/$defs/RenderedMessage"
+          },
+          "title": "Late Replies",
+          "type": "array"
+        },
+        "late_note": {
+          "title": "Late Note",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "to": {
+          "title": "To",
+          "type": "string"
+        },
+        "topic": {
+          "title": "Topic",
+          "type": "string"
+        },
+        "state": {
+          "title": "State",
+          "type": "string"
+        },
+        "events": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "Events",
+          "type": "array"
+        },
+        "replies": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Replies",
+          "type": "array"
+        },
+        "rings": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Rings"
+        },
+        "wake": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Wake"
+        },
+        "delivery": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "Delivery",
+          "type": "array"
+        },
+        "tool_errors": {
+          "additionalProperties": true,
+          "title": "Tool Errors",
+          "type": "object"
+        }
+      },
+      "required": [
+        "status",
+        "id",
+        "to",
+        "topic",
+        "state",
+        "events",
+        "replies",
+        "rings",
+        "wake"
+      ],
+      "title": "TrackOut",
+      "type": "object"
+    },
+    "annotations": {
+      "title": "Track a message",
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "reserve",
+    "description": "Reserve files BEFORE editing them: nobody else can reserve anything overlapping them while the reservation\nlives. Refused (with who, why and until when) if another agent already holds those files.\n\nArgs:\n    paths: ABSOLUTE paths: files, folders (all their content) or patterns (`C:\\...\\src\\*.py`).\n    reason: why, in one sentence.\n    ttl_min: duration in minutes (1 to 1440); asking again extends it.\n    exclusive: False = shared (only other agents' exclusive reservations block it).\n",
+    "inputSchema": {
+      "properties": {
+        "paths": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Paths",
+          "type": "array"
+        },
+        "reason": {
+          "title": "Reason",
+          "type": "string"
+        },
+        "ttl_min": {
+          "default": 60,
+          "title": "Ttl Min",
+          "type": "integer"
+        },
+        "exclusive": {
+          "default": true,
+          "title": "Exclusive",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "paths",
+        "reason"
+      ],
+      "title": "reserveArguments",
+      "type": "object"
+    },
+    "annotations": {
+      "title": "Reserve files",
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "release",
+    "description": "Release one of your reservations (id), or all of yours.\n\nArgs:\n    id: reservation to release (optional: all of yours).\n    force: host only, on the user's request: release another agent's reservation by its id (traced, files untouched).\n",
+    "inputSchema": {
+      "properties": {
+        "id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Id"
+        },
+        "force": {
+          "default": false,
+          "title": "Force",
+          "type": "boolean"
+        }
+      },
+      "title": "releaseArguments",
+      "type": "object"
+    },
+    "annotations": {
+      "title": "Release files",
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "reservations",
+    "description": "Current file reservations of all three agents: who, what, why, until when.",
+    "inputSchema": {
+      "properties": {},
+      "title": "reservationsArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$defs": {
+        "Attachment": {
+          "properties": {
+            "name": {
+              "title": "Name",
+              "type": "string"
+            },
+            "mime": {
+              "title": "Mime",
+              "type": "string"
+            },
+            "size": {
+              "title": "Size",
+              "type": "integer"
+            },
+            "path": {
+              "title": "Path",
+              "type": "string"
+            }
+          },
+          "title": "Attachment",
+          "type": "object"
+        },
+        "RenderedMessage": {
+          "properties": {
+            "id": {
+              "title": "Id",
+              "type": "string"
+            },
+            "from": {
+              "title": "From",
+              "type": "string"
+            },
+            "to": {
+              "title": "To",
+              "type": "string"
+            },
+            "topic": {
+              "title": "Topic",
+              "type": "string"
+            },
+            "created": {
+              "title": "Created",
+              "type": "string"
+            },
+            "text": {
+              "title": "Text",
+              "type": "string"
+            },
+            "reply_to": {
+              "title": "Reply To",
+              "type": "string"
+            },
+            "vote": {
+              "title": "Vote",
+              "type": "string"
+            },
+            "state": {
+              "title": "State",
+              "type": "string"
+            },
+            "due": {
+              "title": "Due",
+              "type": "string"
+            },
+            "quality": {
+              "title": "Quality",
+              "type": "string"
+            },
+            "info": {
+              "title": "Info",
+              "type": "boolean"
+            },
+            "attachments": {
+              "items": {
+                "$ref": "#/$defs/Attachment"
+              },
+              "title": "Attachments",
+              "type": "array"
+            },
+            "cancelled": {
+              "title": "Cancelled",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "from",
+            "to",
+            "topic",
+            "created",
+            "text"
+          ],
+          "title": "RenderedMessage",
+          "type": "object"
+        },
+        "Reservation": {
+          "properties": {
+            "id": {
+              "title": "Id",
+              "type": "string"
+            },
+            "agent": {
+              "title": "Agent",
+              "type": "string"
+            },
+            "paths": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Paths",
+              "type": "array"
+            },
+            "reason": {
+              "title": "Reason",
+              "type": "string"
+            },
+            "exclusive": {
+              "title": "Exclusive",
+              "type": "boolean"
+            },
+            "expires": {
+              "title": "Expires",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "agent",
+            "paths"
+          ],
+          "title": "Reservation",
+          "type": "object"
+        }
+      },
+      "properties": {
+        "status": {
+          "const": "success",
+          "title": "Status",
+          "type": "string"
+        },
+        "late_replies": {
+          "items": {
+            "$ref": "#/$defs/RenderedMessage"
+          },
+          "title": "Late Replies",
+          "type": "array"
+        },
+        "late_note": {
+          "title": "Late Note",
+          "type": "string"
+        },
+        "active": {
+          "items": {
+            "$ref": "#/$defs/Reservation"
+          },
+          "title": "Active",
+          "type": "array"
+        }
+      },
+      "required": [
+        "status",
+        "active"
+      ],
+      "title": "ReservationsOut",
+      "type": "object"
+    },
+    "annotations": {
+      "title": "File reservations",
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "file_reservation_paths",
+    "description": "Same as `reserve`, under the mcp_agent_mail name and parameters.\n\nArgs:\n    paths: ABSOLUTE paths: files, folders or patterns.\n    reason: why, in one sentence.\n    ttl_seconds: duration in seconds (rounded up to the minute, 1 min to 24 h).\n    exclusive: False = shared.\n    project_key: accepted for compatibility, ignored (paths are absolute).\n    agent_name: accepted for compatibility, ignored (the relay knows who you are).\n",
+    "inputSchema": {
+      "properties": {
+        "paths": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Paths",
+          "type": "array"
+        },
+        "reason": {
+          "default": "",
+          "title": "Reason",
+          "type": "string"
+        },
+        "ttl_seconds": {
+          "default": 3600,
+          "title": "Ttl Seconds",
+          "type": "integer"
+        },
+        "exclusive": {
+          "default": true,
+          "title": "Exclusive",
+          "type": "boolean"
+        },
+        "project_key": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Project Key"
+        },
+        "agent_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agent Name"
+        }
+      },
+      "required": [
+        "paths"
+      ],
+      "title": "file_reservation_pathsArguments",
+      "type": "object"
+    },
+    "annotations": {
+      "title": "Reserve files (mcp_agent_mail name)",
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "release_file_reservations",
+    "description": "Same as `release`, under the mcp_agent_mail name and parameters: your reservations with these ids, or those\noverlapping these paths, or all of yours.\n\nArgs:\n    paths: release your reservations overlapping these absolute paths (optional).\n    file_reservation_ids: release these reservations (optional).\n    project_key: accepted for compatibility, ignored.\n    agent_name: accepted for compatibility, ignored.\n",
+    "inputSchema": {
+      "properties": {
+        "paths": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Paths"
+        },
+        "file_reservation_ids": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "File Reservation Ids"
+        },
+        "project_key": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Project Key"
+        },
+        "agent_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agent Name"
+        }
+      },
+      "title": "release_file_reservationsArguments",
+      "type": "object"
+    },
+    "annotations": {
+      "title": "Release files (mcp_agent_mail name)",
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "search",
+    "description": "Search the whole room history (accent and case insensitive; every word must match; \"in quotes\" = exact\nphrase). Most relevant then most recent first; nothing is marked read.\n\nArgs:\n    query: words or \"phrase\" to find.\n    topic: limit to one topic (optional).\n    sender: limit to one sender: \"claude\", \"antigravity\" or \"codex\" (optional).\n    limit: number of results returned (1 to 100).\n",
+    "inputSchema": {
+      "properties": {
+        "query": {
+          "title": "Query",
+          "type": "string"
+        },
+        "topic": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Topic"
+        },
+        "sender": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sender"
+        },
+        "limit": {
+          "default": 20,
+          "title": "Limit",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "title": "searchArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$defs": {
+        "Attachment": {
+          "properties": {
+            "name": {
+              "title": "Name",
+              "type": "string"
+            },
+            "mime": {
+              "title": "Mime",
+              "type": "string"
+            },
+            "size": {
+              "title": "Size",
+              "type": "integer"
+            },
+            "path": {
+              "title": "Path",
+              "type": "string"
+            }
+          },
+          "title": "Attachment",
+          "type": "object"
+        },
+        "RenderedMessage": {
+          "properties": {
+            "id": {
+              "title": "Id",
+              "type": "string"
+            },
+            "from": {
+              "title": "From",
+              "type": "string"
+            },
+            "to": {
+              "title": "To",
+              "type": "string"
+            },
+            "topic": {
+              "title": "Topic",
+              "type": "string"
+            },
+            "created": {
+              "title": "Created",
+              "type": "string"
+            },
+            "text": {
+              "title": "Text",
+              "type": "string"
+            },
+            "reply_to": {
+              "title": "Reply To",
+              "type": "string"
+            },
+            "vote": {
+              "title": "Vote",
+              "type": "string"
+            },
+            "state": {
+              "title": "State",
+              "type": "string"
+            },
+            "due": {
+              "title": "Due",
+              "type": "string"
+            },
+            "quality": {
+              "title": "Quality",
+              "type": "string"
+            },
+            "info": {
+              "title": "Info",
+              "type": "boolean"
+            },
+            "attachments": {
+              "items": {
+                "$ref": "#/$defs/Attachment"
+              },
+              "title": "Attachments",
+              "type": "array"
+            },
+            "cancelled": {
+              "title": "Cancelled",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "from",
+            "to",
+            "topic",
+            "created",
+            "text"
+          ],
+          "title": "RenderedMessage",
+          "type": "object"
+        },
+        "SearchHit": {
+          "properties": {
+            "id": {
+              "title": "Id",
+              "type": "string"
+            },
+            "from": {
+              "title": "From",
+              "type": "string"
+            },
+            "to": {
+              "title": "To",
+              "type": "string"
+            },
+            "topic": {
+              "title": "Topic",
+              "type": "string"
+            },
+            "created": {
+              "title": "Created",
+              "type": "string"
+            },
+            "score": {
+              "title": "Score",
+              "type": "number"
+            },
+            "snippet": {
+              "title": "Snippet",
+              "type": "string"
+            },
+            "reply_to": {
+              "title": "Reply To",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "from",
+            "to",
+            "topic",
+            "created",
+            "score",
+            "snippet"
+          ],
+          "title": "SearchHit",
+          "type": "object"
+        }
+      },
+      "properties": {
+        "status": {
+          "const": "success",
+          "title": "Status",
+          "type": "string"
+        },
+        "late_replies": {
+          "items": {
+            "$ref": "#/$defs/RenderedMessage"
+          },
+          "title": "Late Replies",
+          "type": "array"
+        },
+        "late_note": {
+          "title": "Late Note",
+          "type": "string"
+        },
+        "total": {
+          "title": "Total",
+          "type": "integer"
+        },
+        "hits": {
+          "items": {
+            "$ref": "#/$defs/SearchHit"
+          },
+          "title": "Hits",
+          "type": "array"
+        },
+        "note": {
+          "title": "Note",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "total",
+        "hits",
+        "note"
+      ],
+      "title": "SearchOut",
+      "type": "object"
+    },
+    "annotations": {
+      "title": "Search the room",
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "summary",
+    "description": "Summary of a topic without reading it all: participants, message count, closed or not, requests still\nunanswered (with their state), outcomes and votes of answered requests, latest messages. read(id) for details.\n\nArgs:\n    topic: the topic to summarize.\n",
+    "inputSchema": {
+      "properties": {
+        "topic": {
+          "title": "Topic",
+          "type": "string"
+        }
+      },
+      "required": [
+        "topic"
+      ],
+      "title": "summaryArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$defs": {
+        "AnsweredAsk": {
+          "properties": {
+            "id": {
+              "title": "Id",
+              "type": "string"
+            },
+            "to": {
+              "title": "To",
+              "type": "string"
+            },
+            "created": {
+              "title": "Created",
+              "type": "string"
+            },
+            "outcome": {
+              "title": "Outcome",
+              "type": "string"
+            },
+            "vote": {
+              "title": "Vote",
+              "type": "string"
+            },
+            "text": {
+              "title": "Text",
+              "type": "string"
+            },
+            "reply": {
+              "title": "Reply",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "to",
+            "created",
+            "outcome",
+            "text",
+            "reply"
+          ],
+          "title": "AnsweredAsk",
+          "type": "object"
+        },
+        "Attachment": {
+          "properties": {
+            "name": {
+              "title": "Name",
+              "type": "string"
+            },
+            "mime": {
+              "title": "Mime",
+              "type": "string"
+            },
+            "size": {
+              "title": "Size",
+              "type": "integer"
+            },
+            "path": {
+              "title": "Path",
+              "type": "string"
+            }
+          },
+          "title": "Attachment",
+          "type": "object"
+        },
+        "LastMessage": {
+          "properties": {
+            "id": {
+              "title": "Id",
+              "type": "string"
+            },
+            "from": {
+              "title": "From",
+              "type": "string"
+            },
+            "created": {
+              "title": "Created",
+              "type": "string"
+            },
+            "text": {
+              "title": "Text",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "from",
+            "created",
+            "text"
+          ],
+          "title": "LastMessage",
+          "type": "object"
+        },
+        "OpenAsk": {
+          "properties": {
+            "id": {
+              "title": "Id",
+              "type": "string"
+            },
+            "to": {
+              "title": "To",
+              "type": "string"
+            },
+            "created": {
+              "title": "Created",
+              "type": "string"
+            },
+            "state": {
+              "title": "State",
+              "type": "string"
+            },
+            "text": {
+              "title": "Text",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "to",
+            "created",
+            "state",
+            "text"
+          ],
+          "title": "OpenAsk",
+          "type": "object"
+        },
+        "RenderedMessage": {
+          "properties": {
+            "id": {
+              "title": "Id",
+              "type": "string"
+            },
+            "from": {
+              "title": "From",
+              "type": "string"
+            },
+            "to": {
+              "title": "To",
+              "type": "string"
+            },
+            "topic": {
+              "title": "Topic",
+              "type": "string"
+            },
+            "created": {
+              "title": "Created",
+              "type": "string"
+            },
+            "text": {
+              "title": "Text",
+              "type": "string"
+            },
+            "reply_to": {
+              "title": "Reply To",
+              "type": "string"
+            },
+            "vote": {
+              "title": "Vote",
+              "type": "string"
+            },
+            "state": {
+              "title": "State",
+              "type": "string"
+            },
+            "due": {
+              "title": "Due",
+              "type": "string"
+            },
+            "quality": {
+              "title": "Quality",
+              "type": "string"
+            },
+            "info": {
+              "title": "Info",
+              "type": "boolean"
+            },
+            "attachments": {
+              "items": {
+                "$ref": "#/$defs/Attachment"
+              },
+              "title": "Attachments",
+              "type": "array"
+            },
+            "cancelled": {
+              "title": "Cancelled",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "from",
+            "to",
+            "topic",
+            "created",
+            "text"
+          ],
+          "title": "RenderedMessage",
+          "type": "object"
+        }
+      },
+      "properties": {
+        "status": {
+          "const": "success",
+          "title": "Status",
+          "type": "string"
+        },
+        "late_replies": {
+          "items": {
+            "$ref": "#/$defs/RenderedMessage"
+          },
+          "title": "Late Replies",
+          "type": "array"
+        },
+        "late_note": {
+          "title": "Late Note",
+          "type": "string"
+        },
+        "topic": {
+          "title": "Topic",
+          "type": "string"
+        },
+        "closed": {
+          "title": "Closed",
+          "type": "boolean"
+        },
+        "messages": {
+          "title": "Messages",
+          "type": "integer"
+        },
+        "participants": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "title": "Participants",
+          "type": "object"
+        },
+        "first_at": {
+          "title": "First At",
+          "type": "string"
+        },
+        "last_at": {
+          "title": "Last At",
+          "type": "string"
+        },
+        "open_total": {
+          "title": "Open Total",
+          "type": "integer"
+        },
+        "open": {
+          "items": {
+            "$ref": "#/$defs/OpenAsk"
+          },
+          "title": "Open",
+          "type": "array"
+        },
+        "answered_total": {
+          "title": "Answered Total",
+          "type": "integer"
+        },
+        "answered": {
+          "items": {
+            "$ref": "#/$defs/AnsweredAsk"
+          },
+          "title": "Answered",
+          "type": "array"
+        },
+        "last": {
+          "items": {
+            "$ref": "#/$defs/LastMessage"
+          },
+          "title": "Last",
+          "type": "array"
+        },
+        "note": {
+          "title": "Note",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "topic",
+        "closed",
+        "messages",
+        "participants",
+        "first_at",
+        "last_at",
+        "open_total",
+        "open",
+        "answered_total",
+        "answered",
+        "last",
+        "note"
+      ],
+      "title": "SummaryOut",
+      "type": "object"
+    },
+    "annotations": {
+      "title": "Summarize a topic",
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "status",
+    "description": "State of all three agents: unread messages, last wake (Codex, Antigravity), bell threads, Codex port,\nAntigravity sidecar, quotas. Off the server loop: reading quotas can take ~15 s.",
+    "inputSchema": {
+      "properties": {},
+      "title": "statusArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$defs": {
+        "Attachment": {
+          "properties": {
+            "name": {
+              "title": "Name",
+              "type": "string"
+            },
+            "mime": {
+              "title": "Mime",
+              "type": "string"
+            },
+            "size": {
+              "title": "Size",
+              "type": "integer"
+            },
+            "path": {
+              "title": "Path",
+              "type": "string"
+            }
+          },
+          "title": "Attachment",
+          "type": "object"
+        },
+        "Incident": {
+          "properties": {
+            "id": {
+              "title": "Id",
+              "type": "string"
+            },
+            "to": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            },
+            "incident": {
+              "title": "Incident",
+              "type": "string"
+            },
+            "topic": {
+              "title": "Topic",
+              "type": "string"
+            },
+            "state": {
+              "title": "State",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "to",
+            "incident",
+            "topic",
+            "state"
+          ],
+          "title": "Incident",
+          "type": "object"
+        },
+        "RenderedMessage": {
+          "properties": {
+            "id": {
+              "title": "Id",
+              "type": "string"
+            },
+            "from": {
+              "title": "From",
+              "type": "string"
+            },
+            "to": {
+              "title": "To",
+              "type": "string"
+            },
+            "topic": {
+              "title": "Topic",
+              "type": "string"
+            },
+            "created": {
+              "title": "Created",
+              "type": "string"
+            },
+            "text": {
+              "title": "Text",
+              "type": "string"
+            },
+            "reply_to": {
+              "title": "Reply To",
+              "type": "string"
+            },
+            "vote": {
+              "title": "Vote",
+              "type": "string"
+            },
+            "state": {
+              "title": "State",
+              "type": "string"
+            },
+            "due": {
+              "title": "Due",
+              "type": "string"
+            },
+            "quality": {
+              "title": "Quality",
+              "type": "string"
+            },
+            "info": {
+              "title": "Info",
+              "type": "boolean"
+            },
+            "attachments": {
+              "items": {
+                "$ref": "#/$defs/Attachment"
+              },
+              "title": "Attachments",
+              "type": "array"
+            },
+            "cancelled": {
+              "title": "Cancelled",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "from",
+            "to",
+            "topic",
+            "created",
+            "text"
+          ],
+          "title": "RenderedMessage",
+          "type": "object"
+        },
+        "Reservation": {
+          "properties": {
+            "id": {
+              "title": "Id",
+              "type": "string"
+            },
+            "agent": {
+              "title": "Agent",
+              "type": "string"
+            },
+            "paths": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Paths",
+              "type": "array"
+            },
+            "reason": {
+              "title": "Reason",
+              "type": "string"
+            },
+            "exclusive": {
+              "title": "Exclusive",
+              "type": "boolean"
+            },
+            "expires": {
+              "title": "Expires",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "agent",
+            "paths"
+          ],
+          "title": "Reservation",
+          "type": "object"
+        }
+      },
+      "properties": {
+        "status": {
+          "const": "success",
+          "title": "Status",
+          "type": "string"
+        },
+        "late_replies": {
+          "items": {
+            "$ref": "#/$defs/RenderedMessage"
+          },
+          "title": "Late Replies",
+          "type": "array"
+        },
+        "late_note": {
+          "title": "Late Note",
+          "type": "string"
+        },
+        "me": {
+          "title": "Me",
+          "type": "string"
+        },
+        "host": {
+          "title": "Host",
+          "type": "string"
+        },
+        "version": {
+          "title": "Version",
+          "type": "string"
+        },
+        "bell": {
+          "additionalProperties": true,
+          "title": "Bell",
+          "type": "object"
+        },
+        "en_cours": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "En Cours",
+          "type": "array"
+        },
+        "agents": {
+          "additionalProperties": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "Agents",
+          "type": "object"
+        },
+        "incidents": {
+          "items": {
+            "$ref": "#/$defs/Incident"
+          },
+          "title": "Incidents",
+          "type": "array"
+        },
+        "reservations": {
+          "items": {
+            "$ref": "#/$defs/Reservation"
+          },
+          "title": "Reservations",
+          "type": "array"
+        },
+        "selftest": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "Selftest",
+          "type": "array"
+        }
+      },
+      "required": [
+        "status",
+        "me",
+        "host",
+        "version",
+        "bell",
+        "en_cours",
+        "agents",
+        "incidents",
+        "reservations",
+        "selftest"
+      ],
+      "title": "StatusOut",
+      "type": "object"
+    },
+    "annotations": {
+      "title": "Relay status",
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "selftest",
+    "description": "Relay self-test: interface landmarks of Codex and Antigravity (expected buttons and menus found), then,\nwith `to`, a real end-to-end wake: test message from you to `to`, wake, read, correlated reply, duration. Returns\nthe table of the directions from the host (Claude by default) to the agents it can wake.\n\nArgs:\n    to: recipient to test (\"codex\" or \"antigravity\"); omitted = landmarks only.\n    timeout_s: maximum wait for the reply (60 to 600 s).\n",
+    "inputSchema": {
+      "properties": {
+        "to": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "To"
+        },
+        "timeout_s": {
+          "default": 420,
+          "title": "Timeout S",
+          "type": "integer"
+        }
+      },
+      "title": "selftestArguments",
+      "type": "object"
+    },
+    "annotations": {
+      "title": "Relay self-test",
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "where",
+    "description": "Where a button or menu is in Codex or Antigravity, from the latest map of its interface: path (page, menu,\nsubmenu), relay landmark (NEW_CHAT, ARCHIVE, MODE, CHAT_ACTIONS...), stable attributes and the gestures that reach\nit through the debugging port. No navigation: only the stored map is read.\n\nArgs:\n    app: \"codex\" or \"antigravity\".\n    what: label (\"Archive\"), aria-label, data-* attribute (\"data-testid=send-button\"), translation key or\n        landmark name (\"ARCHIVE\").\n",
+    "inputSchema": {
+      "properties": {
+        "app": {
+          "title": "App",
+          "type": "string"
+        },
+        "what": {
+          "title": "What",
+          "type": "string"
+        }
+      },
+      "required": [
+        "app",
+        "what"
+      ],
+      "title": "whereArguments",
+      "type": "object"
+    },
+    "annotations": {
+      "title": "Find a button or menu",
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "survey",
+    "description": "Map the interface of Codex or Antigravity now (otherwise done automatically when its version changes):\npages and menus opened, read and closed with Escape, never an action; refused while the user is in the app; view\nrestored. Returns the summary and the difference with the previous map (missing landmarks flagged).\n\nArgs:\n    app: \"codex\" or \"antigravity\".\n",
+    "inputSchema": {
+      "properties": {
+        "app": {
+          "title": "App",
+          "type": "string"
+        }
+      },
+      "required": [
+        "app"
+      ],
+      "title": "surveyArguments",
+      "type": "object"
+    },
+    "annotations": {
+      "title": "Map an app interface",
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": false
+    }
+  }
+]

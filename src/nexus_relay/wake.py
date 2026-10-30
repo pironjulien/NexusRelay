@@ -171,8 +171,17 @@ def wakeable() -> tuple[str, ...]:
 
 
 def needs_wake(message: Message) -> bool:
+    from .codex_space import accepts_created
+    from .paths import relay_host
+
+    host = relay_host()
     return (
-        message.to in wakeable() and message.sender != message.to and not message.info and not awaited(message.reply_to)
+        message.to in wakeable()
+        and message.sender != message.to
+        and not message.info
+        and not awaited(message.reply_to)
+        and (host == "all" or message.sender == host)
+        and accepts_created(message.created)
     )
 
 
@@ -194,9 +203,9 @@ def sidecar_alive(box: Box, now: float | None = None) -> bool:
 def _antigravity(ids: list[str]) -> dict[str, Any]:
     """Livraison par le sidecar seul ; Antigravity fermé : relancé (son sidecar repart avec lui)."""
     from . import cdp
-    from .credits import exhausted
+    from .credits import cached_antigravity_usage, exhausted
 
-    if reason := exhausted("antigravity", Box().state("antigravity-usage")):
+    if reason := exhausted("antigravity", cached_antigravity_usage(Box())):
         return {
             "status": "deferred",
             "reason": tr(f"quota exhausted, delivery paused: {reason}", f"quota épuisé, livraison en pause : {reason}"),
@@ -592,7 +601,8 @@ def watch_codex(box: Box, now: float | None = None) -> list[str]:
     erreur » et incident (status, track, wait_reply « unavailable »), puis le chat du sujet est oublié pour qu'un
     renvoi parte dans un chat neuf. Non lue : les sonnettes s'en chargent. Jamais de renvoi automatique : l'hôte
     renvoie, ou confie la demande à Antigravity. Vu le 24/10 : filtre de Codex, « en cours » affiché 40 min."""
-    from . import codex_app
+    from . import codex_app, codex_space
+    from .paths import relay_host
 
     now = time.time() if now is None else now
     since = now - CODEX_WATCH_S
@@ -600,7 +610,11 @@ def watch_codex(box: Box, now: float | None = None) -> list[str]:
     answered = {m.reply_to for m in box.sent_by("codex", since=since) if m.reply_to}
     paths: dict[str, Path | None] = {}
     flagged = []
-    recent = box.addressed_to("codex", since=since)
+    recent = [
+        m
+        for m in box.addressed_to("codex", since=since)
+        if codex_space.accepts_created(m.created) and (relay_host() == "all" or m.sender == relay_host())
+    ]
     # dernier réveil de chaque chat, toutes demandes confondues : un chat réveillé depuis pour une autre demande vit
     # encore, il n'est jamais oublié (vu en vrai le 24/10 : le chat nexuswindows d'une autre session l'a été)
     last_wake: dict[str, float] = {}
@@ -694,6 +708,10 @@ def tidy_codex(box: Box | None = None, now: float | None = None) -> dict[str, An
     # Chat d'un sujet encore vivant (ni clos, ni 12 h sans message) : gardé, avec son contexte ; un chat sans sujet
     # connu (réveils d'avant le 21/10) : rangé une fois fini, comme avant.
     def eligible(chat: codex_app.Chat, at: float | None = None) -> bool:
+        from .codex_space import registered
+
+        if not registered(chat.id, box):
+            return False
         topics = codex_topics(box)  # relu à chaque appel : un sujet rouvert entre-temps n'est pas rangé
         return chat.id not in topics or box.topic_idle(topics[chat.id], time.time() if at is None else at, IDLE_S)
 

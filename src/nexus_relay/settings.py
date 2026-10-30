@@ -26,7 +26,18 @@ from collections.abc import MutableMapping
 from pathlib import Path
 from typing import Any
 
-KEYS = ("token_file", "vaults", "codex_router", "codex_router_start", "host", "lang")
+KEYS = (
+    "token_file",
+    "vaults",
+    "codex_router",
+    "codex_router_start",
+    "host",
+    "lang",
+    "codex_workspace",
+    "codex_project",
+    "codex_project_id",
+    "wake_since",
+)
 ENV = {
     "token_file": "NEXUS_MCP_TOKEN_FILE",
     "vaults": "NEXUS_RELAY_VAULTS",
@@ -34,6 +45,10 @@ ENV = {
     "codex_router_start": "NEXUS_RELAY_CODEX_ROUTER_START",
     "host": "NEXUS_RELAY_HOST",
     "lang": "NEXUS_RELAY_LANG",
+    "codex_workspace": "NEXUS_RELAY_CODEX_WORKSPACE",
+    "codex_project": "NEXUS_RELAY_CODEX_PROJECT",
+    "codex_project_id": "NEXUS_RELAY_CODEX_PROJECT_ID",
+    "wake_since": "NEXUS_RELAY_WAKE_SINCE",
 }
 _UNEXPANDED = re.compile(r"%[^%\s]+%|\$\{?\w+")
 
@@ -71,7 +86,15 @@ def load(paths: list[Path] | None = None) -> dict[str, Any]:
                 existing = [v for v in values if Path(v).is_file()]
                 if existing:
                     found[key] = existing[0]
-            elif key in ("codex_router", "host", "lang"):
+            elif key in (
+                "codex_router",
+                "host",
+                "lang",
+                "codex_workspace",
+                "codex_project",
+                "codex_project_id",
+                "wake_since",
+            ):
                 if values:
                     found[key] = values[0]
             elif values:

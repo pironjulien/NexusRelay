@@ -1,0 +1,5 @@
+<Project><PropertyGroup>
+  <BaseIntermediateOutputPath>$(LOCALAPPDATA)\NexusRelay\card-contracts\obj\</BaseIntermediateOutputPath>
+  <MSBuildProjectExtensionsPath>$(BaseIntermediateOutputPath)</MSBuildProjectExtensionsPath>
+  <BaseOutputPath>$(LOCALAPPDATA)\NexusRelay\card-contracts\bin\</BaseOutputPath>
+</PropertyGroup></Project>

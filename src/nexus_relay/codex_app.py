@@ -28,8 +28,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .paths import relay_home
-
 PROCESS = "chatgpt.exe"
 VERIFY_S = 8.0
 POLL_S = 0.4
@@ -45,7 +43,9 @@ def home() -> Path:
 
 def relay_dir() -> Path:
     """Dossier du projet Codex du relais : le `cwd` de ses chats."""
-    return relay_home() / "codex-projet"
+    from .codex_space import configured
+
+    return Path(configured()["path"])
 
 
 def _norm(path: str) -> str:
@@ -355,7 +355,7 @@ def archive_chats(
     exception qui interrompt le rangement (tour 2). Seuls les chats REÇUS (`chats`) et toujours `eligible` au moment
     du clic sont rangés (relecture de Codex du 21/10 : tous les chats du relais l'étaient, sujets actifs compris)."""
     selected = {c.id for c in chats}
-    from . import cdp
+    from . import cdp, codex_space
 
     root = root or home()
     url = cdp.page_url()
@@ -375,6 +375,7 @@ def archive_chats(
             return {"status": "failed", "reason": "mode Codex de l'appli non sélectionné"}
         if cdp.selection_size(page) > 1:  # « Archiver » agirait sur toute la sélection de l'utilisateur (tour 3)
             return {"status": "deferred", "reason": "plusieurs chats sélectionnés dans Codex"}
+        current = cdp.selected_conversation(page)
         return archive_project(
             lambda: {conv: row for row, conv, _ in cdp.row_conversations(page)},
             lambda row, guard: cdp.archive_thread(page, row, guard),
@@ -382,7 +383,7 @@ def archive_chats(
             root,
             grace_s,
             present=cdp.user_in_codex,
-            eligible=eligible,
+            eligible=lambda chat: chat.id != current and codex_space.owns(chat.id) and eligible(chat),
         )
     except Exception as error:  # noqa: BLE001 - port muet, page fermée : échec noté, pause croissante
         return {"status": "failed", "reason": f"{type(error).__name__}: {error}"}

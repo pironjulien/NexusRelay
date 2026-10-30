@@ -14,7 +14,6 @@ modifié : l'absence est seulement dite.
 
 from __future__ import annotations
 
-import calendar
 import json
 import os
 import re
@@ -105,15 +104,70 @@ def codex_usage(root: Path | None = None, now: float | None = None) -> dict[str,
 
 
 def _epoch(stamp: str) -> float:
+    from datetime import datetime
+
     try:
-        return float(calendar.timegm(time.strptime(stamp, "%Y-%m-%dT%H:%M:%SZ")))
+        return datetime.fromisoformat(stamp.replace("Z", "+00:00")).timestamp()
     except ValueError:
         return 0.0
+
+
+def keypad_antigravity_usage(now: float | None = None) -> dict[str, Any] | None:
+    """Named groups and selection proven by Keypad's UI reader; never its historical global maximum."""
+    path = Path(
+        os.environ.get("NEXUS_RELAY_KEYPAD_QUOTA")
+        or Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData/Local") / "NexusKeypad/quota-antigravity.json"
+    )
+    if not path.exists():
+        return None
+    now = time.time() if now is None else now
+    unknown = {"status": "unknown", "source": "NexusKeypad shared quota", "selection_proven": False, "limits": []}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
+        observed = _epoch(str(data.get("lu") or ""))
+        if observed <= 0 or now - observed > 6 * 3600 or observed > now + 60:
+            return unknown
+        selected = data.get("groupeSelectionne")
+        selected = selected if selected in ("gemini", "claude-gpt", "argon") else None
+        limits = []
+        for group in data.get("groupes") or []:
+            family = group.get("groupe")
+            used = group.get("utilise")
+            if family not in ("gemini", "claude-gpt", "argon") or type(used) not in (int, float) or not 0 <= used <= 1:
+                continue
+            five = group.get("cinq") is True
+            reset = _epoch(str(group.get("fin") or "")) or observed + (5 * 3600 if five else 7 * 24 * 3600)
+            limits.append(
+                {
+                    "family": family,
+                    "limit": "5 h" if five else "semaine",
+                    "remaining_pct": 100 * (1 - used) if now < reset else 100.0,
+                    "resets_at": reset,
+                }
+            )
+        return {
+            "status": "success",
+            "source": "NexusKeypad shared quota",
+            "read_at": data.get("lu"),
+            "selected_family": selected,
+            "selection_proven": bool(selected and any(x["family"] == selected for x in limits)),
+            "limits": limits,
+        }
+    except (OSError, ValueError, TypeError, AttributeError):
+        return unknown
+
+
+def cached_antigravity_usage(box: Box, now: float | None = None) -> dict[str, Any] | None:
+    shared = keypad_antigravity_usage(now)
+    return shared if shared is not None else box.state("antigravity-usage")
 
 
 def antigravity_usage(box: Box, read: Any = None, now: float | None = None) -> dict[str, Any] | None:
     """Dernière lecture des quotas d'Antigravity (relue si elle a plus de 10 min et que la lecture est possible)."""
     now = time.time() if now is None else now
+    shared = keypad_antigravity_usage(now)
+    if shared is not None:
+        return shared
     cached = box.state("antigravity-usage")
     if cached and now - _epoch(str(cached.get("read_at") or "")) < AGY_CACHE_S:
         return {**cached, "cached": True}
@@ -148,10 +202,14 @@ def exhausted(
     if agent == "antigravity":
         if usage.get("status") != "success" or now - _epoch(str(usage.get("read_at") or "")) > 6 * 3600:
             return None  # lecture absente ou trop vieille : inconnu
+        if usage.get("selection_proven") is False:
+            return None
+        selected = usage.get("selected_family")
         for limit in usage.get("limits") or []:
             remaining = limit.get("remaining_pct")
             family = str(limit.get("family") or "")
-            if "Gemini" in family and isinstance(remaining, int | float) and remaining <= 100 - used_pct:
+            relevant = family == selected if selected else "Gemini" in family
+            if relevant and isinstance(remaining, int | float) and remaining <= 100 - used_pct:
                 cap = limit.get("limit")
                 return tr(
                     f"Antigravity: {remaining:.0f} % left ({family}, {cap})",
@@ -171,5 +229,5 @@ def availability(box: Box, agent: str, used_pct: float = EXHAUSTED_USED_PCT) -> 
 
         if not wake.sidecar_alive(box) and not cdp.agy_page_url() and cdp.agy_exe() is None:
             return tr("Antigravity closed and not found on this PC", "Antigravity fermé et introuvable sur ce PC")
-        return exhausted("antigravity", box.state("antigravity-usage"), used_pct=used_pct)
+        return exhausted("antigravity", cached_antigravity_usage(box), used_pct=used_pct)
     return None

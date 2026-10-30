@@ -27,6 +27,17 @@ PATCH = """*** Begin Patch
 *** End Patch"""
 
 
+def commit_files(repo: Path, names: list[str], *, initial: bool = False) -> None:
+    if initial:
+        repo.mkdir(exist_ok=True)
+        subprocess.run(["git", "init", "-q", str(repo)], check=True)
+        for name in names:
+            (repo / name).write_text("original\n", encoding="utf-8")
+    git = ["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@t", "-c", "core.hooksPath="]
+    subprocess.run([*git, "add", *names], check=True)
+    subprocess.run([*git, "commit", "-qm", "test"], check=True)
+
+
 def test_cibles_des_trois_formats(tmp_path: Path):
     base = str(tmp_path)
     claude = {"tool_name": "Edit", "cwd": base, "tool_input": {"file_path": str(tmp_path / "a.py")}}
@@ -90,11 +101,18 @@ def test_evenement_illisible_ne_bloque_pas():
 
 
 def test_commit_libere_les_seules_reservations_automatiques_commitees(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    commit_files(tmp_path, ["a.py", "b.py", "c.py"], initial=True)
     a, b, c = (str(tmp_path / n) for n in ("a.py", "b.py", "c.py"))
-    assert edit_guard.decide("claude", [a]) is None and edit_guard.decide("claude", [b]) is None
+    assert edit_guard.decide("claude", [a], conversation="s1", tool="a") is None
+    assert edit_guard.decide("claude", [b], conversation="s1", tool="b") is None
+    for path in (a, b):
+        Path(path).write_text("modified\n", encoding="utf-8")
+    assert reservations.finish_edits("claude", "s1", tool="a") == []
+    assert reservations.finish_edits("claude", "s1", tool="b") == []
     as_agent(monkeypatch, "claude")
     call(server.reserve([c], "à la main"))
-    assert len(reservations.release_committed("claude", [a, c])) == 1
+    commit_files(tmp_path, ["a.py"])
+    assert len(reservations.release_committed("claude", [a, c], session="s1")) == 1
     left = sorted(p for r in reservations.active(Box()) for p in r["paths"])
     assert left == [b, c]
     assert reservations.release_committed("codex", [b]) == []  # jamais celles d'un autre
@@ -102,14 +120,13 @@ def test_commit_libere_les_seules_reservations_automatiques_commitees(tmp_path: 
 
 def test_hook_post_commit_libere_apres_le_commit(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     repo = tmp_path / "depot"
-    repo.mkdir()
-    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    commit_files(repo, ["a.py"], initial=True)
+    assert edit_guard.decide("claude", [str(repo / "a.py")], conversation="s1", tool="a") is None
     (repo / "a.py").write_text("x = 1\n", encoding="utf-8")
-    assert edit_guard.decide("claude", [str(repo / "a.py")]) is None
-    git = ["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@t"]
-    subprocess.run([*git, "add", "a.py"], check=True)
-    subprocess.run([*git, "commit", "-q", "-m", "a", "--no-verify"], check=True)
+    assert reservations.finish_edits("claude", "s1", tool="a") == []
+    commit_files(repo, ["a.py"])
     monkeypatch.chdir(repo)
+    monkeypatch.setenv("NEXUS_RELAY_SESSION", "s1")
     assert reservations.main(["--agent", "claude", "--release-committed"]) == 0
     assert reservations.active(Box()) == []
 
@@ -135,13 +152,18 @@ def test_deux_conversations_du_meme_agent_se_bloquent(tmp_path: Path, monkeypatc
 
 
 def test_commit_d_une_autre_conversation_refuse_et_ne_libere_pas(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    commit_files(tmp_path, ["a.py"], initial=True)
     a = str(tmp_path / "a.py")
-    assert edit_guard.decide("claude", [a], conversation="s1") is None
+    assert edit_guard.decide("claude", [a], conversation="s1", tool="a") is None
+    Path(a).write_text("modified\n", encoding="utf-8")
+    assert reservations.finish_edits("claude", "s1", tool="a") == []
+    commit_files(tmp_path, ["a.py"])
     assert reservations.blocking("claude", [a], session="s2")[0]["agent"] == "claude (autre conversation)"
     assert reservations.blocking("claude", [a], session="s1") == []
     assert reservations.release_committed("claude", [a], session="s2") == []
+    assert reservations.release_committed("claude", [a]) == []  # unknown caller cannot release another session
     assert len(reservations.release_committed("claude", [a], session="s1")) == 1
-    for name in ("NEXUS_RELAY_SESSION", "CODEX_THREAD_ID"):
+    for name in ("NEXUS_RELAY_SESSION", "CODEX_SESSION_ID", "CODEX_THREAD_ID"):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "s9")
     assert reservations.session_from_env("claude") == "s9" and reservations.session_from_env("codex") is None

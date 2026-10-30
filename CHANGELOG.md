@@ -6,6 +6,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Native C# (.NET 10) engine in `native/`, built outside OneDrive and installed as an immutable version under
+  `%LOCALAPPDATA%\NexusRelay\versions\<hash>`: wake and tidy workers, unread-message recovery, per-topic backoff,
+  bounded retries, protection of uncertain deliveries, `/health` (service, PID, runtime) and a `status` with real
+  heartbeats, errors and sidecar state. The 20 MCP schemas of the Python server are frozen in a native resource and
+  compared in full. A C# Antigravity sidecar uses the official `agentapi`. Qualification status: `native/QUALIFICATION.md`.
+- Native self-tests (`NexusRelay.exe --selftest`) and black-box pytest tests (`tests/test_native_csharp.py`): full
+  room cycle, exclusive claims, `cancel`, crash recovery, vault protection, edit guard, stdio and loopback HTTP MCP.
+- `release(id, force=true)`: on the user's request the host takes back an absent agent's reservation, by id only,
+  traced by `released_by`; files are left as they are.
+- Single hook entry point `scripts/invoke-hook.ps1` for edit, end-of-tool/session, Git guards and host
+  notification; it follows the installed runtime and keeps UTF-8.
+
+### Changed
+- The installed runtime is chosen explicitly (`install.ps1 -Runtime python|native`, then the local `runtime`
+  setting); a build no longer switches the service. Installs without a choice keep the Python engine until the
+  native end-to-end qualification is complete.
+- User apps are launched through the Windows shell, outside the service's job object. The installer no longer
+  kills processes by a global pattern: it checks executable, module, port, PID and start time, then asks that one
+  instance to exit cleanly.
+
+### Fixed
+- Codex wake on app 26.10: the relay goes back to Home (where projects are listed) before checking the project
+  identity; the new-chat button is activated by keyboard on the exact element; a topic chat shown both under its
+  project and in "Chats" is reopened; the empty draft of a freshly started Codex is no longer protected as a user draft.
+- Antigravity edit hook: the `invoke-hook.ps1` path is no longer quoted (Antigravity runs it without a shell).
+- Codex Git guard identity aligned with its hooks (`NEXUS_RELAY_SESSION`, then `CODEX_SESSION_ID`, then
+  `CODEX_THREAD_ID`): a sub-agent no longer blocks the files of its own parent conversation.
+- Automatic reservations: end-of-tool and end-of-turn hooks release attempts without writes as soon as Git confirms
+  nothing changed; failed tools after a write, staged/modified/untracked files, manual reservations and other
+  conversations stay protected. Post-commit requires the exact conversation and a finished write.
+- `wait_reply` claims every id before reading, uses one shared deadline and keeps answers until the whole group
+  returns; an exclusive lease protects each request against a second concurrent wait, even from another process.
+- A Codex delivery intent is persisted before Enter; an interruption there becomes uncertain and is never replayed.
+- NexusKeypad shared quota uses the model family actually selected; an exhausted unused family no longer blocks Gemini.
+- ISO date strings in settings stay strings under PowerShell 7.5.
+- From an MSIX-installed Codex, AppData artifacts may be redirected into its package cache: the installer now
+  declares their real physical path.
+
 ## [1.8.7] - 2026-10-28
 
 ### Fixed

@@ -136,7 +136,7 @@ def test_spec_declare_la_demande_suivie_par_le_demon():
     # spec autonome (relecture de Codex) : démon et sidecar épinglés sur la boîte où install.ps1 dépose les demandes
     assert "$mailbox = Join-Path $HOME '.nexus\\relay'" in install
     assert "$daemonEnv.NEXUS_RELAY_HOME = $mailbox" in install
-    assert "PYTHONPYCACHEPREFIX = $pycache; NEXUS_RELAY_HOME = $mailbox }" in install
+    assert "PYTHONPYCACHEPREFIX = $pycache; NEXUS_RELAY_HOME = $mailbox" in install
 
 
 def test_demande_declaree_par_la_spec_prise_au_lancement(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):

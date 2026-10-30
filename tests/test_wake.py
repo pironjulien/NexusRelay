@@ -36,7 +36,7 @@ def test_rafale_groupee_en_un_seul_reveil():
     clock = Clock()
     bell, calls = bell_with([], clock)
     box = bell.box
-    a, b = box.post("claude", "codex", "1", "t"), box.post("antigravity", "codex", "2", "t")
+    a, b = box.post("claude", "codex", "1", "t"), box.post("claude", "codex", "2", "t")
     assert bell.ring(a) and bell.ring(b)
     assert bell.step("codex") is None  # rafale encore ouverte
     clock.t += wake.GROUP_S
@@ -223,6 +223,9 @@ def _codex_tidy(
     calls: list[Any] = []
     found = [codex_app.Chat("c1", Path("rollout.jsonl"), True, 0.0)] if chats is None else chats
     monkeypatch.setattr(codex_app, "relay_chats", lambda root=None, now=None: found)
+    from nexus_relay import codex_space
+
+    monkeypatch.setattr(codex_space, "registered", lambda conversation, box=None: conversation in {c.id for c in found})
     # journaux simulés par l'objet Chat (le vrai `ready` relit le fichier : voir test_codex_app)
     monkeypatch.setattr(
         codex_app, "ready", lambda chat, now, grace_s: chat.finished and (chat.idle_s(now) or 0) >= grace_s
@@ -621,6 +624,10 @@ def test_rangement_codex_reel_ne_range_que_le_sujet_clos(monkeypatch: pytest.Mon
         codex_app.Chat("chat-actif", Path("b.jsonl"), True, 0.0),
     ]
     monkeypatch.setattr(codex_app, "relay_chats", lambda root=None, now=None: list(chats))
+    from nexus_relay import codex_space
+
+    monkeypatch.setattr(codex_space, "registered", lambda conversation, box=None: conversation in {c.id for c in chats})
+    monkeypatch.setattr(codex_space, "owns", lambda conversation, box=None: conversation in {c.id for c in chats})
     monkeypatch.setattr(codex_app, "ready", lambda chat, now, grace_s: True)
     clicked: list[str] = []
     monkeypatch.setattr(codex_app, "is_archived", lambda root, chat_id: chat_id in clicked)

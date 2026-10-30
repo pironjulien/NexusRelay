@@ -31,7 +31,9 @@ def relay_host() -> str:
     """L'hôte du relais : le seul agent qui ouvre un échange, jamais sonné (il attend par wait_reply). Claude par défaut ;
     NEXUS_RELAY_HOST (réglage `host`) pour un poste sans Claude Code ou qui préfère un autre chef d'orchestre. Une valeur
     inconnue retombe sur Claude (jamais deux hôtes, jamais aucun)."""
-    raw = os.environ.get("NEXUS_RELAY_HOST", "").strip()
+    raw = os.environ.get("NEXUS_RELAY_HOST", "").strip().lower()
+    if raw in ("all", "peers", "trinite", "*"):
+        return "all"
     try:
         return normalize_agent(raw) if raw else DEFAULT_HOST
     except ValueError:
@@ -55,13 +57,27 @@ def code_fingerprint() -> str:
 def restart_wanted(request: Path, loaded: str) -> bool:
     """Demande de relance d'install.ps1 (démon ou sidecar), consommée : vrai si le code a changé depuis `loaded`, ou si
     la demande est forcée (« force » : réglages du démon changés, tour 5)."""
+
+    def elsewhere(text: str) -> bool:
+        target = re.search(r"(?:^|\s)pid:(\d+)(?:\s|$)", text)
+        return bool(target and int(target.group(1)) != os.getpid())
+
+    try:
+        if elsewhere(request.read_text(encoding="utf-8")):
+            return False
+    except FileNotFoundError:
+        return False
     taken = request.with_name(request.name + ".lue")
     try:
         os.replace(request, taken)  # prise d'un coup : une demande déposée pendant l'examen reste entière (tour 6)
     except FileNotFoundError:
         return False
     try:
-        wanted = taken.read_text(encoding="utf-8").strip().startswith("force") or code_fingerprint() != loaded
+        text = taken.read_text(encoding="utf-8").strip()
+        if elsewhere(text):
+            _give_back(taken, request)
+            return False
+        wanted = text.startswith("force") or code_fingerprint() != loaded
     except OSError:
         _give_back(taken, request)  # examen raté : la demande reste pour le tour suivant (tour 5)
         raise
