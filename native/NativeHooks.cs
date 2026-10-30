@@ -30,7 +30,7 @@ public static class NativeHooks
     }
     private static string Git(params string[] args)
     {
-        var start = new ProcessStartInfo("git") { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
+        var start = new ProcessStartInfo("git") { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true, StandardOutputEncoding = new System.Text.UTF8Encoding(false), StandardErrorEncoding = new System.Text.UTF8Encoding(false) };
         foreach (string arg in args) start.ArgumentList.Add(arg);
         using var process = Process.Start(start) ?? throw new IOException("git process not created");
         var output = process.StandardOutput.ReadToEndAsync(); var error = process.StandardError.ReadToEndAsync();

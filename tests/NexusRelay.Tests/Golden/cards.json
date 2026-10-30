@@ -1,0 +1,1798 @@
+{
+ "state": "{STATE}",
+ "files": {
+  "app.asar": "BAAAABcBAAATAQAADwEAAHsiZmlsZXMiOiB7IndlYnZpZXciOiB7ImZpbGVzIjogeyJhc3NldHMiOiB7ImZpbGVzIjogeyJmci1GUi16LmpzIjogeyJzaXplIjogNDYsICJvZmZzZXQiOiAiMCJ9LCAiZnItRlItYS5qcyI6IHsic2l6ZSI6IDY4LCAib2Zmc2V0IjogIjQ2In0sICJlbi1VUy1hLmpzIjogeyJzaXplIjogMTUsICJvZmZzZXQiOiAiMTQ3In19fX19LCAibmF0aXZlLW1lbnUtbG9jYWxlcyI6IHsiZmlsZXMiOiB7ImZyLUZSLmpzb24iOiB7InNpemUiOiAzMywgIm9mZnNldCI6ICIxMTQifX19fX1jb25zdCB4PXsiYiI6ImRlcm5pZXIiLCJlbW9qaSI6Ilx1RDgzRFx1REUwMCJ9Y29uc3QgeD17ImIiOiJwcmVtaWVyIiwibW9kZSI6YE1vZGVceEEwOiB7bW9kZX1gLCJ3aWRlIjoiXHV7MUY0MzF9In17InF1aXQiOiAiUXVpdHRlciIsICJudW1lcmljIjogM317ImIiOiJFbmdsaXNoIn0=",
+  "bad-header.asar": "BAAAAAgAAAAEAAAAoIYBAA==",
+  "required-locale.asar": "BAAAAG0AAABpAAAAZQAAAHsiZmlsZXMiOiB7IndlYnZpZXciOiB7ImZpbGVzIjogeyJhc3NldHMiOiB7ImZpbGVzIjogeyJmci1GUi1hLmpzIjogeyJzaXplIjogMjcsICJvZmZzZXQiOiAiMCJ9fX19fX19eyJsYWJlbCI6InJlcXVpcmVkIGxvY2FsZSJ9",
+  "short.asar": "c2hvcnQ=",
+  "truncated.asar": "BAAAAG0AAABpAAAAZQAAAHsiZmlsZXMiOiB7IndlYnZpZXciOiB7ImZpbGVzIjogeyJhc3NldHMiOiB7ImZpbGVzIjogeyJmci1GUi1hLmpzIjogeyJzaXplIjogMjcsICJvZmZzZXQiOiAiMCJ9fX19fX19eyJsYWJlbCI6InJlcXVpcmVkIGxvY2FsZQ=="
+ },
+ "calls": [
+  {
+   "op": "locator",
+   "args": {
+    "item": {
+     "role": "button",
+     "aria": "Nouveau chat",
+     "text": "",
+     "data": {},
+     "path": [
+      "vue de départ"
+     ]
+    }
+   },
+   "answer": {
+    "result": {
+     "role": "button",
+     "aria": "Nouveau chat"
+    }
+   }
+  },
+  {
+   "op": "locator",
+   "args": {
+    "item": {
+     "role": "menuitem",
+     "aria": "",
+     "text": "Archiver",
+     "data": {},
+     "path": [
+      "vue de départ",
+      "menu « Actions du chat »"
+     ]
+    }
+   },
+   "answer": {
+    "result": {
+     "role": "menuitem",
+     "text": "Archiver"
+    }
+   }
+  },
+  {
+   "op": "locator",
+   "args": {
+    "item": {
+     "role": "button",
+     "aria": "Changer de mode, mode actuel : {mode}",
+     "text": "",
+     "popup": "menu",
+     "data": {},
+     "path": [
+      "vue de départ"
+     ]
+    }
+   },
+   "answer": {
+    "result": {
+     "role": "button",
+     "aria_re": "^Changer de mode, mode actuel : .+$"
+    }
+   }
+  },
+  {
+   "op": "locator",
+   "args": {
+    "item": {
+     "role": "button",
+     "aria": "Change ${model} (mode)",
+     "data": {}
+    }
+   },
+   "answer": {
+    "result": {
+     "role": "button",
+     "aria_re": "^Change .+ \\(mode\\)$"
+    }
+   }
+  },
+  {
+   "op": "locator",
+   "args": {
+    "item": {
+     "role": "button",
+     "aria": "Visible",
+     "data": {
+      "data-testid": "stable"
+     }
+    }
+   },
+   "answer": {
+    "result": {
+     "css": "[data-testid=\"stable\"]"
+    }
+   }
+  },
+  {
+   "op": "locator",
+   "args": {
+    "item": {
+     "role": "link",
+     "text": "Choisir /{name}",
+     "data": {
+      "data-color": "blue"
+     }
+    }
+   },
+   "answer": {
+    "result": {
+     "role": "link",
+     "text_re": "^Choisir \\/.+$"
+    }
+   }
+  },
+  {
+   "op": "mask",
+   "args": {
+    "items": [
+     {
+      "role": "button",
+      "aria": "Nouveau chat",
+      "text": "",
+      "data": {},
+      "path": [
+       "vue de départ"
+      ]
+     },
+     {
+      "role": "button",
+      "aria": "Changer de mode, mode actuel : Codex",
+      "text": ""
+     },
+     {
+      "role": "link",
+      "text": "Synthetic private chat",
+      "data": {
+       "data-testid": "row",
+       "data-chat-id": "synthetic-id"
+      },
+      "href": "/c/synthetic-id?secret=fixture#test"
+     },
+     {
+      "role": "button",
+      "aria": "Synthetic Person <fixture@example.org>",
+      "text": "",
+      "region": "navigation:Synthetic private chat"
+     },
+     {
+      "role": "button",
+      "aria": "Select model, current: Fiction",
+      "text": ""
+     }
+    ],
+    "labels": [
+     "Nouveau chat",
+     "/c",
+     "navigation",
+     "Changer de mode, mode actuel : {mode}",
+     "Select model, current: ${m}",
+     "${a} · ${b}"
+    ]
+   },
+   "answer": {
+    "result": [
+     {
+      "role": "button",
+      "aria": "Nouveau chat",
+      "text": "",
+      "data": {},
+      "path": [
+       "vue de départ"
+      ],
+      "region": ""
+     },
+     {
+      "role": "button",
+      "aria": "Changer de mode, mode actuel : {mode}",
+      "text": "",
+      "region": "",
+      "data": {}
+     },
+     {
+      "role": "link",
+      "text": "*",
+      "data": {
+       "data-testid": "row",
+       "data-chat-id": "*"
+      },
+      "href": "/c/*",
+      "aria": null,
+      "region": ""
+     },
+     {
+      "role": "button",
+      "aria": "*",
+      "text": "",
+      "region": "navigation:*",
+      "data": {}
+     },
+     {
+      "role": "button",
+      "aria": "Select model, current: ${m}",
+      "text": "",
+      "region": "",
+      "data": {}
+     }
+    ]
+   }
+  },
+  {
+   "op": "collapse",
+   "args": {
+    "items": [
+     {
+      "role": "link",
+      "aria": "",
+      "text": "fixture row 0",
+      "data": {},
+      "region": "nav"
+     },
+     {
+      "role": "link",
+      "aria": "",
+      "text": "fixture row 1",
+      "data": {},
+      "region": "nav"
+     },
+     {
+      "role": "link",
+      "aria": "",
+      "text": "fixture row 2",
+      "data": {},
+      "region": "nav"
+     },
+     {
+      "role": "link",
+      "aria": "",
+      "text": "fixture row 3",
+      "data": {},
+      "region": "nav"
+     },
+     {
+      "role": "link",
+      "aria": "",
+      "text": "fixture row 4",
+      "data": {},
+      "region": "nav"
+     },
+     {
+      "role": "link",
+      "aria": "",
+      "text": "fixture row 5",
+      "data": {},
+      "region": "nav"
+     },
+     {
+      "role": "button",
+      "aria": "Nouveau chat",
+      "text": "",
+      "data": {},
+      "path": [
+       "vue de départ"
+      ]
+     }
+    ]
+   },
+   "answer": {
+    "result": [
+     {
+      "role": "link",
+      "aria": "",
+      "text": "",
+      "data": {},
+      "region": "nav",
+      "repeated": 6
+     },
+     {
+      "role": "button",
+      "aria": "Nouveau chat",
+      "text": "",
+      "data": {},
+      "path": [
+       "vue de départ"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "op": "marks",
+   "args": {
+    "app": "codex",
+    "items": [
+     {
+      "role": "button",
+      "aria": "Nouveau chat",
+      "text": "",
+      "data": {},
+      "path": [
+       "vue de départ"
+      ]
+     },
+     {
+      "role": "button",
+      "aria": "Changer de mode, mode actuel : {mode}",
+      "text": "",
+      "popup": "menu",
+      "data": {},
+      "path": [
+       "vue de départ"
+      ]
+     },
+     {
+      "role": "button",
+      "aria": "Actions du chat",
+      "text": "",
+      "popup": "menu",
+      "data": {},
+      "path": [
+       "vue de départ"
+      ]
+     },
+     {
+      "role": "menuitem",
+      "aria": "",
+      "text": "Archiver",
+      "data": {},
+      "path": [
+       "vue de départ",
+       "menu « Actions du chat »"
+      ]
+     }
+    ],
+    "context": null
+   },
+   "answer": {
+    "result": {
+     "NEW_CHAT": {
+      "path": "vue de départ",
+      "paths": [
+       "vue de départ"
+      ],
+      "label": "Nouveau chat"
+     },
+     "MODE": {
+      "path": "vue de départ",
+      "paths": [
+       "vue de départ"
+      ],
+      "label": "Changer de mode, mode actuel : {mode}"
+     },
+     "CHAT_ACTIONS": {
+      "path": "vue de départ",
+      "paths": [
+       "vue de départ"
+      ],
+      "label": "Actions du chat"
+     },
+     "ARCHIVE": {
+      "path": "vue de départ > menu « Actions du chat »",
+      "paths": [
+       "vue de départ > menu « Actions du chat »"
+      ],
+      "label": "Archiver"
+     },
+     "COMPOSER": null
+    }
+   }
+  },
+  {
+   "op": "marks",
+   "args": {
+    "app": "codex",
+    "items": [
+     {
+      "role": "button",
+      "aria": "Nouveau chat",
+      "text": "",
+      "data": {},
+      "path": [
+       "vue de départ"
+      ]
+     },
+     {
+      "role": "listitem",
+      "text": "Aucun chat",
+      "data": {},
+      "path": [
+       "vue de départ"
+      ]
+     }
+    ],
+    "context": null
+   },
+   "answer": {
+    "result": {
+     "NEW_CHAT": {
+      "path": "vue de départ",
+      "paths": [
+       "vue de départ"
+      ],
+      "label": "Nouveau chat"
+     },
+     "MODE": null,
+     "CHAT_ACTIONS": {
+      "unverified": "non vérifiable : « Aucun chat » (vue de départ)"
+     },
+     "ARCHIVE": {
+      "unverified": "non vérifiable : « Aucun chat » (vue de départ)"
+     },
+     "COMPOSER": null
+    }
+   }
+  },
+  {
+   "op": "marks",
+   "args": {
+    "app": "codex",
+    "items": [
+     {
+      "role": "button",
+      "aria": "Nouveau chat",
+      "text": "",
+      "data": {},
+      "path": [
+       "vue de départ"
+      ]
+     }
+    ],
+    "context": {
+     "chat_open": false
+    }
+   },
+   "answer": {
+    "result": {
+     "NEW_CHAT": {
+      "path": "vue de départ",
+      "paths": [
+       "vue de départ"
+      ],
+      "label": "Nouveau chat"
+     },
+     "MODE": null,
+     "CHAT_ACTIONS": {
+      "unverified": "non vérifiable : aucun chat ouvert au départ du relevé"
+     },
+     "ARCHIVE": null,
+     "COMPOSER": null
+    }
+   }
+  },
+  {
+   "op": "marks",
+   "args": {
+    "app": "codex",
+    "items": [
+     {
+      "role": "button",
+      "aria": "Nouveau chat",
+      "text": "",
+      "data": {},
+      "path": [
+       "vue de départ"
+      ]
+     }
+    ],
+    "context": {
+     "chat_open": true
+    }
+   },
+   "answer": {
+    "result": {
+     "NEW_CHAT": {
+      "path": "vue de départ",
+      "paths": [
+       "vue de départ"
+      ],
+      "label": "Nouveau chat"
+     },
+     "MODE": null,
+     "CHAT_ACTIONS": null,
+     "ARCHIVE": null,
+     "COMPOSER": null
+    }
+   }
+  },
+  {
+   "op": "diff",
+   "args": {
+    "before": {
+     "app": "codex",
+     "version": "1",
+     "surveyed_at": "2026-10-20T10:00:00Z",
+     "elements": [
+      {
+       "role": "button",
+       "aria": "Nouveau chat",
+       "text": "",
+       "data": {},
+       "path": [
+        "vue de départ"
+       ]
+      },
+      {
+       "role": "button",
+       "aria": "Changer de mode, mode actuel : {mode}",
+       "text": "",
+       "popup": "menu",
+       "data": {},
+       "path": [
+        "vue de départ"
+       ]
+      },
+      {
+       "role": "button",
+       "aria": "Actions du chat",
+       "text": "",
+       "popup": "menu",
+       "data": {},
+       "path": [
+        "vue de départ"
+       ]
+      },
+      {
+       "role": "menuitem",
+       "aria": "",
+       "text": "Archiver",
+       "data": {},
+       "path": [
+        "vue de départ",
+        "menu « Actions du chat »"
+       ]
+      }
+     ],
+     "landmarks": {
+      "NEW_CHAT": {
+       "path": "vue de départ",
+       "paths": [
+        "vue de départ"
+       ],
+       "label": "Nouveau chat"
+      },
+      "MODE": {
+       "path": "vue de départ",
+       "paths": [
+        "vue de départ"
+       ],
+       "label": "Changer de mode, mode actuel : {mode}"
+      },
+      "CHAT_ACTIONS": {
+       "path": "vue de départ",
+       "paths": [
+        "vue de départ"
+       ],
+       "label": "Actions du chat"
+      },
+      "ARCHIVE": {
+       "path": "vue de départ > menu « Actions du chat »",
+       "paths": [
+        "vue de départ > menu « Actions du chat »"
+       ],
+       "label": "Archiver"
+      },
+      "COMPOSER": null
+     },
+     "index": {
+      "archive": "Archiver"
+     }
+    },
+    "after": {
+     "app": "codex",
+     "version": "2",
+     "surveyed_at": "2026-10-21T10:00:00Z",
+     "elements": [
+      {
+       "role": "button",
+       "aria": "Nouveau chat",
+       "text": "",
+       "data": {},
+       "path": [
+        "vue de départ"
+       ]
+      },
+      {
+       "role": "button",
+       "aria": "Changer de mode, mode actuel : {mode}",
+       "text": "",
+       "popup": "menu",
+       "data": {},
+       "path": [
+        "page « Paramètres »"
+       ]
+      }
+     ],
+     "landmarks": {
+      "NEW_CHAT": {
+       "path": "vue de départ",
+       "paths": [
+        "vue de départ"
+       ],
+       "label": "Nouveau chat"
+      },
+      "MODE": {
+       "path": "page « Paramètres »",
+       "paths": [
+        "page « Paramètres »"
+       ],
+       "label": "Changer de mode, mode actuel : {mode}"
+      },
+      "CHAT_ACTIONS": null,
+      "ARCHIVE": null,
+      "COMPOSER": null
+     },
+     "index": {
+      "mode": "Changer de mode",
+      "archive": "Archiver le chat"
+     }
+    }
+   },
+   "answer": {
+    "result": {
+     "from": "1 (2026-10-20T10:00:00Z)",
+     "to": "2 (2026-10-21T10:00:00Z)",
+     "landmarks": [
+      "REPÈRE DISPARU ARCHIVE (était : vue de départ > menu « Actions du chat »)",
+      "REPÈRE DISPARU CHAT_ACTIONS (était : vue de départ)",
+      "repère MODE maintenant aussi : page « Paramètres »",
+      "repère MODE n'est plus : vue de départ"
+     ],
+     "moved": [
+      "button « Changer de mode, mode actuel : {mode} » : vue de départ → page « Paramètres »"
+     ],
+     "added": [],
+     "removed": [
+      "button « Actions du chat » (vue de départ)",
+      "menuitem « Archiver » (vue de départ > menu « Actions du chat »)"
+     ],
+     "labels": {
+      "added": 1,
+      "removed": [],
+      "changed": [
+       "archive : « Archiver » → « Archiver le chat »"
+      ]
+     }
+    }
+   }
+  },
+  {
+   "op": "summary",
+   "args": {
+    "diff": {
+     "from": "1 (2026-10-20T10:00:00Z)",
+     "to": "2 (2026-10-21T10:00:00Z)",
+     "landmarks": [
+      "REPÈRE DISPARU ARCHIVE (était : vue de départ > menu « Actions du chat »)",
+      "REPÈRE DISPARU CHAT_ACTIONS (était : vue de départ)",
+      "repère MODE maintenant aussi : page « Paramètres »",
+      "repère MODE n'est plus : vue de départ"
+     ],
+     "moved": [
+      "button « Changer de mode, mode actuel : {mode} » : vue de départ → page « Paramètres »"
+     ],
+     "added": [],
+     "removed": [
+      "button « Actions du chat » (vue de départ)",
+      "menuitem « Archiver » (vue de départ > menu « Actions du chat »)"
+     ],
+     "labels": {
+      "added": 1,
+      "removed": [],
+      "changed": [
+       "archive : « Archiver » → « Archiver le chat »"
+      ]
+     }
+    }
+   },
+   "answer": {
+    "result": "1 (2026-10-20T10:00:00Z) → 2 (2026-10-21T10:00:00Z)\nREPÈRE DISPARU ARCHIVE (était : vue de départ > menu « Actions du chat »)\nREPÈRE DISPARU CHAT_ACTIONS (était : vue de départ)\nrepère MODE maintenant aussi : page « Paramètres »\nrepère MODE n'est plus : vue de départ\ndéplacé : button « Changer de mode, mode actuel : {mode} » : vue de départ → page « Paramètres »\n0 éléments apparus, 2 disparus\nlibellés : 1 nouveaux, 0 retirés, 1 changés"
+   }
+  },
+  {
+   "op": "search",
+   "args": {
+    "app": "codex",
+    "card": {
+     "app": "codex",
+     "version": "1",
+     "surveyed_at": "2026-10-20T10:00:00Z",
+     "elements": [
+      {
+       "role": "button",
+       "aria": "Nouveau chat",
+       "text": "",
+       "data": {},
+       "path": [
+        "vue de départ"
+       ]
+      },
+      {
+       "role": "button",
+       "aria": "Changer de mode, mode actuel : {mode}",
+       "text": "",
+       "popup": "menu",
+       "data": {},
+       "path": [
+        "vue de départ"
+       ]
+      },
+      {
+       "role": "button",
+       "aria": "Actions du chat",
+       "text": "",
+       "popup": "menu",
+       "data": {},
+       "path": [
+        "vue de départ"
+       ]
+      },
+      {
+       "role": "menuitem",
+       "aria": "",
+       "text": "Archiver",
+       "data": {},
+       "path": [
+        "vue de départ",
+        "menu « Actions du chat »"
+       ]
+      }
+     ],
+     "landmarks": {
+      "NEW_CHAT": {
+       "path": "vue de départ",
+       "paths": [
+        "vue de départ"
+       ],
+       "label": "Nouveau chat"
+      },
+      "MODE": {
+       "path": "vue de départ",
+       "paths": [
+        "vue de départ"
+       ],
+       "label": "Changer de mode, mode actuel : {mode}"
+      },
+      "CHAT_ACTIONS": {
+       "path": "vue de départ",
+       "paths": [
+        "vue de départ"
+       ],
+       "label": "Actions du chat"
+      },
+      "ARCHIVE": {
+       "path": "vue de départ > menu « Actions du chat »",
+       "paths": [
+        "vue de départ > menu « Actions du chat »"
+       ],
+       "label": "Archiver"
+      },
+      "COMPOSER": null
+     },
+     "index": {
+      "archive": "Archiver"
+     }
+    },
+    "what": "ARCHIVE"
+   },
+   "answer": {
+    "result": [
+     {
+      "label": "Archiver",
+      "role": "menuitem",
+      "path": "vue de départ > menu « Actions du chat »",
+      "landmark": "ARCHIVE",
+      "data": {},
+      "how": [
+       {
+        "step": "menu « Actions du chat »",
+        "gesture": "clic émulé (cdp._press)",
+        "locator": {
+         "role": "button",
+         "aria": "Actions du chat"
+        }
+       },
+       {
+        "step": "élément",
+        "locator": {
+         "role": "menuitem",
+         "text": "Archiver"
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "op": "save",
+   "args": {
+    "card": {
+     "app": "codex",
+     "version": "1",
+     "surveyed_at": "2026-10-20T10:00:00Z",
+     "elements": [
+      {
+       "role": "button",
+       "aria": "Nouveau chat",
+       "text": "",
+       "data": {},
+       "path": [
+        "vue de départ"
+       ]
+      },
+      {
+       "role": "button",
+       "aria": "Changer de mode, mode actuel : {mode}",
+       "text": "",
+       "popup": "menu",
+       "data": {},
+       "path": [
+        "vue de départ"
+       ]
+      },
+      {
+       "role": "button",
+       "aria": "Actions du chat",
+       "text": "",
+       "popup": "menu",
+       "data": {},
+       "path": [
+        "vue de départ"
+       ]
+      },
+      {
+       "role": "menuitem",
+       "aria": "",
+       "text": "Archiver",
+       "data": {},
+       "path": [
+        "vue de départ",
+        "menu « Actions du chat »"
+       ]
+      }
+     ],
+     "landmarks": {
+      "NEW_CHAT": {
+       "path": "vue de départ",
+       "paths": [
+        "vue de départ"
+       ],
+       "label": "Nouveau chat"
+      },
+      "MODE": {
+       "path": "vue de départ",
+       "paths": [
+        "vue de départ"
+       ],
+       "label": "Changer de mode, mode actuel : {mode}"
+      },
+      "CHAT_ACTIONS": {
+       "path": "vue de départ",
+       "paths": [
+        "vue de départ"
+       ],
+       "label": "Actions du chat"
+      },
+      "ARCHIVE": {
+       "path": "vue de départ > menu « Actions du chat »",
+       "paths": [
+        "vue de départ > menu « Actions du chat »"
+       ],
+       "label": "Archiver"
+      },
+      "COMPOSER": null
+     },
+     "index": {
+      "archive": "Archiver"
+     }
+    }
+   },
+   "answer": {
+    "result": {
+     "card": "{STATE}\\relay\\v1\\cartes\\codex-1.json"
+    }
+   }
+  },
+  {
+   "op": "save",
+   "args": {
+    "card": {
+     "app": "codex",
+     "version": "2",
+     "surveyed_at": "2026-10-21T10:00:00Z",
+     "elements": [
+      {
+       "role": "button",
+       "aria": "Nouveau chat",
+       "text": "",
+       "data": {},
+       "path": [
+        "vue de départ"
+       ]
+      },
+      {
+       "role": "button",
+       "aria": "Changer de mode, mode actuel : {mode}",
+       "text": "",
+       "popup": "menu",
+       "data": {},
+       "path": [
+        "page « Paramètres »"
+       ]
+      }
+     ],
+     "landmarks": {
+      "NEW_CHAT": {
+       "path": "vue de départ",
+       "paths": [
+        "vue de départ"
+       ],
+       "label": "Nouveau chat"
+      },
+      "MODE": {
+       "path": "page « Paramètres »",
+       "paths": [
+        "page « Paramètres »"
+       ],
+       "label": "Changer de mode, mode actuel : {mode}"
+      },
+      "CHAT_ACTIONS": null,
+      "ARCHIVE": null,
+      "COMPOSER": null
+     },
+     "index": {
+      "mode": "Changer de mode",
+      "archive": "Archiver le chat"
+     }
+    }
+   },
+   "answer": {
+    "result": {
+     "card": "{STATE}\\relay\\v1\\cartes\\codex-2.json",
+     "diff": "{STATE}\\relay\\v1\\cartes\\codex-2.diff.json",
+     "summary": "1 (2026-10-20T10:00:00Z) → 2 (2026-10-21T10:00:00Z)\nREPÈRE DISPARU ARCHIVE (était : vue de départ > menu « Actions du chat »)\nREPÈRE DISPARU CHAT_ACTIONS (était : vue de départ)\nrepère MODE maintenant aussi : page « Paramètres »\nrepère MODE n'est plus : vue de départ\ndéplacé : button « Changer de mode, mode actuel : {mode} » : vue de départ → page « Paramètres »\n0 éléments apparus, 2 disparus\nlibellés : 1 nouveaux, 0 retirés, 1 changés",
+     "alerts": [
+      "REPÈRE DISPARU ARCHIVE (était : vue de départ > menu « Actions du chat »)",
+      "REPÈRE DISPARU CHAT_ACTIONS (était : vue de départ)"
+     ]
+    }
+   }
+  },
+  {
+   "op": "where",
+   "args": {
+    "app": "codex",
+    "what": "ARCHIVE"
+   },
+   "answer": {
+    "result": {
+     "status": "success",
+     "app": "codex",
+     "version": "2",
+     "surveyed_at": "2026-10-21T10:00:00Z",
+     "found": [
+      {
+       "label": "Archiver",
+       "role": "menuitem",
+       "path": "vue de départ > menu « Actions du chat »",
+       "landmark": "ARCHIVE",
+       "data": {},
+       "how": [
+        {
+         "step": "menu « Actions du chat »",
+         "gesture": "clic émulé (cdp._press)",
+         "locator": {
+          "role": "button",
+          "aria": "Actions du chat"
+         }
+        },
+        {
+         "step": "élément",
+         "locator": {
+          "role": "menuitem",
+          "text": "Archiver"
+         }
+        }
+       ]
+      }
+     ],
+     "from_older_card": "1 (2026-10-20T10:00:00Z) : pas vu au dernier relevé",
+     "labels": [
+      {
+       "key": "archive",
+       "text": "Archiver le chat"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "op": "where",
+   "args": {
+    "app": "codex",
+    "what": "Changer de mode"
+   },
+   "answer": {
+    "result": {
+     "status": "success",
+     "app": "codex",
+     "version": "2",
+     "surveyed_at": "2026-10-21T10:00:00Z",
+     "found": [
+      {
+       "label": "Changer de mode, mode actuel : {mode}",
+       "role": "button",
+       "path": "page « Paramètres »",
+       "landmark": "MODE",
+       "data": {},
+       "how": [
+        {
+         "step": "page « Paramètres »",
+         "gesture": "clic émulé (cdp._press)",
+         "locator": {
+          "text": "Paramètres"
+         }
+        },
+        {
+         "step": "élément",
+         "locator": {
+          "role": "button",
+          "aria_re": "^Changer de mode, mode actuel : .+$"
+         }
+        }
+       ]
+      }
+     ],
+     "labels": [
+      {
+       "key": "mode",
+       "text": "Changer de mode"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "op": "where",
+   "args": {
+    "app": "antigravity",
+    "what": "x"
+   },
+   "answer": {
+    "result": {
+     "status": "error",
+     "error": "pas encore de carte pour antigravity : lancer un relevé"
+    }
+   }
+  },
+  {
+   "op": "where",
+   "args": {
+    "app": "../codex",
+    "what": "x"
+   },
+   "answer": {
+    "error": "RelayError",
+    "message": "Expected app codex or antigravity"
+   }
+  },
+  {
+   "op": "fresh",
+   "args": {
+    "card": {
+     "app": "codex",
+     "version": "3",
+     "surveyed_at": "2026-10-20T10:00:00Z",
+     "elements": [
+      {
+       "role": "button",
+       "aria": "Nouveau chat",
+       "text": "",
+       "data": {},
+       "path": [
+        "vue de départ"
+       ]
+      }
+     ],
+     "landmarks": {
+      "NEW_CHAT": {
+       "path": "vue de départ",
+       "paths": [
+        "vue de départ"
+       ],
+       "label": "Nouveau chat"
+      },
+      "MODE": null,
+      "CHAT_ACTIONS": null,
+      "ARCHIVE": null,
+      "COMPOSER": null
+     },
+     "index": {
+      "archive": "Archiver"
+     }
+    },
+    "version": "3"
+   },
+   "answer": {
+    "result": false
+   }
+  },
+  {
+   "op": "fresh",
+   "args": {
+    "card": {
+     "app": "codex",
+     "version": "3",
+     "surveyed_at": "2026-10-20T10:00:00Z",
+     "elements": [
+      {
+       "role": "button",
+       "aria": "Nouveau chat",
+       "text": "",
+       "data": {},
+       "path": [
+        "vue de départ"
+       ]
+      }
+     ],
+     "landmarks": {
+      "NEW_CHAT": {
+       "path": "vue de départ",
+       "paths": [
+        "vue de départ"
+       ],
+       "label": "Nouveau chat"
+      },
+      "MODE": null,
+      "CHAT_ACTIONS": null,
+      "ARCHIVE": null,
+      "COMPOSER": null
+     },
+     "index": {
+      "archive": "Archiver"
+     }
+    },
+    "version": "4"
+   },
+   "answer": {
+    "result": false
+   }
+  },
+  {
+   "op": "fresh",
+   "args": {
+    "card": {
+     "app": "codex",
+     "version": "3",
+     "surveyed_at": "2026-10-20T10:00:00Z",
+     "elements": [
+      {
+       "role": "button",
+       "aria": "Nouveau chat",
+       "text": "",
+       "data": {},
+       "path": [
+        "vue de départ"
+       ]
+      }
+     ],
+     "landmarks": {
+      "NEW_CHAT": {
+       "path": "vue de départ",
+       "paths": [
+        "vue de départ"
+       ],
+       "label": "Nouveau chat"
+      },
+      "MODE": null,
+      "CHAT_ACTIONS": null,
+      "ARCHIVE": null,
+      "COMPOSER": null
+     },
+     "index": {
+      "archive": "Archiver"
+     },
+     "live": {
+      "status": "interrompu : fixture",
+      "view_restored": true
+     }
+    },
+    "version": "3"
+   },
+   "answer": {
+    "result": false
+   }
+  },
+  {
+   "op": "fresh",
+   "args": {
+    "card": {
+     "app": "codex",
+     "version": "3",
+     "surveyed_at": "2026-10-20T10:00:00Z",
+     "elements": [
+      {
+       "role": "button",
+       "aria": "Nouveau chat",
+       "text": "",
+       "data": {},
+       "path": [
+        "vue de départ"
+       ]
+      }
+     ],
+     "landmarks": {
+      "NEW_CHAT": {
+       "path": "vue de départ",
+       "paths": [
+        "vue de départ"
+       ],
+       "label": "Nouveau chat"
+      },
+      "MODE": null,
+      "CHAT_ACTIONS": null,
+      "ARCHIVE": null,
+      "COMPOSER": null
+     },
+     "index": {
+      "archive": "Archiver"
+     },
+     "live": {
+      "status": "interrompu : fixture",
+      "view_restored": true
+     }
+    },
+    "version": "4"
+   },
+   "answer": {
+    "result": false
+   }
+  },
+  {
+   "op": "fresh",
+   "args": {
+    "card": {
+     "app": "codex",
+     "version": "3",
+     "surveyed_at": "2026-10-20T10:00:00Z",
+     "elements": [
+      {
+       "role": "button",
+       "aria": "Nouveau chat",
+       "text": "",
+       "data": {},
+       "path": [
+        "vue de départ"
+       ]
+      }
+     ],
+     "landmarks": {
+      "NEW_CHAT": {
+       "path": "vue de départ",
+       "paths": [
+        "vue de départ"
+       ],
+       "label": "Nouveau chat"
+      },
+      "MODE": null,
+      "CHAT_ACTIONS": null,
+      "ARCHIVE": null,
+      "COMPOSER": null
+     },
+     "index": {
+      "archive": "Archiver"
+     },
+     "live": {
+      "status": "complet",
+      "view_restored": false
+     }
+    },
+    "version": "3"
+   },
+   "answer": {
+    "result": false
+   }
+  },
+  {
+   "op": "fresh",
+   "args": {
+    "card": {
+     "app": "codex",
+     "version": "3",
+     "surveyed_at": "2026-10-20T10:00:00Z",
+     "elements": [
+      {
+       "role": "button",
+       "aria": "Nouveau chat",
+       "text": "",
+       "data": {},
+       "path": [
+        "vue de départ"
+       ]
+      }
+     ],
+     "landmarks": {
+      "NEW_CHAT": {
+       "path": "vue de départ",
+       "paths": [
+        "vue de départ"
+       ],
+       "label": "Nouveau chat"
+      },
+      "MODE": null,
+      "CHAT_ACTIONS": null,
+      "ARCHIVE": null,
+      "COMPOSER": null
+     },
+     "index": {
+      "archive": "Archiver"
+     },
+     "live": {
+      "status": "complet",
+      "view_restored": false
+     }
+    },
+    "version": "4"
+   },
+   "answer": {
+    "result": false
+   }
+  },
+  {
+   "op": "fresh",
+   "args": {
+    "card": {
+     "app": "codex",
+     "version": "3",
+     "surveyed_at": "2026-10-20T10:00:00Z",
+     "elements": [
+      {
+       "role": "button",
+       "aria": "Nouveau chat",
+       "text": "",
+       "data": {},
+       "path": [
+        "vue de départ"
+       ]
+      }
+     ],
+     "landmarks": {
+      "NEW_CHAT": {
+       "path": "vue de départ",
+       "paths": [
+        "vue de départ"
+       ],
+       "label": "Nouveau chat"
+      },
+      "MODE": null,
+      "CHAT_ACTIONS": null,
+      "ARCHIVE": null,
+      "COMPOSER": null
+     },
+     "index": {
+      "archive": "Archiver"
+     },
+     "live": {
+      "status": "complet",
+      "view_restored": true
+     }
+    },
+    "version": "3"
+   },
+   "answer": {
+    "result": true
+   }
+  },
+  {
+   "op": "fresh",
+   "args": {
+    "card": {
+     "app": "codex",
+     "version": "3",
+     "surveyed_at": "2026-10-20T10:00:00Z",
+     "elements": [
+      {
+       "role": "button",
+       "aria": "Nouveau chat",
+       "text": "",
+       "data": {},
+       "path": [
+        "vue de départ"
+       ]
+      }
+     ],
+     "landmarks": {
+      "NEW_CHAT": {
+       "path": "vue de départ",
+       "paths": [
+        "vue de départ"
+       ],
+       "label": "Nouveau chat"
+      },
+      "MODE": null,
+      "CHAT_ACTIONS": null,
+      "ARCHIVE": null,
+      "COMPOSER": null
+     },
+     "index": {
+      "archive": "Archiver"
+     },
+     "live": {
+      "status": "complet",
+      "view_restored": true
+     }
+    },
+    "version": "4"
+   },
+   "answer": {
+    "result": false
+   }
+  },
+  {
+   "op": "save",
+   "args": {
+    "card": {
+     "app": "codex",
+     "version": "3",
+     "surveyed_at": "2026-10-22T10:00:00Z",
+     "elements": [
+      {
+       "role": "button",
+       "aria": "Nouveau chat",
+       "text": "",
+       "data": {},
+       "path": [
+        "vue de départ"
+       ]
+      }
+     ],
+     "landmarks": {
+      "NEW_CHAT": {
+       "path": "vue de départ",
+       "paths": [
+        "vue de départ"
+       ],
+       "label": "Nouveau chat"
+      },
+      "MODE": null,
+      "CHAT_ACTIONS": null,
+      "ARCHIVE": null,
+      "COMPOSER": null
+     },
+     "index": {
+      "archive": "Archiver"
+     },
+     "live": {
+      "status": "complet",
+      "view_restored": true
+     }
+    }
+   },
+   "answer": {
+    "result": {
+     "card": "{STATE}\\relay\\v1\\cartes\\codex-3.json",
+     "diff": "{STATE}\\relay\\v1\\cartes\\codex-3.diff.json",
+     "summary": "2 (2026-10-21T10:00:00Z) → 3 (2026-10-22T10:00:00Z)\nREPÈRE DISPARU MODE (était : page « Paramètres »)\n0 éléments apparus, 1 disparus\nlibellés : 0 nouveaux, 1 retirés, 1 changés",
+     "alerts": [
+      "REPÈRE DISPARU MODE (était : page « Paramètres »)"
+     ]
+    }
+   }
+  },
+  {
+   "op": "save",
+   "args": {
+    "card": {
+     "app": "codex",
+     "version": "3",
+     "surveyed_at": "2099-01-01T00:00:00Z",
+     "elements": [
+      {
+       "role": "button",
+       "aria": "Nouveau chat",
+       "text": "",
+       "data": {},
+       "path": [
+        "vue de départ"
+       ]
+      }
+     ],
+     "landmarks": {
+      "NEW_CHAT": {
+       "path": "vue de départ",
+       "paths": [
+        "vue de départ"
+       ],
+       "label": "Nouveau chat"
+      },
+      "MODE": null,
+      "CHAT_ACTIONS": null,
+      "ARCHIVE": null,
+      "COMPOSER": null
+     },
+     "index": {
+      "archive": "Archiver"
+     },
+     "live": {
+      "status": "interrompu : fixture",
+      "view_restored": false
+     }
+    }
+   },
+   "answer": {
+    "result": {
+     "card": "{STATE}\\relay\\v1\\cartes\\codex-3.partiel.json",
+     "partial": true
+    }
+   }
+  },
+  {
+   "op": "where",
+   "args": {
+    "app": "codex",
+    "what": "Nouveau chat"
+   },
+   "answer": {
+    "result": {
+     "status": "success",
+     "app": "codex",
+     "version": "3",
+     "surveyed_at": "2026-10-22T10:00:00Z",
+     "found": [
+      {
+       "label": "Nouveau chat",
+       "role": "button",
+       "path": "vue de départ",
+       "landmark": "NEW_CHAT",
+       "data": {},
+       "how": [
+        {
+         "step": "élément",
+         "locator": {
+          "role": "button",
+          "aria": "Nouveau chat"
+         }
+        }
+       ]
+      }
+     ]
+    }
+   }
+  },
+  {
+   "op": "save",
+   "args": {
+    "card": {
+     "app": "codex",
+     "version": "3",
+     "surveyed_at": "2026-10-22T10:00:00Z",
+     "elements": [
+      {
+       "role": "button",
+       "aria": "Nouveau chat",
+       "text": "",
+       "data": {},
+       "path": [
+        "vue de départ"
+       ]
+      }
+     ],
+     "landmarks": {
+      "NEW_CHAT": {
+       "path": "vue de départ",
+       "paths": [
+        "vue de départ"
+       ],
+       "label": "Nouveau chat"
+      },
+      "MODE": null,
+      "CHAT_ACTIONS": null,
+      "ARCHIVE": null,
+      "COMPOSER": null
+     },
+     "index": {
+      "archive": "Archiver"
+     },
+     "live": {
+      "status": "complet",
+      "view_restored": true
+     }
+    }
+   },
+   "answer": {
+    "result": {
+     "card": "{STATE}\\relay\\v1\\cartes\\codex-3.json",
+     "diff": "{STATE}\\relay\\v1\\cartes\\codex-3.diff.json",
+     "summary": "2 (2026-10-21T10:00:00Z) → 3 (2026-10-22T10:00:00Z)\nREPÈRE DISPARU MODE (était : page « Paramètres »)\n0 éléments apparus, 1 disparus\nlibellés : 0 nouveaux, 1 retirés, 1 changés",
+     "alerts": [
+      "REPÈRE DISPARU MODE (était : page « Paramètres »)"
+     ]
+    }
+   }
+  },
+  {
+   "op": "index",
+   "args": {
+    "path": "{STATE}\\app.asar",
+    "lang": "fr-FR"
+   },
+   "answer": {
+    "result": {
+     "menu:quit": "Quitter",
+     "b": "dernier",
+     "mode": "Mode : {mode}",
+     "wide": "🐱",
+     "emoji": "😀"
+    }
+   }
+  },
+  {
+   "op": "index",
+   "args": {
+    "path": "{STATE}\\short.asar",
+    "lang": "fr-FR"
+   },
+   "answer": {
+    "error": "IOException",
+    "message": "Truncated ASAR header"
+   }
+  },
+  {
+   "op": "index",
+   "args": {
+    "path": "{STATE}\\bad-header.asar",
+    "lang": "fr-FR"
+   },
+   "answer": {
+    "error": "IOException",
+    "message": "ASAR header bounds invalid"
+   }
+  },
+  {
+   "op": "index",
+   "args": {
+    "path": "{STATE}\\truncated.asar",
+    "lang": "fr-FR"
+   },
+   "answer": {
+    "error": "IOException",
+    "message": "ASAR locale asset bounds invalid"
+   }
+  },
+  {
+   "op": "fresh",
+   "args": {
+    "card": {
+     "app": "antigravity",
+     "version": "fixture-version",
+     "surveyed_at": "2026-10-30T14:21:20Z",
+     "elements": [
+      {
+       "role": "button",
+       "aria": "",
+       "text": "Historique",
+       "data": {
+        "data-testid": "history-button",
+        "data-view": "*"
+       },
+       "region": "nav",
+       "path": [
+        "vue de départ"
+       ]
+      },
+      {
+       "role": "button",
+       "aria": "",
+       "text": "Paramètres",
+       "data": {
+        "data-testid": "settings-button",
+        "data-view": "*"
+       },
+       "region": "nav",
+       "path": [
+        "vue de départ"
+       ]
+      },
+      {
+       "role": "link",
+       "aria": "",
+       "text": "*",
+       "data": {
+        "data-testid": "external"
+       },
+       "region": "nav",
+       "href": "/*",
+       "path": [
+        "vue de départ"
+       ]
+      },
+      {
+       "role": "button",
+       "aria": "",
+       "text": "Fichier",
+       "data": {
+        "data-testid": "title-menu-bar-item"
+       },
+       "region": "",
+       "popup": "menu",
+       "path": [
+        "vue de départ"
+       ]
+      },
+      {
+       "role": "button",
+       "aria": "",
+       "text": "Choisir modèle",
+       "data": {},
+       "region": "",
+       "popup": "listbox",
+       "path": [
+        "vue de départ"
+       ]
+      },
+      {
+       "role": "button",
+       "aria": "",
+       "text": "*",
+       "data": {},
+       "region": "main",
+       "path": [
+        "vue de départ"
+       ]
+      },
+      {
+       "role": "textbox",
+       "aria": "",
+       "text": "",
+       "data": {},
+       "region": "main",
+       "path": [
+        "vue de départ"
+       ]
+      },
+      {
+       "role": "menuitem",
+       "aria": "",
+       "text": "Lecture",
+       "data": {},
+       "region": "menu",
+       "path": [
+        "vue de départ",
+        "menu « Fichier »"
+       ]
+      },
+      {
+       "role": "menuitem",
+       "aria": "",
+       "text": "*",
+       "data": {},
+       "region": "menu",
+       "path": [
+        "vue de départ",
+        "menu « Fichier »"
+       ]
+      }
+     ],
+     "index": {},
+     "landmarks": {
+      "NEW_CHAT": null,
+      "ARCHIVE": null,
+      "MORE_OPTIONS": null,
+      "COMPOSER": null,
+      "SEND": null
+     },
+     "live": {
+      "status": "interrompu : User returned or emergency stop active",
+      "pages": [],
+      "menus": 1,
+      "view_restored": false,
+      "chat_open": false
+     }
+    },
+    "version": "fixture-version"
+   },
+   "answer": {
+    "result": false
+   }
+  }
+ ]
+}

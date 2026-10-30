@@ -19,41 +19,52 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e  # v10.3.2
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68  # v6.0.0
         with:
-          python-version: "3.14"
-      - name: test.ps1 (contrôle complet hors ligne du projet)
+          global-json-file: global.json
+      - name: test.ps1 (dotnet test, full offline check)
         shell: pwsh
         run: ./test.ps1
 
-  startup-linux:
-    # What MCP directories (Glama) check in a Linux container: the server starts and lists its tools.
+  secrets:
+    # gitleaks over the whole history (official action, pinned by commit SHA).
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e  # v3.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_ENABLE_COMMENTS: "false"
+
+  workflows:
+    # zizmor: static analysis of these GitHub Actions workflows; a finding fails the job (no upload, read-only).
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e  # v10.3.2
+      - uses: zizmorcore/zizmor-action@53290badfa369cb0bf7ad16342cb62c2fa47ac7b  # v0.8.0
         with:
-          python-version: "3.14"
-      - name: initialize + tools/list over stdio
-        run: |
-          uv sync --frozen --quiet
-          uv run --frozen pytest -q --noconftest -p no:cacheprovider tests/test_startup.py
+          advanced-security: false
 
   install-windows:
     # The one-line install on a clean Windows runner, as the Nexus pack runs it (Windows PowerShell 5.1, NEXUS_PACK=1),
-    # from this checkout: daemon up behind its token, Claude Code and Codex declared, token never in their files.
+    # from this checkout (built by the .NET 10 SDK): daemon up behind its token, Claude Code and Codex declared, token never
+    # in their files.
     runs-on: windows-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e  # v10.3.2
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68  # v6.0.0
         with:
-          python-version: "3.14"
+          global-json-file: global.json
       - name: get.ps1 (NEXUS_PACK=1, Windows PowerShell 5.1)
         shell: powershell
         env:
@@ -89,47 +100,17 @@ jobs:
           if ((Get-ScheduledTask -TaskName 'Nexus Relay').State -ne 'Running') { throw 'scheduled task not running' }
           $host_ = (Get-Content "$HOME\.nexus\nexus-relay\settings.json" -Raw | ConvertFrom-Json).host
           if ($host_ -ne 'claude') { throw "host: $host_ (Claude Code present: claude expected)" }
-      - name: update API (GET /api/update, status file) and a real self-update from the latest release
+      - name: update API (GET /api/update) and status file
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
           $token = [Environment]::GetEnvironmentVariable('NEXUS_MCP_TOKEN', 'User')
-          $headers = @{ Authorization = "Bearer $token" }
-          $api = 'http://127.0.0.1:16181/api/update'
-          $state = Invoke-RestMethod -UseBasicParsing $api -Headers $headers
-          if ($state.product -ne 'relay' -or -not $state.version) { throw "GET /api/update: $($state | ConvertTo-Json)" }
+          $state = Invoke-RestMethod -UseBasicParsing http://127.0.0.1:16181/api/update -Headers @{ Authorization = "Bearer $token" }
+          if ($state.product -ne 'relay' -or -not $state.version -or $state.runtime -ne 'native') { throw "GET /api/update: $($state | ConvertTo-Json)" }
           if (-not (Test-Path "$HOME\.nexus\status\relay.json")) { throw 'status file missing' }
-          # Self-update needs a published release that has the updater (1.3.0 and later).
-          $location = (curl.exe -sI https://github.com/pironjulien/NexusRelay/releases/latest | Select-String '^location:').Line.Trim()
-          $latest = [version](($location -split '/v')[-1])
-          if ($latest -lt [version]'1.3.0') { Write-Host "latest release $latest has no updater: self-update not tested"; exit 0 }
-          # Pretend to be an old version, restart the daemon on it, then ask it to update itself.
-          $init = "$env:LOCALAPPDATA\NexusRelay\app\src\nexus_relay\__init__.py"
-          (Get-Content $init -Raw) -replace '__version__ = ".*"', '__version__ = "0.0.1"' | Set-Content $init -Encoding ascii
-          Set-Content "$HOME\.nexus\relay\daemon-restart.request" "force $(Get-Date -Format o)" -Encoding ascii
-          foreach ($i in 1..60) {
-            Start-Sleep 2
-            try { $state = Invoke-RestMethod -UseBasicParsing $api -Headers $headers } catch { continue }
-            if ($state.version -eq '0.0.1') { break }
-          }
-          if ($state.version -ne '0.0.1') { throw 'daemon did not restart on the old version' }
-          $response = Invoke-WebRequest -UseBasicParsing -Method Post $api -Headers $headers
-          if ($response.StatusCode -ne 202) { throw "POST /api/update: $($response.StatusCode) $($response.Content)" }
-          foreach ($i in 1..120) {
-            Start-Sleep 3
-            try { $state = Invoke-RestMethod -UseBasicParsing $api -Headers $headers } catch { continue }
-            if ($state.state -in 'done', 'failed') { break }
-          }
-          if ($state.state -ne 'done' -or [version]$state.version -ne $latest) {
-            Write-Host '--- update.log'; Get-Content "$HOME\.nexus\nexus-relay\update.log" -ErrorAction SilentlyContinue
-            Write-Host '--- daemon.log'; Get-Content "$HOME\.nexus\nexus-relay\daemon.log" -Tail 30 -ErrorAction SilentlyContinue
-            Write-Host '--- update.json'; Get-Content "$HOME\.nexus\nexus-relay\update.json" -ErrorAction SilentlyContinue
-            Write-Host '--- processes'
-            Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match 'nexus_relay|get\.ps1|install\.ps1|robocopy|uv' } |
-              ForEach-Object { "$($_.ProcessId) $($_.ParentProcessId) $($_.CommandLine)" }
-            throw "self-update: $($state | ConvertTo-Json)"
-          }
-          Write-Host "self-update OK: 0.0.1 -> $($state.version)"
+          $hooks = Get-Content "$HOME\.codex\hooks.json" -Raw
+          if ($hooks -notmatch 'NexusRelay\.exe --edit-guard codex') { throw "Codex edit guard: $hooks" }
+          if (-not (Test-Path "$HOME\.nexus\nexus-relay\bin\NexusRelay.exe")) { throw 'stable engine path missing' }
 
   install-windows-scoped:
     # The Nexus pack passes the AI apps the user chose (NEXUS_PACK_TARGETS): the others must stay untouched.
@@ -139,9 +120,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e  # v10.3.2
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68  # v6.0.0
         with:
-          python-version: "3.14"
+          global-json-file: global.json
       - name: get.ps1 with NEXUS_PACK_TARGETS=codex (Claude Code and Antigravity present but not chosen)
         shell: powershell
         env:

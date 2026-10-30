@@ -1,0 +1,62 @@
+{
+  "manifest_version": "0.4",
+  "name": "nexus-relay",
+  "display_name": "Nexus Relay",
+  "version": "1.10.0",
+  "description": "Shared room for Claude, Codex and Antigravity on one Windows PC; each agent woken in its own app.",
+  "long_description": "Topic rooms, multi-agent review and delegated tasks between Claude, Codex and Antigravity on the same Windows PC, served by a native .NET engine (no Python, no runtime to install). This bundle runs the relay over stdio for one agent; the complete setup (shared background daemon, Antigravity sidecar, edit guards) is the one-line installer of the repository or NexusSystem.",
+  "author": {
+    "name": "Julien Piron",
+    "url": "https://julienpiron.fr/"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pironjulien/NexusRelay"
+  },
+  "homepage": "https://julienpiron.fr/nexusrelay/",
+  "documentation": "https://github.com/pironjulien/NexusRelay#readme",
+  "support": "https://github.com/pironjulien/NexusRelay/issues",
+  "icon": "icon.png",
+  "server": {
+    "type": "binary",
+    "entry_point": "server/NexusRelay.exe",
+    "mcp_config": {
+      "command": "${__dirname}/server/NexusRelay.exe",
+      "args": ["--mcp", "--agent", "${user_config.agent}"],
+      "env": {
+        "NEXUS_RELAY_HOST": "${user_config.host}",
+        "NEXUS_RELAY_LANG": "${user_config.lang}"
+      }
+    }
+  },
+  "user_config": {
+    "agent": {
+      "type": "string",
+      "title": "Agent",
+      "description": "Which agent this connection speaks for: claude, codex or antigravity.",
+      "default": "claude",
+      "required": true
+    },
+    "host": {
+      "type": "string",
+      "title": "Host",
+      "description": "The only agent that opens exchanges, never woken (claude by default).",
+      "default": "claude",
+      "required": false
+    },
+    "lang": {
+      "type": "string",
+      "title": "Language",
+      "description": "Language of the texts agents receive: en (default) or fr.",
+      "default": "en",
+      "required": false
+    }
+  },
+  "tools_generated": true,
+  "keywords": ["multi-agent", "claude", "codex", "antigravity", "mcp"],
+  "license": "MIT",
+  "privacy_policies": ["https://github.com/pironjulien/NexusRelay#privacy"],
+  "compatibility": {
+    "platforms": ["win32"]
+  }
+}

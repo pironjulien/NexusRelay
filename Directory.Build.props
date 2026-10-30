@@ -1,0 +1,13 @@
+<Project>
+  <!-- Build outside OneDrive (no synchronized bin/obj): ~\.nexus\build\nexusrelay\<project>. -->
+  <PropertyGroup>
+    <NexusRelayBuild>$(USERPROFILE)\.nexus\build\nexusrelay\$(MSBuildProjectName)\</NexusRelayBuild>
+    <BaseIntermediateOutputPath>$(NexusRelayBuild)obj\</BaseIntermediateOutputPath>
+    <MSBuildProjectExtensionsPath>$(BaseIntermediateOutputPath)</MSBuildProjectExtensionsPath>
+    <BaseOutputPath>$(NexusRelayBuild)bin\</BaseOutputPath>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <DefaultItemExcludes>$(DefaultItemExcludes);obj/**;bin/**</DefaultItemExcludes>
+  </PropertyGroup>
+</Project>

@@ -3,7 +3,7 @@
 <img src="https://raw.githubusercontent.com/pironjulien/NexusRelay/main/plugins/nexus-relay/logo.png" alt="Nexus Relay icon" width="96">
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/pironjulien/NexusRelay/blob/main/LICENSE)
-![Python 3.14](https://img.shields.io/badge/python-3.14-blue.svg)
+![.NET 10](https://img.shields.io/badge/.NET-10-512BD4.svg)
 ![Windows only](https://img.shields.io/badge/platform-Windows-lightgrey.svg)
 ![Status: experimental](https://img.shields.io/badge/status-experimental-orange.svg)
 
@@ -17,7 +17,7 @@ clipboard.
 > waking Antigravity goes through its sidecar API. Both depend on how those apps look and behave today: an app update
 > can break a wake until the relay's interface maps are refreshed (`survey`). Use at your own risk.
 
-**Install:** ask your AI to install NexusRelay through [NexusSystem](https://github.com/pironjulien/NexusSystem) (or use the NexusSystem app from the Microsoft Store). New versions are no longer published to PyPI; earlier packages stay available.
+**Install:** ask your AI to install NexusRelay through [NexusSystem](https://github.com/pironjulien/NexusSystem) (or use the NexusSystem app from the Microsoft Store), or use the one-line installer below. NexusRelay is a native .NET 10 program: nothing else to install. New versions are no longer published to PyPI; earlier packages stay available.
 
 ## How it works
 
@@ -49,13 +49,14 @@ The relay checks the ID and folder before typing. Only verified Relay conversati
 other chats in that same workspace, child chats and the current conversation remain protected. Without an explicit
 workspace, the compatibility default remains the dedicated `Nexus Relay` project.
 
-`install.ps1 -Runtime native` selects the C# daemon, sidecar and hook dispatcher. Subsequent installations preserve
-that choice. Native builds and immutable installed versions stay under `%LOCALAPPDATA%\NexusRelay`, outside OneDrive.
-The qualification report distinguishes isolated protocol/DOM tests, real app observations and completed live actions.
+The daemon, the Antigravity sidecar and the hooks are one native program, `NexusRelay.exe` (.NET 10). Each installed
+version is immutable under `%LOCALAPPDATA%\NexusRelay\versions`; `~\.nexus\nexus-relay\bin` always holds a copy of the one in
+service. The qualification report (`native/QUALIFICATION.md`) distinguishes isolated protocol/DOM tests, real app
+observations and completed live actions.
 
 ## Requirements
 
-- Windows 10 or 11, no administrator rights ([uv](https://docs.astral.sh/uv/) and Python 3.14 are installed for you).
+- Windows 10 or 11 (x64 or ARM64), no administrator rights, nothing else to install (the release is self-contained).
 - Two of Claude Code, the Codex desktop app and Antigravity (any pair; Claude Code is the host when it is there).
 
 ## Quick start
@@ -66,7 +67,8 @@ The qualification report distinguishes isolated protocol/DOM tests, real app obs
    irm https://raw.githubusercontent.com/pironjulien/NexusRelay/main/get.ps1 | iex
    ```
 
-   It installs uv if missing, downloads the latest release into `%LOCALAPPDATA%\NexusRelay\app`, creates a local
+   It downloads the latest release for your processor (`NexusRelay-win-x64.zip` or `NexusRelay-win-arm64.zip`),
+   checks it against the release's `SHA256SUMS.txt`, installs it into `%LOCALAPPDATA%\NexusRelay`, creates a local
    token (user variable `NEXUS_MCP_TOKEN`), starts the background daemon (scheduled task "Nexus Relay"), installs the
    Antigravity plugin and sidecar, and declares the server to Claude Code and Codex (the token itself is never written
    in their files). Run it again to update.
@@ -75,35 +77,20 @@ The qualification report distinguishes isolated protocol/DOM tests, real app obs
 3. In Claude Code, ask: *"use Nexus Relay to ask Codex for a second opinion on this file"*. Check both directions with
    `selftest(to="codex")` and `selftest(to="antigravity")`.
 
-### From PyPI (one line, stdio)
+### Verify a release
 
-The same server is on [PyPI](https://pypi.org/project/nexus-relay/) and in the
-[official MCP registry](https://registry.modelcontextprotocol.io/) (`io.github.pironjulien/nexus-relay`). One line
-starts it over stdio for one agent, with no install step:
+Every release file has a Sigstore build provenance attestation (made by GitHub Actions, no key to manage):
 
 ```powershell
-uvx --python 3.14 nexus-relay
+gh attestation verify NexusRelay-win-x64.zip --repo pironjulien/NexusRelay
 ```
 
-Set `NEXUS_RELAY_AGENT` to the agent the connection speaks for (`claude`, `codex` or `antigravity`). For instance, in
-a client that reads `mcpServers` JSON:
+### MCP bundle (stdio)
 
-```json
-{
-  "mcpServers": {
-    "nexus-relay": {
-      "command": "uvx",
-      "args": ["--python", "3.14", "nexus-relay@latest"],
-      "env": { "NEXUS_RELAY_AGENT": "claude" }
-    }
-  }
-}
-```
-
-It shares the same room (`~\.nexus\relay`) as the daemon. The one-line installer above remains the complete setup:
-background daemon, Antigravity plugin and sidecar, Codex project, token and updates. Under OneDrive, add
-`--link-mode copy` to `uvx` (uv's cache cannot hard-link there).
-
+Each release also carries `nexus-relay-win-x64.mcpb` and `nexus-relay-win-arm64.mcpb`, listed in the
+[official MCP registry](https://registry.modelcontextprotocol.io/) (`io.github.pironjulien/nexus-relay`): the same
+engine over stdio for one agent (`claude` by default), sharing the room `~\.nexus\relay` with the daemon. The one-line
+installer remains the complete setup: background daemon, Antigravity plugin and sidecar, edit guards, token and updates.
 ## Manual install
 
 1. **Settings** (optional file, outside the repository) — `~\.nexus\nexus-relay\settings.json`:
@@ -120,14 +107,14 @@ background daemon, Antigravity plugin and sidecar, Codex project, token and upda
    `token_file` is needed (or pass `-TokenFile`, set `NEXUS_MCP_TOKEN_FILE`, or let `install.ps1 -Register` create a
    local one).
 
-2. **Install** — creates the virtual environment, registers the daemon, installs the Antigravity plugin and sidecar,
-   and runs the tests:
+2. **Install** — builds the engine (.NET 10 SDK; in a release folder, takes its self-contained `bin\`), registers the
+   daemon, installs the Antigravity plugin, sidecar and edit guards, and runs the tests:
 
    ```powershell
    pwsh -NoProfile -File install.ps1
    ```
 
-   The daemon runs in the background under a small supervisor (`python -m nexus_relay.daemon`), started at logon by
+   The daemon runs in the background under a small supervisor (`NexusRelay.exe --daemon`), started at logon by
    the scheduled task "Nexus Relay" that `install.ps1` creates and starts. It reads
    `~\.nexus\daemons\specs\nexus-relay.json`, restarts the daemon when it stops, and logs to
    `~\.nexus\nexus-relay\daemon.log`.
@@ -273,8 +260,8 @@ install made by the one-line installer (`%LOCALAPPDATA%\NexusRelay\app`) updates
   a search index of those messages in `~\.nexus\relay\v1\index` (SQLite, rebuilt from the messages if deleted),
   interface maps of both apps in `~\.nexus\relay\v1\cartes` (element roles and visible labels, which can include
   conversation titles shown on screen), and one line per action in `%LOCALAPPDATA%\NexusJournal\relay` (never a message's text).
-- **How to remove everything**: delete the scheduled task "Nexus Relay" and stop its `pythonw` processes, then
-  delete `~\.nexus\relay`, `~\.nexus\nexus-relay`,
+- **How to remove everything**: delete the scheduled task "Nexus Relay" and stop its `NexusRelay.exe` processes, then
+  delete `~\.nexus\relay`, `~\.nexus\nexus-relay`, `%LOCALAPPDATA%\NexusRelay`,
   `~\.nexus\daemons\specs\nexus-relay.json`, `%LOCALAPPDATA%\NexusJournal\relay`, the `nexus-relay` plugin in
   `~\.gemini\config\plugins` and its `sidecars` entry in `~\.gemini\config\config.json`.
 
@@ -292,7 +279,7 @@ Git proves the files are clean. Dirty, staged, untracked or ignored files stay r
 another conversation's work are never released by these finalizers. Parallel edit calls stay protected until all
 their completion events arrive. An unwritten creation can be released; unknown/non-Git paths are kept conservatively.
 
-This requires the lifecycle hooks to be active: `PreToolUse` runs `python -I -B -m nexus_relay.edit_guard <agent>`,
+This requires the lifecycle hooks to be active: `PreToolUse` runs `NexusRelay.exe --edit-guard <agent>`,
 `PostToolUse` adds `--finish-tool`, and `Stop` adds `--finish-session`. Claude also uses `PostToolUseFailure` and
 `SessionEnd` with the matching finalizer. Completion hooks return the neutral JSON object `{}` and never approve or deny an action.
 Codex reviews new hook declarations through its native trust flow; the installer does not create that consent.
@@ -301,12 +288,16 @@ in-flight call is never cleared by its parent's Stop. If an invocation id or com
 reservation requires its owner's explicit release or TTL expiry. Old reservations without lifecycle metadata and abrupt exits are
 not purged on a guess.
 
+Commit guard: `scripts/install_commit_guard.ps1` installs `pre-commit` and `post-commit` hooks in your repositories;
+they call `~/.nexus/nexus-relay/bin/NexusRelay.exe --staged` (refuses a commit touching a file another agent reserved)
+and `--release-committed` (releases the automatic reservations of the committed files).
+
 ```powershell
-pwsh -NoProfile -File test.ps1   # ruff, pyright, pytest — offline, never touches the real apps
+pwsh -NoProfile -File test.ps1   # dotnet test (xUnit v3) — offline, never touches the real apps
 ```
 
-A copy of the repository (clone, worktree) gets its own virtual environment, so testing it never switches the
-installed relay to that copy.
+Builds and test files go to `~\.nexus\build\nexusrelay`, never into the repository. Testing a copy (clone, worktree)
+never switches the installed relay to it: only `install.ps1` does.
 
 ## License
 

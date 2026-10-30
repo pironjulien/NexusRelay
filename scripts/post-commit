@@ -1,11 +1,6 @@
 #!/bin/sh
 # Garde de commit Nexus Relay (installée par scripts/install_commit_guard.ps1) : une fois le commit fait, libère les
 # réservations automatiques (hook d'édition) de l'agent qui l'a fait sur les fichiers commités.
-dispatcher="$HOME/.nexus/nexus-relay/hooks/invoke-hook.ps1"
-if [ -f "$dispatcher" ] && command -v pwsh >/dev/null 2>&1; then
-    pwsh -NoProfile -NonInteractive -File "$dispatcher" -Phase release-committed || true
-    exit 0
-fi
-py="$HOME/.nexus/nexus-relay/venv/Scripts/python.exe"
-[ -x "$py" ] || exit 0
-PYTHONUTF8=1 "$py" -B -m nexus_relay.reservations --release-committed || true
+exe="$HOME/.nexus/nexus-relay/bin/NexusRelay.exe"
+[ -f "$exe" ] || exit 0
+"$exe" --release-committed || true

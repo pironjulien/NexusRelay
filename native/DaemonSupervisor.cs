@@ -18,8 +18,9 @@ public static class DaemonSupervisor
 
     public static (string Executable, List<string> Args, Dictionary<string, string> Env) ParseCommand(JsonObject spec)
     {
-        var exe = spec["python"]?.GetValue<string>()
+        var exe = spec["exe"]?.GetValue<string>()
             ?? spec["executable"]?.GetValue<string>()
+            ?? spec["python"]?.GetValue<string>()
             ?? throw new RelayError("missing executable/python in spec");
         var port = spec["port"]?.GetValue<int>() ?? throw new RelayError("missing port in spec");
 

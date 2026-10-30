@@ -1,13 +1,10 @@
 #!/bin/sh
 # Garde de commit Nexus Relay (installée par scripts/install_commit_guard.ps1) : refuse un commit qui touche un fichier
-# réservé par un AUTRE agent ; l'agent qui commite est reconnu par ses processus parents.
-dispatcher="$HOME/.nexus/nexus-relay/hooks/invoke-hook.ps1"
-if [ -f "$dispatcher" ] && command -v pwsh >/dev/null 2>&1; then
-    exec pwsh -NoProfile -NonInteractive -File "$dispatcher" -Phase staged
-fi
-py="$HOME/.nexus/nexus-relay/venv/Scripts/python.exe"
-if [ ! -x "$py" ]; then
+# réservé par un AUTRE agent ; l'agent qui commite est reconnu par ses processus parents. Moteur natif par son chemin
+# stable (~/.nexus/nexus-relay/bin, tenu à jour par install.ps1).
+exe="$HOME/.nexus/nexus-relay/bin/NexusRelay.exe"
+if [ ! -f "$exe" ]; then
     echo "Nexus Relay : garde de commit inactive (relais non installé sur ce PC)" >&2
     exit 0
 fi
-PYTHONUTF8=1 exec "$py" -B -m nexus_relay.reservations --staged
+exec "$exe" --staged

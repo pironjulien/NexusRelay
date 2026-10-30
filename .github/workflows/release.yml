@@ -1,0 +1,185 @@
+# Release: on a vX.Y.Z tag, runs test.ps1, publishes the native engine self-contained for win-x64 and win-arm64 (no .NET
+# to install), and attaches to the "NexusRelay X.Y.Z" GitHub release:
+#   - NexusRelay-win-x64.zip / NexusRelay-win-arm64.zip: engine (bin\) and installer (install.ps1, scripts, plugins),
+#     installed by get.ps1 after checking SHA256SUMS.txt;
+#   - nexus-relay-win-x64.mcpb / nexus-relay-win-arm64.mcpb: MCP bundles (stdio), listed in the official MCP registry;
+#   - get.ps1, SHA256SUMS.txt and the Sigstore build provenance of every file (NexusRelay-X.Y.Z.intoto.jsonl; verify with
+#     `gh attestation verify <file> --repo pironjulien/NexusRelay`, keyless).
+# Then server.json (with the bundles' SHA-256) goes to the MCP registry by GitHub OIDC (no token stored), and the
+# one-line install is run from the published release on a clean runner.
+# Actions pinned by commit SHA; Dependabot (github-actions) keeps them up to date.
+name: Release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions: {}
+
+jobs:
+  release:
+    if: github.repository == 'pironjulien/NexusRelay'
+    runs-on: windows-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    outputs:
+      x64: ${{ steps.packages.outputs.x64 }}
+      arm64: ${{ steps.packages.outputs.arm64 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68  # v6.0.0
+        with:
+          global-json-file: global.json
+      - name: Version of the tag everywhere
+        shell: pwsh
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          $version = $env:TAG.TrimStart('v')
+          if ((Get-Content native/RelayPaths.cs -Raw) -notmatch "Version = `"$([regex]::Escape($version))`"") { throw "RelayPaths.Version is not $version" }
+          if ((Get-Content server.json -Raw | ConvertFrom-Json).version -ne $version) { throw "server.json is not $version" }
+          if ((Get-Content mcpb/manifest.json -Raw | ConvertFrom-Json).version -ne $version) { throw "mcpb/manifest.json is not $version" }
+      - name: Tests (test.ps1)
+        shell: pwsh
+        run: ./test.ps1
+      - name: Packages
+        id: packages
+        shell: pwsh
+        run: |
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $stage = Join-Path $env:RUNNER_TEMP 'stage'
+          New-Item -ItemType Directory dist, $stage | Out-Null
+          $shared = 'install.ps1', 'get.ps1', 'LICENSE', 'README.md', 'CHANGELOG.md', 'plugins', 'fr', 'codex-projet', 'claude', 'codex'
+          $scripts = 'Configure-AntigravityRelay.ps1', 'Restart-Relay.ps1', 'Resolve-RelayPath.ps1', 'install_commit_guard.ps1', 'pre-commit', 'post-commit', 'update-native.ps1'
+          foreach ($rid in 'win-x64', 'win-arm64') {
+            $engine = Join-Path $stage "engine-$rid"
+            dotnet publish native/NexusRelay.csproj -c Release -r $rid --self-contained true -o $engine --nologo
+            if ($LASTEXITCODE) { throw "dotnet publish $rid failed" }
+            # Installer archive: the engine in bin\, the install script and what it deploys (no sources).
+            $zip = Join-Path $stage "zip-$rid"
+            New-Item -ItemType Directory "$zip\scripts" | Out-Null
+            Copy-Item $shared $zip -Recurse
+            $scripts | ForEach-Object { Copy-Item "scripts/$_" "$zip\scripts" }
+            Copy-Item $engine "$zip\bin" -Recurse
+            [IO.Compression.ZipFile]::CreateFromDirectory($zip, "$PWD\dist\NexusRelay-$rid.zip")
+            # MCP bundle (stdio): manifest, icon and the engine.
+            $bundle = Join-Path $stage "mcpb-$rid"
+            New-Item -ItemType Directory $bundle | Out-Null
+            Copy-Item mcpb/manifest.json $bundle
+            Copy-Item plugins/nexus-relay/logo.png "$bundle\icon.png"
+            Copy-Item $engine "$bundle\server" -Recurse
+            [IO.Compression.ZipFile]::CreateFromDirectory($bundle, "$PWD\dist\nexus-relay-$rid.mcpb")
+          }
+          Copy-Item get.ps1 dist  # the installer too, for running it from a file (checked and attested like the packages)
+          Get-ChildItem dist -File | ForEach-Object { '{0}  {1}' -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower(), $_.Name } |
+            Set-Content dist/SHA256SUMS.txt -Encoding utf8NoBOM
+          Get-Content dist/SHA256SUMS.txt
+          "x64=$((Get-FileHash dist/nexus-relay-win-x64.mcpb -Algorithm SHA256).Hash.ToLower())" >> $env:GITHUB_OUTPUT
+          "arm64=$((Get-FileHash dist/nexus-relay-win-arm64.mcpb -Algorithm SHA256).Hash.ToLower())" >> $env:GITHUB_OUTPUT
+      - name: The x64 engine of the archive starts and lists its tools
+        shell: pwsh
+        run: |
+          Expand-Archive dist/NexusRelay-win-x64.zip "$env:RUNNER_TEMP\check"
+          $tools = & "$env:RUNNER_TEMP\check\bin\NexusRelay.exe" --schemas | ConvertFrom-Json
+          if (@($tools).Count -ne 20) { throw "tools: $(@($tools).Count)" }
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8  # v4.2.2
+        id: provenance
+        with:
+          subject-path: dist/*
+      - name: Provenance bundle
+        shell: pwsh
+        env:
+          BUNDLE: ${{ steps.provenance.outputs.bundle-path }}
+          TAG: ${{ github.ref_name }}
+        run: Copy-Item $env:BUNDLE "dist/NexusRelay-$($env:TAG.TrimStart('v')).intoto.jsonl"
+      - name: GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          $version = $env:TAG.TrimStart('v')
+          $lines = Get-Content CHANGELOG.md
+          $start = [Array]::FindIndex($lines, [Predicate[string]] { param($l) $l -like "## ``[$version``]*" })
+          if ($start -lt 0) { throw "CHANGELOG.md has no [$version] section." }
+          $end = [Array]::FindIndex($lines, $start + 1, [Predicate[string]] { param($l) $l -like '## *' })
+          if ($end -lt 0) { $end = $lines.Count }
+          $lines[($start + 1)..($end - 1)] | Set-Content notes.md -Encoding utf8NoBOM
+          gh release create $env:TAG (Get-ChildItem dist -File).FullName --title "NexusRelay $version" --notes-file notes.md --verify-tag
+
+  registry:
+    # server.json with the SHA-256 of the attached bundles, to the official MCP registry. mcp-publisher pinned by version
+    # and SHA-256; GitHub OIDC login, no token stored.
+    needs: release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      PUBLISHER_VERSION: v1.8.1
+      PUBLISHER_SHA256: a06c9096dcb9727c13555b6be26c7effa707b01f06a4c561ba7a3635443cf2cc
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Bundle hashes into server.json
+        env:
+          X64: ${{ needs.release.outputs.x64 }}
+          ARM64: ${{ needs.release.outputs.arm64 }}
+        run: |
+          set -euo pipefail
+          jq --arg x64 "$X64" --arg arm64 "$ARM64" \
+            '.packages |= map(.fileSha256 = (if (.identifier | endswith("win-arm64.mcpb")) then $arm64 else $x64 end))' \
+            server.json > server.filled.json
+          mv server.filled.json server.json
+          cat server.json
+      - name: Install mcp-publisher (pinned, checksum verified)
+        run: |
+          curl -fsSL -o mcp-publisher.tar.gz \
+            "https://github.com/modelcontextprotocol/registry/releases/download/${PUBLISHER_VERSION}/mcp-publisher_linux_amd64.tar.gz"
+          echo "${PUBLISHER_SHA256}  mcp-publisher.tar.gz" | sha256sum --strict -c
+          tar xzf mcp-publisher.tar.gz mcp-publisher
+      - run: ./mcp-publisher login github-oidc
+      - run: ./mcp-publisher publish server.json
+
+  install-from-release:
+    # The one-line install exactly as the public runs it: latest release, SHA-256 check, no SDK, no Python.
+    needs: release
+    runs-on: windows-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: get.ps1 from the release (NEXUS_PACK=1, Windows PowerShell 5.1)
+        shell: powershell
+        env:
+          NEXUS_PACK: "1"
+          TAG: ${{ github.ref_name }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force "$HOME\.codex", "$HOME\.claude" | Out-Null
+          $out = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\get.ps1
+          if ($LASTEXITCODE) { $out; throw "get.ps1 failed ($LASTEXITCODE)" }
+          $out
+          if (@($out)[-1] -notmatch '^NEXUS_PACK_RESULT Claude Code=declared; Codex=declared') { throw "pack line: $(@($out)[-1])" }
+          if (-not ($out -match "Downloading NexusRelay $env:TAG")) { throw "not installed from $env:TAG" }
+          $code = 0
+          foreach ($i in 1..60) {
+            try { Invoke-WebRequest -UseBasicParsing http://127.0.0.1:16181/mcp | Out-Null; $code = 200 }
+            catch { if ($_.Exception.Response) { $code = [int]$_.Exception.Response.StatusCode } }
+            if ($code) { break }
+            Start-Sleep 2
+          }
+          if ($code -ne 401) { throw "daemon: $code" }
+          $token = [Environment]::GetEnvironmentVariable('NEXUS_MCP_TOKEN', 'User')
+          $state = Invoke-RestMethod -UseBasicParsing http://127.0.0.1:16181/api/update -Headers @{ Authorization = "Bearer $token" }
+          if ($state.version -ne $env:TAG.TrimStart('v')) { throw "version: $($state.version)" }

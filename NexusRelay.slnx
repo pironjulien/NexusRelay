@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="native/NexusRelay.csproj" />
+  <Project Path="tests/NexusRelay.Tests/NexusRelay.Tests.csproj" />
+</Solution>

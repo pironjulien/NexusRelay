@@ -6,8 +6,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.10.0] - 2026-10-30
+
+### Changed
+- The native C# (.NET 10) engine is now the only engine: daemon, Antigravity sidecar, edit guard, host notice and
+  commit guard. `install.ps1` no longer needs uv nor Python: it builds `native/` with `dotnet publish` (build outputs
+  under `~\.nexus\build\nexusrelay`) or takes the self-contained engine of a release (`bin\`), installs it as an
+  immutable version, and declares the daemon with the `exe` key of its supervisor spec. A stable path
+  `~\.nexus\nexus-relay\bin\NexusRelay.exe` (a copy of the version in service, swapped by rename so a running guard is never broken) is what hooks call.
+- Settings, client and hook registration are engine commands: `NexusRelay.exe --settings`, `--register-clients`,
+  `--register-hooks` (same files, same backups, same Codex trust preservation as before). A Codex plugin that still
+  carries a retired Python guard no longer counts as carrying it: the native global guard is declared instead.
+- Commit guard hooks (`scripts/pre-commit`, `post-commit`) call the engine by its stable path, without PowerShell.
+- The one-line installer (`get.ps1`) downloads `NexusRelay-win-x64.zip` or `NexusRelay-win-arm64.zip` from the latest
+  release, checks it against `SHA256SUMS.txt`, and installs it: no uv, no Python, no .NET to install.
+- Tests are xUnit v3 (`dotnet test`, Microsoft.Testing.Platform): the former native self-tests, the black-box tests of
+  the engine, and the Python-oracle contracts (tool schemas, UI maps, card semantics) replayed from recorded goldens.
+  `test.ps1` and the CI run the same `dotnet test`. CodeQL analyses C#; Dependabot follows NuGet.
+
+### Added
+- Release workflow (`release.yml`, on a `vX.Y.Z` tag): self-contained win-x64 and win-arm64 archives, MCP bundles
+  (`.mcpb`), `get.ps1`, `SHA256SUMS.txt` and their Sigstore build provenance; `server.json` (MCPB packages) published to
+  the official MCP registry by GitHub OIDC; the one-line install is then run from the published release.
+
+### Fixed
+- Commit guard: staged file names are read from Git as UTF-8, so a reserved file with an accented name is refused.
+
 ### Removed
-- PyPI, MCP registry and Glama publishing (`publish.yml`, `server.json`, `glama.json`): installation goes through NexusSystem. Earlier PyPI packages stay available.
+- The Python package (`src/nexus_relay`, `pyproject.toml`, `uv.lock`), its scripts (`register_clients.py`,
+  `register_hooks.py`, `invoke-hook.ps1`), its Atheris fuzzing and benchmark, the Linux startup job, and the
+  `--selftest` / `--runtime-selftest` options (now xUnit tests). PyPI and Glama publishing stay retired; earlier PyPI
+  packages stay available.
 
 ## [1.9.0] - 2026-10-30
 
@@ -325,7 +354,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - English tool descriptions with titles and MCP annotations; `reply` accepts `done`/`refused`/`failed` and
   `agree`/`disagree`.
 
-[Unreleased]: https://github.com/pironjulien/NexusRelay/compare/v1.9.0...HEAD
+[Unreleased]: https://github.com/pironjulien/NexusRelay/compare/v1.10.0...HEAD
+[1.10.0]: https://github.com/pironjulien/NexusRelay/compare/v1.9.0...v1.10.0
 [1.8.3]: https://github.com/pironjulien/NexusRelay/releases/tag/v1.8.3
 [1.8.2]: https://github.com/pironjulien/NexusRelay/releases/tag/v1.8.2
 [1.6.2]: https://github.com/pironjulien/NexusRelay/compare/v1.6.1...v1.6.2
