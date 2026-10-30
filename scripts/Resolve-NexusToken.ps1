@@ -11,7 +11,14 @@ function Resolve-NexusTokenFile {
     param([string[]]$Explicit, [string]$UserHome = $env:USERPROFILE, [string]$Legacy)
     $chosen = @($Explicit | Where-Object { $_ -and (-not $Legacy -or [IO.Path]::GetFullPath($_) -ne [IO.Path]::GetFullPath($Legacy)) }) | Select-Object -First 1
     $path = if ($chosen) { $chosen } else { Join-Path $UserHome '.nexus\mcp-token.txt' }
-    $existing = if (Test-Path -LiteralPath $path) { ([IO.File]::ReadAllText($path)).Trim() } else { '' }
+    # A file just created by another installer may still be empty for an instant: wait for it before calling it empty.
+    $existing = ''
+    foreach ($try in 1..30) {
+        if (-not (Test-Path -LiteralPath $path)) { break }
+        try { $existing = ([IO.File]::ReadAllText($path)).Trim() } catch [IO.IOException] { $existing = '' }
+        if ($existing) { break }
+        Start-Sleep -Milliseconds 100
+    }
     if (-not $existing) {
         $token = if ($Legacy -and (Test-Path -LiteralPath $Legacy) -and ([IO.File]::ReadAllText($Legacy)).Trim().Length -ge 32) { ([IO.File]::ReadAllText($Legacy)).Trim() } else {
             $bytes = New-Object byte[] 32
@@ -25,7 +32,8 @@ function Resolve-NexusTokenFile {
             $stream = [IO.File]::Open($path, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
             try { $data = [Text.UTF8Encoding]::new($false).GetBytes($token); $stream.Write($data, 0, $data.Length) } finally { $stream.Dispose() }
         } catch [IO.IOException] {
-            foreach ($try in 1..20) { if (([IO.File]::ReadAllText($path)).Trim()) { break }; Start-Sleep -Milliseconds 100 }
+            foreach ($try in 1..50) { try { if (([IO.File]::ReadAllText($path)).Trim()) { break } } catch [IO.IOException] { }; Start-Sleep -Milliseconds 100 }
+            if (-not ([IO.File]::ReadAllText($path)).Trim()) { throw "Jeton partagé vide : $path" }
         }
     }
     (Resolve-Path -LiteralPath $path).Path
