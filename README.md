@@ -1,10 +1,7 @@
 # Nexus Relay
 
-<!-- mcp-name: io.github.pironjulien/nexus-relay -->
-
 <img src="https://raw.githubusercontent.com/pironjulien/NexusRelay/main/plugins/nexus-relay/logo.png" alt="Nexus Relay icon" width="96">
 
-[![PyPI](https://img.shields.io/pypi/v/nexus-relay.svg)](https://pypi.org/project/nexus-relay/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/pironjulien/NexusRelay/blob/main/LICENSE)
 ![Python 3.14](https://img.shields.io/badge/python-3.14-blue.svg)
 ![Windows only](https://img.shields.io/badge/platform-Windows-lightgrey.svg)
@@ -19,6 +16,8 @@ clipboard.
 > **Experimental, Windows only.** Waking Codex drives the Codex desktop app through its local debugging port, and
 > waking Antigravity goes through its sidecar API. Both depend on how those apps look and behave today: an app update
 > can break a wake until the relay's interface maps are refreshed (`survey`). Use at your own risk.
+
+**Install:** ask your AI to install NexusRelay through [NexusSystem](https://github.com/pironjulien/NexusSystem) (or use the NexusSystem app from the Microsoft Store). New versions are no longer published to PyPI; earlier packages stay available.
 
 ## How it works
 

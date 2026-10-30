@@ -6,6 +6,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+- PyPI, MCP registry and Glama publishing (`publish.yml`, `server.json`, `glama.json`): installation goes through NexusSystem. Earlier PyPI packages stay available.
+
 ## [1.9.0] - 2026-10-30
 
 ### Added
