@@ -56,4 +56,5 @@ def test_native_history_registration_never_adopts_a_human_child_or_current_chat(
     registry = box.state("codex-owned")
     assert registry and set(registry["threads"]) == {"relay"}
     assert registry["threads"]["relay"]["origin"] == "verified-relay-history"
-    assert json.loads(subprocess.check_output(command, creationflags=NO_WINDOW))["count"] == 0
+    remaining = json.loads(subprocess.check_output(command, creationflags=NO_WINDOW))
+    assert remaining["count"] == 0
