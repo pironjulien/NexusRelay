@@ -14,6 +14,14 @@
 # Test variables: NEXUS_RELAY_ROOT (install folder instead of %LOCALAPPDATA%\NexusRelay), NEXUS_RELAY_DOWNLOAD_ONLY=1
 # (download, check and mirror only; nothing is installed nor declared).
 $ErrorActionPreference = 'Stop'
+# A Windows PowerShell child of PowerShell 7 inherits Core-only module folders ahead of its own modules.
+# Restore this host's standard modules first (Get-FileHash, Expand-Archive, Unblock-File), retaining user modules.
+if ($PSVersionTable.PSEdition -eq 'Desktop') {
+    $desktopModules = Join-Path $PSHOME 'Modules'
+    $env:PSModulePath = (@($desktopModules) + @($env:PSModulePath -split ';' | Where-Object {
+        $_ -and $_.TrimEnd('\') -ine $desktopModules.TrimEnd('\')
+    })) -join ';'
+}
 $ProgressPreference = 'SilentlyContinue'  # Invoke-WebRequest is many times slower with its progress bar
 [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 

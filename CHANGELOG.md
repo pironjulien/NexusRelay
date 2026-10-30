@@ -6,6 +6,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.10.4] - 2026-10-30
+
+### Fixed
+- The bootstrap gives Windows PowerShell 5.1's own standard modules priority when launched by PowerShell 7. Inherited
+  Core-only modules could prevent SHA-256 verification, archive extraction and unblocking downloaded files. User module
+  paths are preserved, and a child-process regression checks the real bootstrap against a .NET-computed checksum.
+
 ## [1.10.3] - 2026-10-30
 
 ### Fixed

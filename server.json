@@ -3,7 +3,7 @@
   "name": "io.github.pironjulien/nexus-relay",
   "title": "Nexus Relay",
   "description": "Shared room for Claude, Codex and Antigravity on one Windows PC; each agent woken in its own app.",
-  "version": "1.10.3",
+  "version": "1.10.4",
   "websiteUrl": "https://github.com/pironjulien/NexusRelay",
   "icons": [
     {
@@ -24,13 +24,13 @@
   "packages": [
     {
       "registryType": "mcpb",
-      "identifier": "https://github.com/pironjulien/NexusRelay/releases/download/v1.10.3/nexus-relay-win-x64.mcpb",
+      "identifier": "https://github.com/pironjulien/NexusRelay/releases/download/v1.10.4/nexus-relay-win-x64.mcpb",
       "fileSha256": "filled by the release workflow",
       "transport": { "type": "stdio" }
     },
     {
       "registryType": "mcpb",
-      "identifier": "https://github.com/pironjulien/NexusRelay/releases/download/v1.10.3/nexus-relay-win-arm64.mcpb",
+      "identifier": "https://github.com/pironjulien/NexusRelay/releases/download/v1.10.4/nexus-relay-win-arm64.mcpb",
       "fileSha256": "filled by the release workflow",
       "transport": { "type": "stdio" }
     }

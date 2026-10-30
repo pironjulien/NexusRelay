@@ -223,6 +223,24 @@ public sealed class InstallerTests : IDisposable
     }
 
     [Fact]
+    public void Windows_powershell_child_prefers_its_own_modules_over_inherited_core_modules()
+    {
+        string installer = File.ReadAllText(Path.Combine(Repo, "get.ps1"));
+        string prefix = installer[..installer.IndexOf("$root =", StringComparison.Ordinal)];
+        string script = Path.Combine(iso.Root, "module-fixture.ps1");
+        string input = Path.Combine(iso.Root, "checksum-input.txt");
+        File.WriteAllText(input, "synthetic checksum input");
+        File.WriteAllText(script, prefix + "\n(Get-FileHash -LiteralPath $env:NEXUS_TEST_INPUT -Algorithm SHA256).Hash\n");
+        string desktop = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "WindowsPowerShell", "v1.0");
+        string coreModules = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "PowerShell", "7", "Modules");
+        Assert.True(Directory.Exists(coreModules), "PowerShell 7 is required for the inherited-module regression fixture.");
+        var ran = Native.RunFile(Path.Combine(desktop, "powershell.exe"), ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script],
+            env: new Dictionary<string, string?> { ["PSModulePath"] = coreModules + ";" + Path.Combine(desktop, "Modules"), ["NEXUS_TEST_INPUT"] = input });
+        Assert.True(ran.Code == 0, ran.Err + ran.Out);
+        Assert.Equal(Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(input))), ran.Out.Trim());
+    }
+
+    [Fact]
     public void Scripts_read_by_windows_powershell_51()
     {
         // get.ps1 runs install.ps1 under Windows PowerShell 5.1 (Nexus pack): without a BOM it reads UTF-8 as ANSI;
