@@ -9,7 +9,7 @@ namespace NexusRelay;
 
 public static partial class RelayPaths
 {
-    public const string Version = "1.8.7";
+    public const string Version = "1.9.0";
     public static readonly string[] Agents = ["claude", "antigravity", "codex"];
     public const string User = "user";
     public static readonly string[] Parties = ["claude", "antigravity", "codex", "user"];

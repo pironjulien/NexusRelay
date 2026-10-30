@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.9.0] - 2026-10-30
+
 ### Added
 - Native C# (.NET 10) engine in `native/`, built outside OneDrive and installed as an immutable version under
   `%LOCALAPPDATA%\NexusRelay\versions\<hash>`: wake and tidy workers, unread-message recovery, per-topic backoff,
@@ -320,7 +322,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - English tool descriptions with titles and MCP annotations; `reply` accepts `done`/`refused`/`failed` and
   `agree`/`disagree`.
 
-[Unreleased]: https://github.com/pironjulien/NexusRelay/compare/v1.8.3...HEAD
+[Unreleased]: https://github.com/pironjulien/NexusRelay/compare/v1.9.0...HEAD
 [1.8.3]: https://github.com/pironjulien/NexusRelay/releases/tag/v1.8.3
 [1.8.2]: https://github.com/pironjulien/NexusRelay/releases/tag/v1.8.2
 [1.6.2]: https://github.com/pironjulien/NexusRelay/compare/v1.6.1...v1.6.2
