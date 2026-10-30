@@ -30,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the official MCP registry by GitHub OIDC; the one-line install is then run from the published release.
 
 ### Fixed
+- `GET /api/update` answers the update state again (the native engine only served `/api/status`).
 - Commit guard: staged file names are read from Git as UTF-8, so a reserved file with an accented name is refused.
 
 ### Removed

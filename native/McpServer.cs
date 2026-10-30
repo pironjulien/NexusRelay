@@ -1823,7 +1823,7 @@ public sealed partial class McpServer
                     return;
                 }
 
-                if (path == "/api/status" && method == "GET") { await WriteHttpResponseAsync(stream, 200, "application/json", Encoding.UTF8.GetBytes(NativeUpdater.Status().ToJsonString())); return; }
+                if (path is "/api/status" or "/api/update" && method == "GET") { await WriteHttpResponseAsync(stream, 200, "application/json", Encoding.UTF8.GetBytes(NativeUpdater.Status().ToJsonString())); return; }
                 if (path == "/api/update" && method == "POST") { var update = NativeUpdater.Start(); await WriteHttpResponseAsync(stream, update.Http, "application/json", Encoding.UTF8.GetBytes(update.Data.ToJsonString())); return; }
 
                 if (path != "/mcp")

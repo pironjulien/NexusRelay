@@ -82,6 +82,17 @@ public sealed class ProtocolTests : IDisposable
         using var daemon = new Daemon(fixture: false, env: new Dictionary<string, string?> { ["NEXUS_RELAY_WAKE_SINCE"] = null });
         using (var unauthorized = daemon.Post("claude", new JsonObject { ["jsonrpc"] = "2.0", ["id"] = 1, ["method"] = "ping" }, token: null))
             Assert.Equal(HttpStatusCode.Unauthorized, unauthorized.StatusCode);
+        using (var http = new HttpClient())
+        {
+            http.DefaultRequestHeaders.Authorization = new("Bearer", Daemon.Token);
+            foreach (string route in new[] { "/api/update", "/api/status" })  // the update state, read by NexusSystem
+            {
+                var state = JsonNode.Parse(http.GetStringAsync($"http://127.0.0.1:{daemon.Port}{route}", TestContext.Current.CancellationToken).GetAwaiter().GetResult())!;
+                Assert.Equal("relay", state["product"]?.ToString());
+                Assert.Equal(RelayPaths.Version, state["version"]?.ToString());
+                Assert.Equal("native", state["runtime"]?.ToString());
+            }
+        }
         var discover = daemon.Rpc(Native.Rpc("server/discover"))!["result"]!;
         Assert.Equal("2026-07-28", discover["protocolVersion"]?.ToString());
         Assert.Equal(20, (discover["tools"] as JsonArray)!.Count);
