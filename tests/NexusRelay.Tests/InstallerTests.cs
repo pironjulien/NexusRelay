@@ -115,6 +115,54 @@ public sealed class InstallerTests : IDisposable
         }
     }
 
+    private string Token(string userHome, string explicitFile = "", string legacy = "")
+    {
+        string script = Path.Combine(iso.Root, $"token-{Guid.NewGuid():N}.ps1");
+        File.WriteAllText(script, $$"""
+            . '{{Path.Combine(Repo, "scripts", "Resolve-NexusToken.ps1")}}'
+            $explicit = @('{{explicitFile}}') | Where-Object { $_ }
+            $file = Resolve-NexusTokenFile -Explicit $explicit -UserHome '{{userHome}}' -Legacy '{{legacy}}'
+            $file
+            [IO.File]::ReadAllText($file).Trim()
+            """);
+        var ran = Native.Pwsh(script);
+        Assert.True(ran.Code == 0, ran.Err);
+        return ran.Out.Trim();
+    }
+
+    [Fact]
+    public void Shared_token_is_created_once_then_reused_by_every_installer()
+    {
+        // Two installers in a row on a blank profile (for instance Android, then Relay) end with the same token.
+        string blank = Path.Combine(iso.Root, "blank");
+        string first = Token(blank), second = Token(blank);
+        Assert.Equal(first, second);
+        var lines = first.Split('\n', StringSplitOptions.TrimEntries);
+        Assert.Equal(Path.Combine(blank, ".nexus", "mcp-token.txt"), lines[0]);
+        Assert.Matches("^[0-9a-f]{64}$", lines[1]);
+
+        // At the same time: exclusive creation, one winner, one token.
+        string racing = Path.Combine(iso.Root, "racing");
+        var both = Enumerable.Range(0, 2).Select(_ => Task.Run(() => Token(racing))).ToArray();
+        Task.WaitAll(both, TestContext.Current.CancellationToken);
+        Assert.Equal(both[0].Result, both[1].Result);
+
+        // An existing file (NEXUS_MCP_TOKEN_FILE, synced workstation token) is never regenerated.
+        string synced = Path.Combine(iso.Root, "synced", "token.txt");
+        Directory.CreateDirectory(Path.GetDirectoryName(synced)!);
+        File.WriteAllText(synced, "workstation-token-workstation-token-0123\n");
+        Assert.Equal($"{synced}\nworkstation-token-workstation-token-0123", Token(blank, synced).ReplaceLineEndings("\n"));
+
+        // An empty shared file is not a token; the retired relay-only token is carried over, not lost.
+        string migrated = Path.Combine(iso.Root, "migrated");
+        Directory.CreateDirectory(Path.Combine(migrated, ".nexus", "nexus-relay"));
+        File.WriteAllText(Path.Combine(migrated, ".nexus", "mcp-token.txt"), "");
+        string legacy = Path.Combine(migrated, ".nexus", "nexus-relay", "token.txt");
+        File.WriteAllText(legacy, new string('a', 64));
+        Assert.EndsWith(new string('a', 64), Token(migrated, legacy, legacy));
+        Assert.Equal(new string('a', 64), File.ReadAllText(Path.Combine(migrated, ".nexus", "mcp-token.txt")));
+    }
+
     [Fact]
     public void Downloaded_code_is_never_run_in_memory()
     {

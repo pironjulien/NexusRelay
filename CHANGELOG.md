@@ -6,6 +6,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.10.2] - 2026-10-30
+
+### Fixed
+- One token for every Nexus daemon (common rule): the installer uses `NEXUS_MCP_TOKEN_FILE` (or the `token_file`
+  setting), otherwise `%USERPROFILE%\.nexus\mcp-token.txt`; an existing token is reused, never regenerated, and a missing
+  one is created by exclusive creation, so another Nexus installer run before or at the same time ends with the same
+  token. The user variable `NEXUS_MCP_TOKEN` is aligned on that file and the daemon reads it. Before, a fresh install
+  created a relay-only `~\.nexus\nexus-relay\token.txt`, and the daemons of other products answered 401 with the
+  token of the variable; that older token is carried over into the shared file when it does not exist yet.
+
 ## [1.10.1] - 2026-10-30
 
 ### Changed
@@ -363,7 +373,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - English tool descriptions with titles and MCP annotations; `reply` accepts `done`/`refused`/`failed` and
   `agree`/`disagree`.
 
-[Unreleased]: https://github.com/pironjulien/NexusRelay/compare/v1.10.1...HEAD
+[Unreleased]: https://github.com/pironjulien/NexusRelay/compare/v1.10.2...HEAD
+[1.10.2]: https://github.com/pironjulien/NexusRelay/compare/v1.10.1...v1.10.2
 [1.10.1]: https://github.com/pironjulien/NexusRelay/compare/v1.10.0...v1.10.1
 [1.10.0]: https://github.com/pironjulien/NexusRelay/compare/v1.9.0...v1.10.0
 [1.8.3]: https://github.com/pironjulien/NexusRelay/releases/tag/v1.8.3

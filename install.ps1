@@ -18,8 +18,9 @@
 #    (créé ici, dossier ~\.nexus\relay\agy-projet)
 #  - hooks d'édition de Codex et d'Antigravity : NexusRelay.exe --register-hooks
 #  - tests hors ligne (sauf -SkipTests ; jamais sur une release publique, qui n'a pas les sources)
-#  - -Register (installation publique, get.ps1) : jeton créé s'il n'y en a aucun (~\.nexus\nexus-relay\token.txt, noté
-#    dans settings.json), variable utilisateur NEXUS_MCP_TOKEN posée, serveur déclaré à Claude Code et Codex
+#  - -Register (installation publique, get.ps1) : jeton partagé des démons Nexus (NEXUS_MCP_TOKEN_FILE, sinon
+#    ~\.nexus\mcp-token.txt, créé s'il manque, jamais régénéré), variable utilisateur NEXUS_MCP_TOKEN alignée dessus,
+#    serveur déclaré à Claude Code et Codex
 #    (NexusRelay.exe --register-clients) ; NEXUS_PACK=1 (pack Nexus) : aucune question ni fenêtre, ligne NEXUS_PACK_RESULT
 #  - NEXUS_PACK_TARGETS (pack Nexus) : IA à configurer (claude-code, codex, antigravity…, séparées par des virgules) ;
 #    présente, toute IA absente de la liste n'est pas touchée ; absente, toutes celles trouvées
@@ -159,21 +160,20 @@ function Get-Localized([string]$relative) {
 }
 # Consignes des chats du relais, lues par Codex dans ce dossier : jamais de question à l'utilisateur, qui ne les lit pas.
 Copy-Item -Force (Get-Localized 'codex-projet\AGENTS.md') (Join-Path $HOME '.nexus\relay\codex-projet\AGENTS.md')
-$tokenFile = @($TokenFile, $settings.token_file, $env:NEXUS_MCP_TOKEN_FILE) | Where-Object { $_ } | Select-Object -First 1
-# Jeton partagé entre plusieurs PC (poste réglé) : jamais créé ici. Installation publique (-Register) sans aucun
-# réglage : jeton propre à ce PC.
-if ($Register -and -not $tokenFile) {
-    $tokenFile = Join-Path $state 'token.txt'
-    if (-not (Test-Path $tokenFile)) {
-        $bytes = New-Object byte[] 32
-        [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
-        [IO.File]::WriteAllText($tokenFile, (-join ($bytes | ForEach-Object { $_.ToString('x2') })), $utf8)
-        Write-Output "Jeton du démon créé : $tokenFile"
-    }
+# Jeton partagé des démons Nexus (scripts\Resolve-NexusToken.ps1, règle commune du 30/10) : fichier explicite (-TokenFile,
+# NEXUS_MCP_TOKEN_FILE, réglage token_file), sinon %USERPROFILE%\.nexus\mcp-token.txt ; réutilisé, jamais régénéré.
+# Poste réglé sans -Register : jamais créé ici (un installeur lancé avant la synchro du fichier en créerait un autre).
+. (Join-Path $project 'scripts\Resolve-NexusToken.ps1')
+$legacyToken = Join-Path $state 'token.txt'  # jeton propre au relais (1.9.0 à 1.10.1), repris dans le fichier partagé
+$explicitToken = @($TokenFile, $env:NEXUS_MCP_TOKEN_FILE, $settings.token_file) | Where-Object { $_ -and [IO.Path]::GetFullPath($_) -ne [IO.Path]::GetFullPath($legacyToken) }
+if ($Register -or @($explicitToken | Where-Object { Test-Path -LiteralPath $_ }).Count) {
+    $tokenFile = Resolve-NexusTokenFile -Explicit @($explicitToken) -UserHome $env:USERPROFILE -Legacy $legacyToken
     $local = Read-LocalSettings
-    $local | Add-Member -NotePropertyName token_file -NotePropertyValue $tokenFile -Force
-    [IO.File]::WriteAllText($settingsPath, ($local | ConvertTo-Json -Depth 10), $utf8)
-}
+    if ($local.PSObject.Properties['token_file'] -and [IO.Path]::GetFullPath([string]$local.token_file) -eq [IO.Path]::GetFullPath($legacyToken)) {
+        $local.PSObject.Properties.Remove('token_file')  # plus de jeton propre au relais
+        [IO.File]::WriteAllText($settingsPath, ($local | ConvertTo-Json -Depth 10), $utf8)
+    }
+} else { $tokenFile = $null }
 # Périmètre du pack Nexus : IA choisies par l'utilisateur ; les autres ne sont jamais touchées.
 $packTargets = if ($null -ne $env:NEXUS_PACK_TARGETS) { @($env:NEXUS_PACK_TARGETS -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ }) } else { $null }
 # Hôte (installation publique seulement, et seulement s'il n'est pas déjà réglé : un choix de l'utilisateur reste).
@@ -196,7 +196,7 @@ if ($Register -and -not $settings.host) {
     }
 }
 if (-not $tokenFile -or -not (Test-Path $tokenFile)) {
-    throw "Jeton absent ($tokenFile) : régler token_file dans $settingsPath, -TokenFile ou NEXUS_MCP_TOKEN_FILE."
+    throw "Jeton absent : régler token_file dans $settingsPath, -TokenFile ou NEXUS_MCP_TOKEN_FILE (ou installer avec -Register)."
 }
 $token = (Get-Content $tokenFile -Raw).Trim()
 function Get-Url([string]$agent) { "http://127.0.0.1:$port/mcp?agent=$agent" }
@@ -345,10 +345,7 @@ if (-not $SkipTests -and (Test-Path (Join-Path $project 'test.ps1')) -and (Test-
 # --- Installation publique : jeton dans la variable utilisateur NEXUS_MCP_TOKEN (lue par Claude Code et Codex, jamais
 #     écrite dans leurs fichiers), puis serveur déclaré aux clients trouvés.
 if ($Register) {
-    if ([Environment]::GetEnvironmentVariable('NEXUS_MCP_TOKEN', 'User') -ne $token) {
-        [Environment]::SetEnvironmentVariable('NEXUS_MCP_TOKEN', $token, 'User')
-        Write-Output 'Variable utilisateur NEXUS_MCP_TOKEN posée (redémarrer Claude Code et Codex pour la voir).'
-    }
+    if (Set-NexusTokenVariable -Token $token) { Write-Output 'Variable utilisateur NEXUS_MCP_TOKEN posée (redémarrer Claude Code et Codex pour la voir).' }
     $env:NEXUS_MCP_TOKEN = $token
     $agyArgs = if ($agyResult) { @('--antigravity', $agyResult) } else { @() }  # 5.1 : un argument vide disparaît
     & $nativeExe --register-clients --port $port --backups $backups @agyArgs | Write-Output

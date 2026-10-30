@@ -72,12 +72,16 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $env:NEXUS_RELAY_SOURCE = $env:GITHUB_WORKSPACE
-          New-Item -ItemType Directory -Force "$HOME\.codex", "$HOME\.claude" | Out-Null
+          New-Item -ItemType Directory -Force "$HOME\.codex", "$HOME\.claude", "$HOME\.nexus" | Out-Null
+          # Another Nexus daemon installed first (shared token rule): the relay must reuse its token, never make its own.
+          [IO.File]::WriteAllText("$HOME\.nexus\mcp-token.txt", ("ab" * 32))
           $out = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\get.ps1
           if ($LASTEXITCODE) { $out; throw "get.ps1 failed ($LASTEXITCODE)" }
           $out
           $last = @($out)[-1]
           if ($last -notmatch '^NEXUS_PACK_RESULT Claude Code=declared; Codex=declared') { throw "pack line: $last" }
+          if ([Environment]::GetEnvironmentVariable('NEXUS_MCP_TOKEN', 'User') -ne ("ab" * 32)) { throw 'NEXUS_MCP_TOKEN is not the shared token' }
+          if (Test-Path "$HOME\.nexus\nexus-relay\token.txt") { throw 'relay-only token created' }
       - name: daemon answers behind its token; clients declared without the token
         shell: powershell
         run: |

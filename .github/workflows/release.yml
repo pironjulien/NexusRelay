@@ -55,7 +55,7 @@ jobs:
           $stage = Join-Path $env:RUNNER_TEMP 'stage'
           New-Item -ItemType Directory dist, $stage | Out-Null
           $shared = 'install.ps1', 'get.ps1', 'LICENSE', 'README.md', 'CHANGELOG.md', 'plugins', 'fr', 'codex-projet', 'claude', 'codex'
-          $scripts = 'Configure-AntigravityRelay.ps1', 'Restart-Relay.ps1', 'Resolve-RelayPath.ps1', 'install_commit_guard.ps1', 'pre-commit', 'post-commit', 'update-native.ps1'
+          $scripts = 'Configure-AntigravityRelay.ps1', 'Restart-Relay.ps1', 'Resolve-RelayPath.ps1', 'install_commit_guard.ps1', 'Resolve-NexusToken.ps1', 'pre-commit', 'post-commit', 'update-native.ps1'
           foreach ($rid in 'win-x64', 'win-arm64') {
             $engine = Join-Path $stage "engine-$rid"
             dotnet publish native/NexusRelay.csproj -c Release -r $rid --self-contained true -o $engine --nologo
