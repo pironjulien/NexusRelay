@@ -1,5 +1,7 @@
-# NexusRelay one-line installer for Windows 10/11 (Windows PowerShell 5.1 or PowerShell 7), no admin rights, no Python:
-#   irm https://raw.githubusercontent.com/pironjulien/NexusRelay/main/get.ps1 | iex
+# NexusRelay installer for Windows 10/11 (Windows PowerShell 5.1 or PowerShell 7), no admin rights, no Python:
+#   download get.ps1 and SHA256SUMS.txt from the latest release, check the hash, then run it as a file:
+#   powershell -NoProfile -ExecutionPolicy Bypass -File .\get.ps1
+#   (never run downloaded code in memory; the NexusSystem app of the Microsoft Store does the same with -File)
 # Downloads NexusRelay-win-x64.zip or NexusRelay-win-arm64.zip (this PC's architecture) from the latest GitHub release,
 # checks it against the release's SHA256SUMS.txt, mirrors it into %LOCALAPPDATA%\NexusRelay\app (the same folder on
 # every update), then runs install.ps1 -Register: self-contained native engine (no .NET to install), token, background

@@ -17,7 +17,7 @@ clipboard.
 > waking Antigravity goes through its sidecar API. Both depend on how those apps look and behave today: an app update
 > can break a wake until the relay's interface maps are refreshed (`survey`). Use at your own risk.
 
-**Install:** ask your AI to install NexusRelay through [NexusSystem](https://github.com/pironjulien/NexusSystem) (or use the NexusSystem app from the Microsoft Store), or use the one-line installer below. NexusRelay is a native .NET 10 program: nothing else to install. New versions are no longer published to PyPI; earlier packages stay available.
+**Install:** ask your AI to install NexusRelay through [NexusSystem](https://github.com/pironjulien/NexusSystem) (the [NexusSystem app](https://apps.microsoft.com/detail/9NSH2P3QLWT1) from the Microsoft Store, or `winget install --id 9NSH2P3QLWT1 --source msstore`), or use the release files below. NexusRelay is a native .NET 10 program: nothing else to install. New versions are no longer published to PyPI; earlier packages stay available.
 
 ## How it works
 
@@ -61,17 +61,25 @@ observations and completed live actions.
 
 ## Quick start
 
-1. Open **PowerShell** and paste:
+1. **Recommended:** install NexusRelay from the [NexusSystem app](https://apps.microsoft.com/detail/9NSH2P3QLWT1)
+   (Microsoft Store). **Or by hand**, in **PowerShell**: download the installer and its checksums from the latest
+   release, check the installer, then run it as a file:
 
    ```powershell
-   irm https://raw.githubusercontent.com/pironjulien/NexusRelay/main/get.ps1 | iex
+   $r = 'https://github.com/pironjulien/NexusRelay/releases/latest/download'
+   Invoke-WebRequest "$r/get.ps1" -OutFile get.ps1
+   Invoke-WebRequest "$r/SHA256SUMS.txt" -OutFile SHA256SUMS.txt
+   Select-String -Path SHA256SUMS.txt -Pattern 'get\.ps1'   # expected SHA-256
+   (Get-FileHash get.ps1 -Algorithm SHA256).Hash            # must be the same
+   gh attestation verify get.ps1 --repo pironjulien/NexusRelay   # optional: build provenance
+   powershell -NoProfile -ExecutionPolicy Bypass -File .\get.ps1
    ```
 
-   It downloads the latest release for your processor (`NexusRelay-win-x64.zip` or `NexusRelay-win-arm64.zip`),
+   `get.ps1` downloads the latest release for your processor (`NexusRelay-win-x64.zip` or `NexusRelay-win-arm64.zip`),
    checks it against the release's `SHA256SUMS.txt`, installs it into `%LOCALAPPDATA%\NexusRelay`, creates a local
    token (user variable `NEXUS_MCP_TOKEN`), starts the background daemon (scheduled task "Nexus Relay"), installs the
    Antigravity plugin and sidecar, and declares the server to Claude Code and Codex (the token itself is never written
-   in their files). Run it again to update.
+   in their files). Run it again to update; the daemon also updates itself (see Updates).
 2. **Restart Claude Code and Codex** (quit them completely). In the Codex app, once: *Add a project*, name
    "Nexus Relay", folder `%USERPROFILE%\.nexus\relay\codex-projet`.
 3. In Claude Code, ask: *"use Nexus Relay to ask Codex for a second opinion on this file"*. Check both directions with
@@ -89,8 +97,9 @@ gh attestation verify NexusRelay-win-x64.zip --repo pironjulien/NexusRelay
 
 Each release also carries `nexus-relay-win-x64.mcpb` and `nexus-relay-win-arm64.mcpb`, listed in the
 [official MCP registry](https://registry.modelcontextprotocol.io/) (`io.github.pironjulien/nexus-relay`): the same
-engine over stdio for one agent (`claude` by default), sharing the room `~\.nexus\relay` with the daemon. The one-line
-installer remains the complete setup: background daemon, Antigravity plugin and sidecar, edit guards, token and updates.
+engine over stdio for one agent (`claude` by default), sharing the room `~\.nexus\relay` with the daemon. The installer
+(`get.ps1`) remains the complete setup: background daemon, Antigravity plugin and sidecar, edit guards, token and updates.
+
 ## Manual install
 
 1. **Settings** (optional file, outside the repository) — `~\.nexus\nexus-relay\settings.json`:
@@ -226,7 +235,7 @@ restarts on it. `GET /api/update` returns the state, also written to `~\.nexus\s
 ```
 
 `state` is `idle`, `updating`, `done` or `failed` (the previous version stays in place and `message` says why). Only an
-install made by the one-line installer (`%LOCALAPPDATA%\NexusRelay\app`) updates itself; a git checkout answers
+install made by `get.ps1` (`%LOCALAPPDATA%\NexusRelay\app`) updates itself; a git checkout answers
 `409`. Running `get.ps1` again also updates.
 
 ## Safeguards

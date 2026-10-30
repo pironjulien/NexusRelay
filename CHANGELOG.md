@@ -6,6 +6,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.10.1] - 2026-10-30
+
+### Changed
+- Install instructions follow the common Nexus method: the NexusSystem app of the Microsoft Store first, otherwise the
+  release files (`get.ps1`, checked against `SHA256SUMS.txt` and its attestation) run with `-File`. No more
+  `irm | iex`: running downloaded code in memory is flagged by Microsoft Defender. A test forbids these forms in the
+  repository.
+
 ## [1.10.0] - 2026-10-30
 
 ### Changed
@@ -355,7 +363,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - English tool descriptions with titles and MCP annotations; `reply` accepts `done`/`refused`/`failed` and
   `agree`/`disagree`.
 
-[Unreleased]: https://github.com/pironjulien/NexusRelay/compare/v1.10.0...HEAD
+[Unreleased]: https://github.com/pironjulien/NexusRelay/compare/v1.10.1...HEAD
+[1.10.1]: https://github.com/pironjulien/NexusRelay/compare/v1.10.0...v1.10.1
 [1.10.0]: https://github.com/pironjulien/NexusRelay/compare/v1.9.0...v1.10.0
 [1.8.3]: https://github.com/pironjulien/NexusRelay/releases/tag/v1.8.3
 [1.8.2]: https://github.com/pironjulien/NexusRelay/releases/tag/v1.8.2

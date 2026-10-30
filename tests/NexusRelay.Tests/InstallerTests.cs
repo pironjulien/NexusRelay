@@ -116,6 +116,19 @@ public sealed class InstallerTests : IDisposable
     }
 
     [Fact]
+    public void Downloaded_code_is_never_run_in_memory()
+    {
+        // Microsoft Defender flags these forms (Trojan:Win32/Commando.A!ml, 30/10): installers run files with -File.
+        var forbidden = new Regex(@"\birm\b[^\n]*\|\s*iex\b|\|\s*Invoke-Expression|\[scriptblock\]::Create|-EncodedCommand|\biex\s*\(", RegexOptions.IgnoreCase);
+        foreach (string file in Native.Git(Repo, "ls-files").Split('\n', StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (file is "CHANGELOG.md" || file.StartsWith("tests/", StringComparison.Ordinal) || !File.Exists(Path.Combine(Repo, file))
+                || !(file.EndsWith(".ps1") || file.EndsWith(".md") || file.EndsWith(".yml") || file.EndsWith(".cs") || file.EndsWith(".json"))) continue;
+            Assert.False(forbidden.IsMatch(File.ReadAllText(Path.Combine(Repo, file))), file);
+        }
+    }
+
+    [Fact]
     public void No_internal_antigravity_api_no_shell_and_local_port_only()
     {
         foreach (string path in Directory.EnumerateFiles(Path.Combine(Repo, "native"), "*.cs").Append(Path.Combine(Repo, "install.ps1")))
