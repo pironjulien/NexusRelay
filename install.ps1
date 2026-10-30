@@ -239,7 +239,12 @@ $spec = [ordered]@{ port = $port; python = $daemonExe; args = @($daemonArgs); en
 $specChanged = Write-IfChanged (Join-Path $HOME '.nexus\daemons\specs\nexus-relay.json') ($spec | ConvertTo-Json -Depth 5)
 # Hooks follow this setting and resolve their native executable through the spec. Publish the spec first: during
 # the short transition old Python hooks remain valid, whereas selecting native against a Python spec would fail.
-[IO.File]::WriteAllText($runtimeSettingsPath, ($runtimeSettings | ConvertTo-Json -Depth 10), [Text.UTF8Encoding]::new($false))
+# Re-read first: host and token_file may have been written to the same file since it was read above.
+$currentSettings = if (Test-Path $runtimeSettingsPath) { Get-Content -LiteralPath $runtimeSettingsPath -Raw | ConvertFrom-RelayJson } else { [pscustomobject]@{} }
+foreach ($key in @('runtime', 'installed_source', 'native_root')) {
+    if ($runtimeSettings.PSObject.Properties[$key]) { $currentSettings | Add-Member -NotePropertyName $key -NotePropertyValue $runtimeSettings.$key -Force }
+}
+[IO.File]::WriteAllText($runtimeSettingsPath, ($currentSettings | ConvertTo-Json -Depth 10), [Text.UTF8Encoding]::new($false))
 # Nouveau code : demande de relance au démon, jamais d'arrêt forcé. Il ne se relance que si son code a changé, une fois
 # aucun appel en cours, et le superviseur le relance. Vu le 20/10 : l'arrêt forcé ici coupait les wait_reply de 600 s
 # à chaque installation d'une autre session (ECONNRESET, puis « server not connected »).

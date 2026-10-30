@@ -42,6 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A Codex delivery intent is persisted before Enter; an interruption there becomes uncertain and is never replayed.
 - NexusKeypad shared quota uses the model family actually selected; an exhausted unused family no longer blocks Gemini.
 - ISO date strings in settings stay strings under PowerShell 7.5.
+- The installer no longer drops the `host` and `token_file` settings it has just written when it records the runtime.
 - From an MSIX-installed Codex, AppData artifacts may be redirected into its package cache: the installer now
   declares their real physical path.
 
