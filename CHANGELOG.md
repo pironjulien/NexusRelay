@@ -9,12 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.10.2] - 2026-10-30
 
 ### Fixed
+- Card survey tests wait for the fixture document and its event handlers. Chrome can expose its page target while the
+  initial empty document still reports `readyState=complete`, which intermittently failed before the draft was filled.
 - One token for every Nexus daemon (common rule): the installer uses `NEXUS_MCP_TOKEN_FILE` (or the `token_file`
   setting), otherwise `%USERPROFILE%\.nexus\mcp-token.txt`; an existing token is reused, never regenerated, and a missing
-  one is created by exclusive creation, so another Nexus installer run before or at the same time ends with the same
-  token. The user variable `NEXUS_MCP_TOKEN` is aligned on that file and the daemon reads it. Before, a fresh install
+  one is initialized under an exclusive file handle, so another Nexus installer run before or at the same time ends
+  with the same token. The user variable `NEXUS_MCP_TOKEN` is aligned on that file and the daemon reads it. Before, a fresh install
   created a relay-only `~\.nexus\nexus-relay\token.txt`, and the daemons of other products answered 401 with the
   token of the variable; that older token is carried over into the shared file when it does not exist yet.
+- Concurrent token initialization keeps one exclusive handle through reading and writing. A second installer can no
+  longer delete a token that another installer has just created after the first existence check.
+
+### Removed
+- The obsolete `python` alias in the daemon supervisor spec; native supervisors read `exe` directly.
 
 ## [1.10.1] - 2026-10-30
 

@@ -225,7 +225,14 @@ public sealed class ContractTests : IDisposable
             }
             Assert.NotNull(url);
             using var cdp = new CdpPage(url!);
-            while (cdp.Eval("document.readyState")?.ToString() != "complete") Thread.Sleep(20);
+            // The target can appear in /json/list before its first navigation commits. Its initial empty document
+            // already reports readyState=complete, so wait for the actual fixture and its handlers, not that state alone.
+            until = DateTime.UtcNow.AddSeconds(20);
+            while (!AppTransport.Truth(cdp.Eval("document.readyState === 'complete' && !!document.getElementById('draft') && Array.isArray(window.__events)")))
+            {
+                Assert.True(DateTime.UtcNow < until, "Chrome did not load the card survey fixture within 20 seconds");
+                Thread.Sleep(20);
+            }
             cdp.Eval("window.__scenario=" + AppTransport.Quote(scenario));
             if (scenario == "draft") cdp.Eval("document.getElementById('draft').value='Synthetic unsent draft'");
             if (scenario == "running") cdp.Eval("(()=>{const b=document.createElement('button');b.setAttribute('aria-label','Stop execution');document.body.append(b)})()");

@@ -113,8 +113,9 @@ engine over stdio for one agent (`claude` by default), sharing the room `~\.nexu
    }
    ```
 
-   `token_file` is needed (or pass `-TokenFile`, set `NEXUS_MCP_TOKEN_FILE`, or let `install.ps1 -Register` create a
-   local one).
+   For an existing workstation, set `token_file`, pass `-TokenFile` or set `NEXUS_MCP_TOKEN_FILE`. Public installation
+   with `install.ps1 -Register` otherwise uses `%USERPROFILE%\.nexus\mcp-token.txt`, shared by Relay, Android and Browser.
+   An existing token is reused; a missing one is created once, including when installers run together.
 
 2. **Install** — builds the engine (.NET 10 SDK; in a release folder, takes its self-contained `bin\`), registers the
    daemon, installs the Antigravity plugin, sidecar and edit guards, and runs the tests:
