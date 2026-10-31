@@ -635,14 +635,21 @@ public static partial class Reservations
         }
     }
 
-    /// <summary>A file outside any Git work tree (memory notes, scratch files) has no commit to wait for: the end of the
-    /// conversation's turn is its only "done" signal.</summary>
-    private static bool OutsideGit(string path)
+    /// <summary>A file outside any Git work tree or ignored by it (memory notes, scratch files) has no commit to wait
+    /// for: the end of the conversation's turn is its only "done" signal.</summary>
+    private static bool NeverCommitted(string path)
     {
         if (path.IndexOfAny(['*', '?']) >= 0 || Directory.Exists(path))
             return false;
         var directory = ExistingDirectory(path);
-        return directory is not null && Git(directory, "rev-parse", "--is-inside-work-tree") is null;
+        if (directory is null)
+            return false;
+        if (Git(directory, "rev-parse", "--is-inside-work-tree") is null)
+            return true;
+        // check-ignore rejects literal pathspecs; status reports an ignored path (or its ignored folder) as "!! ".
+        // Relative to its folder: through a junction (Claude's memory) the absolute path is "outside repository".
+        var status = Git(directory, "status", "--porcelain=v1", "--ignored", "--", Path.GetRelativePath(directory, path));
+        return status is not null && status.StartsWith("!! ", StringComparison.Ordinal);
     }
 
     private static bool Unchanged(string path, bool absentAtStart)
@@ -738,9 +745,10 @@ public static partial class Reservations
                     .Where(s => s.Length > 0)
                     .ToList() ?? [];
 
-                bool clean = pending.Count == 0 &&
-                    !(record["pending_unknown"]?.GetValue<bool>() ?? false) &&
-                    recPaths.All(p => Unchanged(p, absentSet.Contains(Norm(p))) || (sessionEnded && OutsideGit(p)));
+                bool idle = pending.Count == 0 && !(record["pending_unknown"]?.GetValue<bool>() ?? false);
+                // At the end of the turn, files no commit will ever cover leave the reservation; the others wait for it.
+                var waiting = recPaths.Where(p => !(sessionEnded && idle && NeverCommitted(p))).ToList();
+                bool clean = idle && waiting.All(p => Unchanged(p, absentSet.Contains(Norm(p))));
 
                 var id = record["id"]!.GetValue<string>();
                 if (clean)
@@ -748,6 +756,8 @@ public static partial class Reservations
                     record["released"] = Iso(Now());
                     ended.Add(id);
                 }
+                else if (waiting.Count < recPaths.Count)
+                    record["paths"] = new JsonArray(waiting.Select(p => (JsonNode?)p).ToArray());
                 RelayBox.WriteState(Path.Join(Folder(box), $"{id}.json"), record);
             }
         }

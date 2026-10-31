@@ -2,7 +2,7 @@
   "manifest_version": "0.4",
   "name": "nexus-relay",
   "display_name": "Nexus Relay",
-  "version": "1.10.9",
+  "version": "1.10.10",
   "description": "Shared room for Claude, Codex and Antigravity on one Windows PC; each agent woken in its own app.",
   "long_description": "Topic rooms, multi-agent review and delegated tasks between Claude, Codex and Antigravity on the same Windows PC, served by a native .NET engine (no Python, no runtime to install). This bundle runs the relay over stdio for one agent; the complete setup (shared background daemon, Antigravity sidecar, edit guards) is the one-line installer of the repository or NexusSystem.",
   "author": {

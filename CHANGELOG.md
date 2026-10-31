@@ -6,6 +6,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.10.10] - 2026-10-31
+
+### Fixed
+- Edit guard: a file ignored by its Git work tree is released at the end of the turn too, like a file outside Git.
+  Claude's memory folder is a junction into an ignored folder of a repository, so 1.10.9 still kept its notes
+  reserved for 60 minutes. A reservation mixing such files with tracked ones keeps only the tracked files.
+
 ## [1.10.9] - 2026-10-31
 
 ### Fixed

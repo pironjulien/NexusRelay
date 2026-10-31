@@ -73,6 +73,26 @@ public sealed class CliTests : IDisposable
     }
 
     [Fact]
+    public void Edit_guard_releases_a_git_ignored_file_at_the_end_of_the_turn_but_keeps_a_tracked_change()
+    {
+        Native.Git(iso.Root, "init", "-q");
+        File.WriteAllText(Path.Join(iso.Root, ".gitignore"), "memoire/\n");
+        string ignored = Path.Join(iso.Root, "memoire", "MEMORY.md"), tracked = Path.Join(iso.Root, "suivi.md");
+        Directory.CreateDirectory(Path.GetDirectoryName(ignored)!);
+        foreach (var (file, id) in new[] { (ignored, "appel-3"), (tracked, "appel-4") })
+        {
+            var edit = new JsonObject { ["session_id"] = "root-c", ["tool_use_id"] = id, ["tool_name"] = "Write", ["tool_input"] = new JsonObject { ["file_path"] = file } };
+            Assert.Equal("", Native.Run(["--edit-guard", "claude"], edit.ToJsonString()).Out);
+            File.WriteAllText(file, "contenu");
+            Native.Run(["--edit-guard", "claude", "--finish-tool"], edit.ToJsonString());
+        }
+        var box = iso.Box();
+        Native.Run(["--edit-guard", "claude", "--finish-session"], new JsonObject { ["session_id"] = "root-c" }.ToJsonString());
+        var held = Reservations.Active(box);
+        Assert.Equal([tracked], held.SelectMany(r => (r["paths"] as JsonArray)!.Select(p => p!.ToString())));  // waits for its commit
+    }
+
+    [Fact]
     public void Commit_guard_allows_siblings_and_rejects_other_chats()
     {
         string repository = Path.Join(iso.Root, "repo");
