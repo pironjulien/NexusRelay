@@ -241,6 +241,14 @@ $targetFingerprint = "sha256:$((Get-FileHash -LiteralPath ([IO.Path]::ChangeExte
 $null = Request-RelayRestart -RequestPath $daemonRequest -Owner $daemonOwner -Kind $(if ($forced) { 'force' } else { 'code' }) -Fingerprint $targetFingerprint
 # Pareil pour le sidecar d'Antigravity : il sort entre deux livraisons si son code a changé, Antigravity le relance.
 $null = Request-RelayRestart -RequestPath (Join-Path $mailbox 'sidecar-restart.request') -Owner $sidecarOwner -Kind $(if ($specChanged) { 'force' } else { 'code' }) -Fingerprint $targetFingerprint
+# Anciennes versions : retirées dès qu'aucun processus n'en tourne (la courante est gardée ; les autres, en service
+# jusqu'à leur relance, partent à une installation suivante).
+$running = @(Get-CimInstance Win32_Process -Filter "Name='NexusRelay.exe'" | ForEach-Object { $_.ExecutablePath } | Where-Object { $_ })
+foreach ($old in Get-ChildItem -LiteralPath $versions -Directory -ErrorAction SilentlyContinue) {
+    if ($old.FullName -eq (Resolve-RelayPath -Path $nativeOut)) { continue }
+    if ($running | Where-Object { $_.StartsWith($old.FullName + '\', [StringComparison]::OrdinalIgnoreCase) }) { continue }
+    Remove-Item -LiteralPath $old.FullName -Recurse -Force -ErrorAction SilentlyContinue
+}
 # Sans superviseur des démons Nexus : tâche « Nexus Relay » à l'ouverture de session, qui lance le petit superviseur du
 # relais (NexusRelay.exe --daemon : lit la spec ci-dessus, relance le démon quand il s'arrête).
 if (-not (Get-ScheduledTask -TaskName 'Nexus MCP Daemons' -ErrorAction SilentlyContinue)) {

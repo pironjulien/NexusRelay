@@ -92,6 +92,9 @@ public sealed class ProtocolTests : IDisposable
                 Assert.Equal(RelayPaths.Version, state["version"]?.ToString());
                 Assert.Equal("native", state["runtime"]?.ToString());
             }
+            // No standalone SSE stream: GET /mcp is a clean 405, not a dropped connection.
+            using var get = http.GetAsync($"http://127.0.0.1:{daemon.Port}/mcp?agent=claude", TestContext.Current.CancellationToken).GetAwaiter().GetResult();
+            Assert.Equal(HttpStatusCode.MethodNotAllowed, get.StatusCode);
         }
         var discover = daemon.Rpc(Native.Rpc("server/discover"))!["result"]!;
         Assert.Equal("2026-07-28", discover["protocolVersion"]?.ToString());

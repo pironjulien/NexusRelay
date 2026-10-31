@@ -1811,6 +1811,13 @@ public sealed partial class McpServer
                     return;
                 }
 
+                // Streamable HTTP: no standalone SSE stream here, so GET (and any other non-POST) is 405, not a parse error.
+                if (method != "POST")
+                {
+                    await WriteHttpResponseAsync(stream, 405, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("POST required"));
+                    return;
+                }
+
                 string? agent = ParseQueryParam(query, "agent");
                 if (string.IsNullOrEmpty(agent) && headers.TryGetValue("x-nexus-agent", out var hAgent))
                     agent = hAgent;
@@ -1876,6 +1883,7 @@ public sealed partial class McpServer
             400 => "Bad Request",
             401 => "Unauthorized",
             404 => "Not Found",
+            405 => "Method Not Allowed",
             409 => "Conflict",
             503 => "Service Unavailable",
             _ => "OK",

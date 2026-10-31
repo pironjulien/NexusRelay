@@ -6,6 +6,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.10.12] - 2026-10-31
+
+### Fixed
+- `GET /mcp` (and any non-POST request) answers 405 Method Not Allowed, as Streamable HTTP expects from a server
+  without a standalone SSE stream, instead of dropping the connection on an empty body.
+- The installer removes older engine builds from `%LOCALAPPDATA%\NexusRelay\versions` once no process runs them
+  (12 builds, about 400 MB, had piled up); the current one is kept.
+
 ## [1.10.11] - 2026-10-31
 
 ### Fixed
