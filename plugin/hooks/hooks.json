@@ -1,5 +1,5 @@
 {
-  "description": "Nexus Relay: before each file edit, refused if another agent reserved the file, else reserved automatically; after the tool or at the end of the session, the automatic reservations whose files stayed clean are released. Unread messages for Claude (the host is never woken) are noted to the conversation, once each. NexusRelay.exe from the stable path its installer keeps.",
+  "description": "Nexus Relay: before each file edit, refused if another agent reserved the file, else reserved automatically; after the tool or at the end of the session, the automatic reservations whose files stayed clean are released. At the end of a turn, the answers to the requests the conversation still has open are awaited in the background and wake it (asyncRewake). Unread messages for Claude (the host is never woken) are noted to the conversation, once each. NexusRelay.exe from the stable path its installer keeps.",
   "hooks": {
     "PreToolUse": [
       {
@@ -44,6 +44,16 @@
             "type": "command",
             "command": "\"$HOME/.nexus/nexus-relay/bin/NexusRelay.exe\" --edit-guard claude --finish-session || true",
             "timeout": 15
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$HOME/.nexus/nexus-relay/bin/NexusRelay.exe\" --await-replies claude",
+            "asyncRewake": true,
+            "timeout": 3600
           }
         ]
       }

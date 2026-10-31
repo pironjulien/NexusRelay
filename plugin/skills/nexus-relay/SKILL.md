@@ -17,12 +17,18 @@ description: "Talk directly with Antigravity (Gemini) and Codex without going th
   `relay` to talk about the relay itself. Self-contained message: context, question, files or commits. Nothing else to
   do: the relay wakes the recipient (Codex through its app, Antigravity through its sidecar), without taking the user's
   mouse, keyboard or clipboard.
-- `wait_reply(id)`: waits for the answer (600 s max); call it again until the answer arrives, before ending your
-  turn: you are the host, nobody will wake you later. While you wait, the answer is reserved for you. `track(id)` says
+- `wait_reply(id)`: waits for the answer (600 s max) when you need it within the turn. Otherwise end your turn: the
+  relay's Stop hook waits in the background for the answers to the requests this conversation still has open and
+  wakes you with them (up to 55 min; past it, you are woken with what is still missing). While you wait with
+  `wait_reply`, the answer is reserved for you. `track(id)` says
   where the message stands (delivered, wake-ups and their reasons, read, in progress with the peer's note, answered with
   its outcome: done, refused, failed; "late" once `send(…, due_min=N)` is exceeded without an answer).
 - Both peers at once: `send(to=["codex", "antigravity"], …)` returns `ids`; `wait_reply(id=ids)` waits for all the
   answers ("success" once all arrived, otherwise "partial" with each one's result).
+- Reviews: `send(…, repo=<folder>, round=N)`. HEAD and the attached and cited files are noted when sent: an answer
+  carries `stale` when they changed before it (review of an outdated state), and `quality: "citation introuvable"`
+  with `bad_citations` when a cited file:line does not exist. `summary(topic, round=N)` shows the points of round N
+  that are new and those already raised in an earlier round.
 - `cancel(id)` withdraws a request the peer has not taken yet (no more wakes; refused once read, in progress or
   answered).
 - `inbox()`, `read(id)`, `reply(id, text)`: received messages. `info=True`: for information, nobody is woken.
@@ -52,7 +58,7 @@ You are always in the exchange; the user picks the others. Each round:
    (`send(to=["codex", "antigravity"], …)`), and start your own review in a fresh agent (without the history: authors miss their own mistakes). Try
    each flaw for real, and what would break normal use; running the tests is not reviewing. Tell the peers: "review
    without changing anything, return file:line, breaking scenario, severity"; only you fix.
-2. `wait_reply`, then synthesis: duplicates merged, false alarms dismissed with a fact.
+2. `wait_reply` (or end your turn: the answers wake you), then synthesis: duplicates merged, false alarms dismissed with a fact.
 3. You fix everything, then run the same round again.
 
 End: a round where nobody finds anything important and everyone agrees; 6 rounds at most: at the 6th, you have the
@@ -66,7 +72,8 @@ user writes during the exchange: stop and answer them.
 
 ## What the relay does not do
 
-- It does not wake you: you are the host and the only one who opens an exchange; wait for answers with `wait_reply`.
+- It does not wake you for a peer's new request: you are the host and the only one who opens an exchange. Answers to
+  your own requests wake you after your turn ends (Stop hook), or `wait_reply` gets them within the turn.
   (Default host; if `status()` reports another `host`, a setting for a PC without Claude at the center, that agent
   opens the exchanges and you only answer with `reply`.)
 - It only archives its own conversations: those of the "Nexus Relay" project in Codex and Antigravity.

@@ -632,7 +632,7 @@ public static partial class Reservations
         return string.IsNullOrEmpty(directory) ? null : directory;
     }
 
-    private static string? Git(string directory, params string[] args)
+    internal static string? Git(string directory, params string[] args)
     {
         try
         {

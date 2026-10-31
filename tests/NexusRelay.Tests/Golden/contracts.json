@@ -76,6 +76,30 @@
       ],
       "default": null,
       "title": "Review"
+     },
+     "repo": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Repo"
+     },
+     "round": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Round"
      }
     },
     "required": [
@@ -191,6 +215,22 @@
        "cancelled": {
         "title": "Cancelled",
         "type": "string"
+       },
+       "round": {
+        "title": "Round",
+        "type": "integer"
+       },
+       "bad_citations": {
+        "items": {
+         "type": "string"
+        },
+        "title": "Bad Citations",
+        "type": "array"
+       },
+       "stale": {
+        "additionalProperties": true,
+        "title": "Stale",
+        "type": "object"
        }
       },
       "required": [
@@ -349,6 +389,22 @@
        "cancelled": {
         "title": "Cancelled",
         "type": "string"
+       },
+       "round": {
+        "title": "Round",
+        "type": "integer"
+       },
+       "bad_citations": {
+        "items": {
+         "type": "string"
+        },
+        "title": "Bad Citations",
+        "type": "array"
+       },
+       "stale": {
+        "additionalProperties": true,
+        "title": "Stale",
+        "type": "object"
        }
       },
       "required": [
@@ -617,6 +673,22 @@
        "cancelled": {
         "title": "Cancelled",
         "type": "string"
+       },
+       "round": {
+        "title": "Round",
+        "type": "integer"
+       },
+       "bad_citations": {
+        "items": {
+         "type": "string"
+        },
+        "title": "Bad Citations",
+        "type": "array"
+       },
+       "stale": {
+        "additionalProperties": true,
+        "title": "Stale",
+        "type": "object"
        }
       },
       "required": [
@@ -714,6 +786,11 @@
      "tool_errors": {
       "additionalProperties": true,
       "title": "Tool Errors",
+      "type": "object"
+     },
+     "stale": {
+      "additionalProperties": true,
+      "title": "Stale",
       "type": "object"
      }
     },
@@ -880,6 +957,22 @@
        "cancelled": {
         "title": "Cancelled",
         "type": "string"
+       },
+       "round": {
+        "title": "Round",
+        "type": "integer"
+       },
+       "bad_citations": {
+        "items": {
+         "type": "string"
+        },
+        "title": "Bad Citations",
+        "type": "array"
+       },
+       "stale": {
+        "additionalProperties": true,
+        "title": "Stale",
+        "type": "object"
        }
       },
       "required": [
@@ -1211,6 +1304,22 @@
        "cancelled": {
         "title": "Cancelled",
         "type": "string"
+       },
+       "round": {
+        "title": "Round",
+        "type": "integer"
+       },
+       "bad_citations": {
+        "items": {
+         "type": "string"
+        },
+        "title": "Bad Citations",
+        "type": "array"
+       },
+       "stale": {
+        "additionalProperties": true,
+        "title": "Stale",
+        "type": "object"
        }
       },
       "required": [
@@ -1321,6 +1430,18 @@
      "topic": {
       "title": "Topic",
       "type": "string"
+     },
+     "round": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Round"
      }
     },
     "required": [
@@ -1516,6 +1637,22 @@
        "cancelled": {
         "title": "Cancelled",
         "type": "string"
+       },
+       "round": {
+        "title": "Round",
+        "type": "integer"
+       },
+       "bad_citations": {
+        "items": {
+         "type": "string"
+        },
+        "title": "Bad Citations",
+        "type": "array"
+       },
+       "stale": {
+        "additionalProperties": true,
+        "title": "Stale",
+        "type": "object"
        }
       },
       "required": [
@@ -1606,6 +1743,11 @@
      "note": {
       "title": "Note",
       "type": "string"
+     },
+     "round": {
+      "additionalProperties": true,
+      "title": "Round",
+      "type": "object"
      }
     },
     "required": [
@@ -1757,6 +1899,22 @@
        "cancelled": {
         "title": "Cancelled",
         "type": "string"
+       },
+       "round": {
+        "title": "Round",
+        "type": "integer"
+       },
+       "bad_citations": {
+        "items": {
+         "type": "string"
+        },
+        "title": "Bad Citations",
+        "type": "array"
+       },
+       "stale": {
+        "additionalProperties": true,
+        "title": "Stale",
+        "type": "object"
        }
       },
       "required": [
@@ -1960,8 +2118,8 @@
   }
  },
  "ui": {
-  "snapshot": "(scope) => {\n  const vis = e => e.getClientRects().length > 0 && getComputedStyle(e).visibility !== 'hidden';\n  const VOLATILE = /^data-(state|selected|tooltip-id|radix|base-ui|disabled|highlighted|orientation|side|align|open)/;\n  const RANDOM = /^:r|[0-9a-f]{8}-[0-9a-f]{4}|^[0-9a-f]{16,}$/i;\n  const root = scope ? [...document.querySelectorAll(scope)].filter(vis) : [document];\n  const IMPLICIT = {BUTTON: 'button', A: 'link', INPUT: 'textbox', TEXTAREA: 'textbox', SELECT: 'combobox'};\n  const TEXT_ROLES = ['button', 'link', 'menuitem', 'menuitemcheckbox', 'menuitemradio', 'tab', 'option', 'treeitem',\n    'checkbox', 'radio', 'switch'];\n  // routes internes seulement (ids de conversation masqués) ; tout le reste : « externe »\n  const route = h => /^\\/(?!\\/)/.test(h) ? h.split(/[?#]/)[0].replace(/\\/c\\/[^/]+/, '/c/*').slice(0, 60)\n    : (h.startsWith('#') ? '#' : 'externe');\n  const region = e => {\n    for (let p = e.parentElement; p; p = p.parentElement) {\n      const r = p.getAttribute('role'), t = p.tagName;\n      if (['menu', 'listbox', 'dialog', 'navigation', 'tablist', 'menubar'].includes(r) || ['NAV', 'ASIDE', 'HEADER', 'MAIN', 'FOOTER'].includes(t))\n        return (r || t.toLowerCase()) + (p.getAttribute('aria-label') ? ':' + p.getAttribute('aria-label') : '');\n    }\n    return '';\n  };\n  const out = [], seen = new Set();\n  for (const base of root) for (const e of base.querySelectorAll(\n      'button, a[href], input, textarea, select, [role], [aria-label], [data-testid], [contenteditable=true], [aria-haspopup]')) {\n    if (seen.has(e) || !vis(e) || e.closest('[data-ending-style], [data-closed]')) continue;\n    seen.add(e);\n    const role = e.getAttribute('role') || IMPLICIT[e.tagName] || (e.isContentEditable ? 'textbox' : '');\n    const aria = (e.getAttribute('aria-label') || e.getAttribute('title') || e.getAttribute('placeholder') || '').trim();\n    const field = ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.tagName) || e.isContentEditable;\n    const text = TEXT_ROLES.includes(role) && !field ? (e.innerText || '').trim().split('\\n')[0].trim().slice(0, 80) : '';\n    if (!role && !aria && !e.getAttribute('data-testid')) continue;\n    if (['presentation', 'none', 'group', 'generic', 'img', 'separator'].includes(role) && !aria) continue;\n    const data = {};\n    for (const a of e.attributes) if (a.name.startsWith('data-') && !VOLATILE.test(a.name))\n      data[a.name] = RANDOM.test(a.value) || /title|name|label/.test(a.name) ? '*' : a.value.slice(0, 60);  // titres de l'utilisateur : jamais stockés\n    const item = {role, aria, text: aria && text === aria ? '' : text, data, region: region(e)};\n    if (e.getAttribute('aria-haspopup')) item.popup = e.getAttribute('aria-haspopup');\n    if (e.getAttribute('aria-current') || e.getAttribute('aria-selected') === 'true') item.current = true;\n    if (e.getAttribute('href')) item.href = route(e.getAttribute('href'));\n    out.push(item);\n    if (out.length >= 1500) break;\n  }\n  return out;\n}",
-  "danger": "envoy|send|archiv|supprim|delete|remove|retir|déconnect|deconnect|log ?out|sign ?out|quitter|quit|exit|acheter|buy|upgrade|abonn|install|réinitial|reset|feedback|commentaire|signaler|report|stop|arrêt|changer de compte|switch account|ajouter un compte|add account|nouvel|nouveau|nouvelle|new |fermer|close|dupliquer|duplicate|clear|effac|vider|purg|trash|corbeille|run\\b|lancer|exécut|execut|start|play|revoke|révoqu|disconnect|import|export|download|télécharg",
+  "snapshot": "(scope) => {\n  const vis = e => e.getClientRects().length > 0 && getComputedStyle(e).visibility !== 'hidden';\n  const VOLATILE = /^data-(state|selected|tooltip-id|radix|base-ui|disabled|highlighted|orientation|side|align|open)/;\n  const RANDOM = /^:r|[0-9a-f]{8}-[0-9a-f]{4}|^[0-9a-f]{16,}$/i;\n  const root = scope ? [...document.querySelectorAll(scope)].filter(vis) : [document];\n  const IMPLICIT = {BUTTON: 'button', A: 'link', INPUT: 'textbox', TEXTAREA: 'textbox', SELECT: 'combobox'};\n  const TEXT_ROLES = ['button', 'link', 'menuitem', 'menuitemcheckbox', 'menuitemradio', 'tab', 'option', 'treeitem',\n    'checkbox', 'radio', 'switch'];\n  // routes internes seulement (ids de conversation masqu\u00e9s) ; tout le reste : \u00ab externe \u00bb\n  const route = h => /^\\/(?!\\/)/.test(h) ? h.split(/[?#]/)[0].replace(/\\/c\\/[^/]+/, '/c/*').slice(0, 60)\n    : (h.startsWith('#') ? '#' : 'externe');\n  const region = e => {\n    for (let p = e.parentElement; p; p = p.parentElement) {\n      const r = p.getAttribute('role'), t = p.tagName;\n      if (['menu', 'listbox', 'dialog', 'navigation', 'tablist', 'menubar'].includes(r) || ['NAV', 'ASIDE', 'HEADER', 'MAIN', 'FOOTER'].includes(t))\n        return (r || t.toLowerCase()) + (p.getAttribute('aria-label') ? ':' + p.getAttribute('aria-label') : '');\n    }\n    return '';\n  };\n  const out = [], seen = new Set();\n  for (const base of root) for (const e of base.querySelectorAll(\n      'button, a[href], input, textarea, select, [role], [aria-label], [data-testid], [contenteditable=true], [aria-haspopup]')) {\n    if (seen.has(e) || !vis(e) || e.closest('[data-ending-style], [data-closed]')) continue;\n    seen.add(e);\n    const role = e.getAttribute('role') || IMPLICIT[e.tagName] || (e.isContentEditable ? 'textbox' : '');\n    const aria = (e.getAttribute('aria-label') || e.getAttribute('title') || e.getAttribute('placeholder') || '').trim();\n    const field = ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.tagName) || e.isContentEditable;\n    const text = TEXT_ROLES.includes(role) && !field ? (e.innerText || '').trim().split('\\n')[0].trim().slice(0, 80) : '';\n    if (!role && !aria && !e.getAttribute('data-testid')) continue;\n    if (['presentation', 'none', 'group', 'generic', 'img', 'separator'].includes(role) && !aria) continue;\n    const data = {};\n    for (const a of e.attributes) if (a.name.startsWith('data-') && !VOLATILE.test(a.name))\n      data[a.name] = RANDOM.test(a.value) || /title|name|label/.test(a.name) ? '*' : a.value.slice(0, 60);  // titres de l'utilisateur : jamais stock\u00e9s\n    const item = {role, aria, text: aria && text === aria ? '' : text, data, region: region(e)};\n    if (e.getAttribute('aria-haspopup')) item.popup = e.getAttribute('aria-haspopup');\n    if (e.getAttribute('aria-current') || e.getAttribute('aria-selected') === 'true') item.current = true;\n    if (e.getAttribute('href')) item.href = route(e.getAttribute('href'));\n    out.push(item);\n    if (out.length >= 1500) break;\n  }\n  return out;\n}",
+  "danger": "envoy|send|archiv|supprim|delete|remove|retir|d\u00e9connect|deconnect|log ?out|sign ?out|quitter|quit|exit|acheter|buy|upgrade|abonn|install|r\u00e9initial|reset|feedback|commentaire|signaler|report|stop|arr\u00eat|changer de compte|switch account|ajouter un compte|add account|nouvel|nouveau|nouvelle|new |fermer|close|dupliquer|duplicate|clear|effac|vider|purg|trash|corbeille|run\\b|lancer|ex\u00e9cut|execut|start|play|revoke|r\u00e9voqu|disconnect|import|export|download|t\u00e9l\u00e9charg",
   "landmarks": {
    "codex": {
     "NEW_CHAT": {

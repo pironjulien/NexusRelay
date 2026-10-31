@@ -6,6 +6,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.11.0] - 2026-10-31
+
+### Added
+- Claude, the host, is woken instead of blocking on `wait_reply`: a Claude Code `Stop` hook run with `asyncRewake`
+  (`NexusRelay.exe --await-replies claude`) reads the requests the conversation sent from its transcript, waits in the
+  background for their answers and exits 2, so the desktop app wakes the conversation with them once its turn is over
+  (checked in the Claude desktop app: woken 11 minutes after the turn ended). It wakes once everything is answered or
+  closed, 10 minutes after a first answer when another is late, and after 55 minutes at most; a newer turn end of the
+  same conversation takes the wait over. An answer the conversation already saw (its `wait_reply`, `inbox`, `read`
+  or an earlier wake) wakes nobody; one listed by another conversation's inbox still wakes the one that asked. A
+  request closed without an answer, or still unanswered at the deadline, is reported once.
+- Reviews are checked against their files. `send` notes HEAD and the content hash of the attached and cited files
+  (`repo`, otherwise found from the absolute paths of the request); `track`, `wait_reply` and the answer report
+  `stale` when they changed before the answer. The file:line citations of a review answer are checked: a missing
+  file or a line past the end gives `quality: "citation introuvable"` with `bad_citations`.
+- Review rounds: `send(round=N)`, or « tour N » / « round N » at the head of a review; `summary(topic, round=N)`
+  lists the points of round N's answers, each new or already raised in an earlier round.
+
 ## [1.10.12] - 2026-10-31
 
 ### Fixed

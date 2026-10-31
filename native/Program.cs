@@ -37,6 +37,7 @@ public static class Program
 
         if (args.Contains("--sidecar", StringComparer.Ordinal)) return NativeSidecar.Run();
         if (args.Contains("--notice", StringComparer.Ordinal)) return NativeHooks.Notice();
+        if (args.Contains("--await-replies", StringComparer.Ordinal)) return HostRewake.Run(args);
         if (args.Contains("--staged", StringComparer.Ordinal) || args.Contains("--release-committed", StringComparer.Ordinal)) return NativeHooks.Commit(args);
 
         if (args.Contains("--inspect", StringComparer.Ordinal))

@@ -1,7 +1,7 @@
 [
   {
     "name": "send",
-    "description": "Post a message for another agent in the TOPIC's room; the recipient is woken automatically. Returns its id\n(for wait_reply). Several recipients (cross review): the same message to each, one id per recipient (ids);\nwait_reply(id=ids) waits for all the answers.\n\nArgs:\n    to: \"claude\", \"antigravity\" (agy) or \"codex\" (chatgpt); or a list, e.g. [\"codex\", \"antigravity\"].\n    text: self-contained, precise message (context, question, files or commits concerned).\n    topic: short topic (lowercase, digits, -), e.g. \"nexuswindows\"; one topic per project.\n    info: True = for information only, nobody is woken (closing note, final agreement).\n    due_min: optional deadline in minutes: past it without an answer, track reports \"late\".\n    files: attachments, absolute paths (images included: the recipient sees them through read); copied into the\n        room when sent.\n    review: review request: the answer must give file:line and severity (or \"nothing important\"), otherwise it\n        is sent back once to the peer. Omitted: inferred from the text (\"review\", \"relis\", \"relecture\"). A review\n        always goes to BOTH peers (independent opinions): a review sent to one of them is\n        also sent to the other, and the answer lists one id per peer (wait_reply(id=ids)).\n",
+    "description": "Post a message for another agent in the TOPIC's room; the recipient is woken automatically. Returns its id\n(for wait_reply). Several recipients (cross review): the same message to each, one id per recipient (ids);\nwait_reply(id=ids) waits for all the answers.\nClaude (host): instead of blocking on wait_reply, it may end its turn; its Stop hook wakes the conversation\nwith the answers when they arrive.\n\nArgs:\n    to: \"claude\", \"antigravity\" (agy) or \"codex\" (chatgpt); or a list, e.g. [\"codex\", \"antigravity\"].\n    text: self-contained, precise message (context, question, files or commits concerned).\n    topic: short topic (lowercase, digits, -), e.g. \"nexuswindows\"; one topic per project.\n    info: True = for information only, nobody is woken (closing note, final agreement).\n    due_min: optional deadline in minutes: past it without an answer, track reports \"late\".\n    files: attachments, absolute paths (images included: the recipient sees them through read); copied into the\n        room when sent.\n    review: review request: the answer must give file:line and severity (or \"nothing important\"), otherwise it\n        is sent back once to the peer. Omitted: inferred from the text (\"review\", \"relis\", \"relecture\"). A review\n        always goes to BOTH peers (independent opinions): a review sent to one of them is\n        also sent to the other, and the answer lists one id per peer (wait_reply(id=ids)).\n    repo: folder the request is about (Git root taken); omitted: found from the absolute paths of files and\n        citations. HEAD and the content of the attached and cited files are noted when sent: track and wait_reply\n        say whether they changed before the answer (stale), and the file:line citations of a review answer are\n        checked (quality \"citation introuvable\" when a file or line does not exist).\n    round: number of the review round (also read from \"tour N\" / \"round N\" at the head of a review);\n        summary(topic, round=N) then shows which points of round N are new and which were already raised.\n",
     "inputSchema": {
       "properties": {
         "to": {
@@ -77,6 +77,30 @@
           ],
           "default": null,
           "title": "Review"
+        },
+        "repo": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Repo"
+        },
+        "round": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Round"
         }
       },
       "required": [
@@ -210,6 +234,22 @@
             "cancelled": {
               "title": "Cancelled",
               "type": "string"
+            },
+            "round": {
+              "title": "Round",
+              "type": "integer"
+            },
+            "bad_citations": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Bad Citations",
+              "type": "array"
+            },
+            "stale": {
+              "additionalProperties": true,
+              "title": "Stale",
+              "type": "object"
             }
           },
           "required": [
@@ -377,6 +417,22 @@
             "cancelled": {
               "title": "Cancelled",
               "type": "string"
+            },
+            "round": {
+              "title": "Round",
+              "type": "integer"
+            },
+            "bad_citations": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Bad Citations",
+              "type": "array"
+            },
+            "stale": {
+              "additionalProperties": true,
+              "title": "Stale",
+              "type": "object"
             }
           },
           "required": [
@@ -553,7 +609,7 @@
   },
   {
     "name": "wait_reply",
-    "description": "Wait for the answer to a message you sent (600 s max) and return it; it is marked read. While you wait, the\nanswer is reserved for you: no other session is woken for it or sees it in its inbox.\nStatus \"restarting\": the relay is switching to new code; call again (the answer is kept for you). Returned\nwithout an answer (timeout, unavailable): the one that arrives later is attached (late_replies) to your next call,\nthen marked read. Status \"cancelled\": you cancelled the request.\nSeveral ids (send to a list): waits for all of them; status \"success\" once all answered, otherwise \"partial\"\n(or the common status); `replies` gives each one's result in order.\n\nArgs:\n    id: id returned by send, or the list of ids (send to several recipients).\n    timeout_s: maximum wait in seconds (1 to 600, default 300).\n",
+    "description": "Wait for the answer to a message you sent (600 s max) and return it; it is marked read. While you wait, the\nanswer is reserved for you: no other session is woken for it or sees it in its inbox.\nStatus \"restarting\": the relay is switching to new code; call again (the answer is kept for you). Returned\nwithout an answer (timeout, unavailable): the one that arrives later is attached (late_replies) to your next call,\nthen marked read. Status \"cancelled\": you cancelled the request.\nSeveral ids (send to a list): waits for all of them; status \"success\" once all answered, otherwise \"partial\"\n(or the common status); `replies` gives each one's result in order. stale: the request's files changed\nbefore the answer (it may be about an outdated state).\n\nArgs:\n    id: id returned by send, or the list of ids (send to several recipients).\n    timeout_s: maximum wait in seconds (1 to 600, default 300).\n",
     "inputSchema": {
       "properties": {
         "id": {
@@ -592,7 +648,7 @@
   },
   {
     "name": "track",
-    "description": "Follow a message: posted, delivered (Antigravity), wake attempts (Codex) and their reasons, read, answered.\n\nArgs:\n    id: message id.\n",
+    "description": "Follow a message: posted, delivered (Antigravity), wake attempts (Codex) and their reasons, read, answered.\nstale: the request's files (attached or cited) changed after it was sent, as of the answer (or of now while\nunanswered).\n\nArgs:\n    id: message id.\n",
     "inputSchema": {
       "properties": {
         "id": {
@@ -690,6 +746,22 @@
             "cancelled": {
               "title": "Cancelled",
               "type": "string"
+            },
+            "round": {
+              "title": "Round",
+              "type": "integer"
+            },
+            "bad_citations": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Bad Citations",
+              "type": "array"
+            },
+            "stale": {
+              "additionalProperties": true,
+              "title": "Stale",
+              "type": "object"
             }
           },
           "required": [
@@ -787,6 +859,11 @@
         "tool_errors": {
           "additionalProperties": true,
           "title": "Tool Errors",
+          "type": "object"
+        },
+        "stale": {
+          "additionalProperties": true,
+          "title": "Stale",
           "type": "object"
         }
       },
@@ -980,6 +1057,22 @@
             "cancelled": {
               "title": "Cancelled",
               "type": "string"
+            },
+            "round": {
+              "title": "Round",
+              "type": "integer"
+            },
+            "bad_citations": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Bad Citations",
+              "type": "array"
+            },
+            "stale": {
+              "additionalProperties": true,
+              "title": "Stale",
+              "type": "object"
             }
           },
           "required": [
@@ -1338,6 +1431,22 @@
             "cancelled": {
               "title": "Cancelled",
               "type": "string"
+            },
+            "round": {
+              "title": "Round",
+              "type": "integer"
+            },
+            "bad_citations": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Bad Citations",
+              "type": "array"
+            },
+            "stale": {
+              "additionalProperties": true,
+              "title": "Stale",
+              "type": "object"
             }
           },
           "required": [
@@ -1451,12 +1560,24 @@
   },
   {
     "name": "summary",
-    "description": "Summary of a topic without reading it all: participants, message count, closed or not, requests still\nunanswered (with their state), outcomes and votes of answered requests, latest messages. read(id) for details.\n\nArgs:\n    topic: the topic to summarize.\n",
+    "description": "Summary of a topic without reading it all: participants, message count, closed or not, requests still\nunanswered (with their state), outcomes and votes of answered requests, latest messages. read(id) for details.\n\nArgs:\n    topic: the topic to summarize.\n    round: review round N (send(round=N)): its answers point by point, each marked new or repeated from an\n        earlier round.\n",
     "inputSchema": {
       "properties": {
         "topic": {
           "title": "Topic",
           "type": "string"
+        },
+        "round": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Round"
         }
       },
       "required": [
@@ -1652,6 +1773,22 @@
             "cancelled": {
               "title": "Cancelled",
               "type": "string"
+            },
+            "round": {
+              "title": "Round",
+              "type": "integer"
+            },
+            "bad_citations": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Bad Citations",
+              "type": "array"
+            },
+            "stale": {
+              "additionalProperties": true,
+              "title": "Stale",
+              "type": "object"
             }
           },
           "required": [
@@ -1742,6 +1879,11 @@
         "note": {
           "title": "Note",
           "type": "string"
+        },
+        "round": {
+          "additionalProperties": true,
+          "title": "Round",
+          "type": "object"
         }
       },
       "required": [
@@ -1902,6 +2044,22 @@
             "cancelled": {
               "title": "Cancelled",
               "type": "string"
+            },
+            "round": {
+              "title": "Round",
+              "type": "integer"
+            },
+            "bad_citations": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Bad Citations",
+              "type": "array"
+            },
+            "stale": {
+              "additionalProperties": true,
+              "title": "Stale",
+              "type": "object"
             }
           },
           "required": [
