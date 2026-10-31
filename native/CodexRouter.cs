@@ -4,7 +4,7 @@ using System.Text.Json.Nodes;
 
 namespace NexusRelay;
 
-public static class CodexRouter
+public static partial class CodexRouter
 {
     public static string? ConfiguredUrl => Environment.GetEnvironmentVariable("NEXUS_RELAY_CODEX_ROUTER")?.Trim() is string url && url.Length > 0 ? url : null;
     public static bool Ready()
@@ -40,6 +40,6 @@ public static class CodexRouter
         return AppTransport.Wait(() => !AppTransport.EmergencyStop() && Ready(), timeoutSeconds);
     }
     public static JsonObject Inspect() => new() { ["configured"] = ConfiguredUrl is not null, ["status"] = ConfiguredUrl is null ? "not configured" : Ready() ? "ready" : "unavailable" };
-    [DllImport("shell32.dll", SetLastError = true, CharSet = CharSet.Unicode)] private static extern nint CommandLineToArgvW(string command, out int count);
-    [DllImport("kernel32.dll")] private static extern nint LocalFree(nint handle);
+    [LibraryImport("shell32.dll", SetLastError = true, StringMarshalling = StringMarshalling.Utf16)] private static partial nint CommandLineToArgvW(string command, out int count);
+    [LibraryImport("kernel32.dll")] private static partial nint LocalFree(nint handle);
 }

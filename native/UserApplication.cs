@@ -8,10 +8,10 @@ public sealed class UserApplicationUnavailableException(string message, Exceptio
 // Explorer's existing desktop broker owns user apps; Process.Start/Shell.Application are not a job boundary.
 // Shared NexusWindows protocol, qualified under KILL_ON_JOB_CLOSE.
 // https://devblogs.microsoft.com/oldnewthing/20131118-00/?p=2643
-public static unsafe class UserApplication
+public static unsafe partial class UserApplication
 {
-    [DllImport("user32.dll")] private static extern nint GetShellWindow();
-    [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(nint hwnd, out uint pid);
+    [LibraryImport("user32.dll")] private static partial nint GetShellWindow();
+    [LibraryImport("user32.dll")] private static partial uint GetWindowThreadProcessId(nint hwnd, out uint pid);
     private static nint* Table(nint value) => *(nint**)value;
     private static void Check(int result) { if (result < 0) Marshal.ThrowExceptionForHR(result); }
     private static void Release(nint value) { if (value != 0) Marshal.Release(value); }
@@ -22,7 +22,7 @@ public static unsafe class UserApplication
             throw new UserApplicationUnavailableException("Desktop broker requires an executable, argument string and no inherited protocol pipes; nothing launched");
         object application;
         try { application = DesktopApplication(); }
-        catch (Exception error) { throw new UserApplicationUnavailableException("Interactive Explorer broker unavailable; nothing launched", error); }
+        catch (Exception error) { throw new UserApplicationUnavailableException("Interactive Explorer broker unavailable; nothing launched", error); } // Boundary: any COM failure becomes one typed error before anything is launched.
         try { started(); ((dynamic)application).ShellExecute(info.FileName, info.Arguments, info.WorkingDirectory, "open", show); }
         finally { Release(application); }
     }

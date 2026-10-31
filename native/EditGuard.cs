@@ -27,16 +27,7 @@ public static partial class EditGuard
             var args = (eventObj["toolCall"] as JsonObject)?["args"] as JsonObject;
             if (args is null)
                 return [];
-            string? path = null;
-            foreach (var key in AgyPathArgs)
-            {
-                var v = args[key]?.GetValue<string>();
-                if (!string.IsNullOrEmpty(v))
-                {
-                    path = v;
-                    break;
-                }
-            }
+            string? path = AgyPathArgs.Select(key => args[key]?.GetValue<string>()).FirstOrDefault(v => !string.IsNullOrEmpty(v));
             if (string.IsNullOrEmpty(path))
                 return [];
             string? ws = (eventObj["workspacePaths"] as JsonArray)?.FirstOrDefault()?.GetValue<string>();
@@ -194,6 +185,7 @@ public static partial class EditGuard
         }
         catch (Exception ex)
         {
+            // Boundary: the edit hook reports and never blocks or crashes the agent.
             Console.Error.WriteLine($"Nexus Relay edit_guard: {ex.Message}");
             return 0;
         }

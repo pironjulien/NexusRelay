@@ -68,7 +68,7 @@ public sealed class CdpPage : IDisposable
     public void Dispose() { socket.Dispose(); }
 }
 
-public static class AppTransport
+public static partial class AppTransport
 {
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(3) };
     public static readonly Dictionary<string, SemaphoreSlim> Locks = new() { ["codex"] = new(1), ["antigravity"] = new(1) };
@@ -99,7 +99,7 @@ public static class AppTransport
     public static uint InputTick() { var info = new LastInput { Size = (uint)Marshal.SizeOf<LastInput>() }; return GetLastInputInfo(ref info) ? info.Tick : unchecked((uint)Environment.TickCount); }
     public static bool EmergencyStop()
     {
-        string stop = Path.Combine(RelayPaths.UserHome(), ".nexus", "stop");
+        string stop = Path.Join(RelayPaths.UserHome(), ".nexus", "stop");
         return File.Exists(stop) && DateTime.UtcNow - File.GetLastWriteTimeUtc(stop) < TimeSpan.FromSeconds(120);
     }
     public static JsonObject Result(string status, string? reason = null) => new() { ["status"] = status, ["reason"] = reason };
@@ -107,16 +107,16 @@ public static class AppTransport
     {
         var names = app == "codex" ? new[] { "ChatGPT" } : new[] { "Antigravity" };
         foreach (var name in names) foreach (var process in Process.GetProcessesByName(name))
-            using (process) { try { if (process.MainModule?.FileName is string exe && AppLifecycle.InstalledExecutable(app, exe)) return exe; } catch (System.ComponentModel.Win32Exception) { } }
+            using (process) { try { if (process.MainModule?.FileName is string exe && AppLifecycle.InstalledExecutable(app, exe)) return exe; } catch (System.ComponentModel.Win32Exception) { /* Inaccessible process: not the installed app. */ } }
         string local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         if (app == "antigravity")
-            return new[] { Path.Combine(local, "Programs", "Antigravity", "Antigravity.exe"), Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Antigravity", "Antigravity.exe") }.FirstOrDefault(File.Exists);
+            return new[] { Path.Join(local, "Programs", "Antigravity", "Antigravity.exe"), Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Antigravity", "Antigravity.exe") }.FirstOrDefault(File.Exists);
         return null;
     }
     public static JsonObject EnsureApp(string app)
         => AppLifecycle.Ensure(app);
     [StructLayout(LayoutKind.Sequential)] private struct LastInput { public uint Size; public uint Tick; }
-    [DllImport("user32.dll")] private static extern bool GetLastInputInfo(ref LastInput input);
-    [DllImport("user32.dll")] private static extern nint GetForegroundWindow();
-    [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(nint hwnd, out uint pid);
+    [LibraryImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static partial bool GetLastInputInfo(ref LastInput input);
+    [LibraryImport("user32.dll")] private static partial nint GetForegroundWindow();
+    [LibraryImport("user32.dll")] private static partial uint GetWindowThreadProcessId(nint hwnd, out uint pid);
 }

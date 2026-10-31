@@ -55,7 +55,7 @@ public static partial class Registration
         if (!File.Exists(path)) return;
         Directory.CreateDirectory(backups);
         string stamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
-        File.Copy(path, Path.Combine(backups, $"{Path.GetFileName(Path.GetDirectoryName(Path.GetFullPath(path)))}-{Path.GetFileName(path)}-{stamp}"), true);
+        File.Copy(path, Path.Join(backups, $"{Path.GetFileName(Path.GetDirectoryName(Path.GetFullPath(path)))}-{Path.GetFileName(path)}-{stamp}"), true);
     }
 
     public static void WriteAtomic(string path, string text)
@@ -96,7 +96,7 @@ public static partial class Registration
         return Equals(a, b);
     }
 
-    private static string CodexHome(string home) => Environment.GetEnvironmentVariable("CODEX_HOME") is { Length: > 0 } codex ? codex : Path.Combine(home, ".codex");
+    private static string CodexHome(string home) => Environment.GetEnvironmentVariable("CODEX_HOME") is { Length: > 0 } codex ? codex : Path.Join(home, ".codex");
 
     // ---------- edit guard (hooks) ----------
 
@@ -133,8 +133,8 @@ public static partial class Registration
             if (data["hooks"] is not JsonObject hooks || hooks["hooks"] is not JsonObject events) return false;
             string phase = Events.First(e => e.Event == @event).Phase;
             return (events[@event] as JsonArray ?? []).Any(group =>
-                Ours(group) && (@event == "Stop" || group?["matcher"]?.ToString() == CodexMatcher)
-                && (group!["hooks"] as JsonArray ?? []).Any(h => NativeHandler(h) && (h?["command"]?.ToString() ?? "").Contains(phase, StringComparison.Ordinal)));
+                Ours(group) && (@event == "Stop" || group!["matcher"]?.ToString() == CodexMatcher)
+                && (group!["hooks"] as JsonArray ?? []).Any(h => NativeHandler(h) && (h!["command"]?.ToString() ?? "").Contains(phase, StringComparison.Ordinal)));
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException) { return false; }
     }
@@ -156,14 +156,10 @@ public static partial class Registration
         var plugins = RelayPlugins(config);
         var active = plugins.Where(p => Enabled(p.Value, true)).Select(p => p.Key).ToList();
         if ((plugins.Count == 0 || active.Contains("nexus-relay@personal"))
-            && ManifestCarriesGuard(Path.Combine(folder, "plugins", Name, ".codex-plugin", "plugin.json"), @event)) return true;
-        foreach (string name in active)
-        {
-            var parts = name.Split('@', 2);
-            if (parts.Length != 2 || parts[1] is "" or "." or ".." || parts[1].IndexOfAny(['/', '\\']) >= 0) continue;
-            if (ManifestCarriesGuard(Path.Combine(folder, "plugins", "cache", parts[1], Name, "local", ".codex-plugin", "plugin.json"), @event)) return true;
-        }
-        return false;
+            && ManifestCarriesGuard(Path.Join(folder, "plugins", Name, ".codex-plugin", "plugin.json"), @event)) return true;
+        return active.Select(name => name.Split('@', 2))
+            .Where(parts => parts.Length == 2 && parts[1] is not ("" or "." or "..") && parts[1].IndexOfAny(['/', '\\']) < 0)
+            .Any(parts => ManifestCarriesGuard(Path.Combine(folder, "plugins", "cache", parts[1], Name, "local", ".codex-plugin", "plugin.json"), @event));
     }
 
     [GeneratedRegex(@"(?m)^[ \t]*\[[^\r\n]*(?:\r?\n|$)")]
@@ -202,7 +198,7 @@ public static partial class Registration
             int end = index + 1 < matches.Count ? matches[index + 1].Index : text.Length;
             string? key = null;
             try { if (StateOf(ReadToml(match.Value)) is { Count: 1 } keys) key = keys.Keys.First(); }
-            catch (InvalidDataException) { }
+            catch (InvalidDataException) { /* Not a single-table header: copied unchanged below. */ }
             if (key is not null && remap.TryGetValue(key, out var target))
             {
                 if (target is not null) parts.Append($"[hooks.state.{TomlLiteral(target)}]\n").Append(text, match.Index + match.Length, end - match.Index - match.Length);
@@ -219,7 +215,7 @@ public static partial class Registration
     /// <summary>Remove our global handlers, preserving other handlers and their trust even when their indexes move.</summary>
     public static string CodexDrop(string folder, string backups, string reason = "carried by the nexus-relay plugin", ISet<string>? events = null)
     {
-        string hooksPath = Path.Combine(folder, "hooks.json");
+        string hooksPath = Path.Join(folder, "hooks.json");
         var data = ReadJsonFile(hooksPath);
         var remap = new Dictionary<string, string?>();
         foreach (var (eventName, codexName, _) in Events)
@@ -257,7 +253,7 @@ public static partial class Registration
             if (kept.Count > 0) hooks[eventName] = kept; else hooks.Remove(eventName);
         }
         if (remap.Count == 0) return reason;
-        string config = Path.Combine(folder, "config.toml");
+        string config = Path.Join(folder, "config.toml");
         string text = "", updated = "";
         if (File.Exists(config)) { text = File.ReadAllText(config, Encoding.UTF8); updated = MoveTrust(text, remap); }
         Backup(hooksPath, backups);
@@ -270,14 +266,14 @@ public static partial class Registration
     {
         string folder = CodexHome(home);
         if (!Directory.Exists(folder)) return null;
-        string config = Path.Combine(folder, "config.toml");
+        string config = Path.Join(folder, "config.toml");
         var settings = ReadToml(File.Exists(config) ? File.ReadAllText(config, Encoding.UTF8) : "");
         var plugins = RelayPlugins(settings);
         if (plugins.Count > 0 && !plugins.Values.Any(p => Enabled(p, true))) return CodexDrop(folder, backups, "kept disabled (nexus-relay plugin)");
         var carried = Events.Select(e => e.Event).Where(e => CarriedByPlugin(folder, settings, e)).ToHashSet();
         string migration = CodexDrop(folder, backups, events: carried);
         if (carried.Count == Events.Length) return migration;
-        string hooksPath = Path.Combine(folder, "hooks.json");
+        string hooksPath = Path.Join(folder, "hooks.json");
         var data = ReadJsonFile(hooksPath);
         // An older owned handler can share a group with foreign handlers: never replace that whole group or change its
         // matcher; remove only ours (with the trust remapping), then append a separate canonical group.
@@ -309,9 +305,9 @@ public static partial class Registration
 
     public static string? AntigravityHooks(string home, string exe, string backups)
     {
-        string folder = Path.Combine(home, ".gemini", "config");
+        string folder = Path.Join(home, ".gemini", "config");
         if (!Directory.Exists(folder)) return null;
-        string path = Path.Combine(folder, "hooks.json");
+        string path = Path.Join(folder, "hooks.json");
         var data = ReadJsonFile(path);
         JsonObject Handler(string phase) => new() { ["type"] = "command", ["command"] = Command(exe, "antigravity", phase), ["timeout"] = TimeoutS };
         var entry = new JsonObject
@@ -363,7 +359,7 @@ public static partial class Registration
     {
         try
         {
-            var settings = ReadJsonFile(Path.Combine(home, ".claude", "settings.json"));
+            var settings = ReadJsonFile(Path.Join(home, ".claude", "settings.json"));
             return (settings["enabledPlugins"] as JsonObject ?? []).Any(p => p.Key.Split('@')[0] == Name && p.Value is JsonValue v && v.TryGetValue<bool>(out bool on) && on);
         }
         catch (Exception e) when (e is IOException or JsonException or InvalidDataException) { return false; }
@@ -395,7 +391,7 @@ public static partial class Registration
     {
         if (ClaudePluginEnabled(home)) return Plugin;
         string? cli = Which("claude");
-        string config = Path.Combine(home, ".claude.json");
+        string config = Path.Join(home, ".claude.json");
         var data = ReadJsonFile(config);
         var current = (data["mcpServers"] as JsonObject)?[Name];
         if (!OursEntry(current)) return "kept (an entry of yours already exists)";
@@ -406,7 +402,7 @@ public static partial class Registration
             var (code, output) = Run(cli, "mcp", "add-json", Name, ClaudeEntry(port).ToJsonString(), "--scope", "user");
             return code != 0 ? "failed: " + output : "declared (claude mcp add-json, user scope)";
         }
-        if (!Directory.Exists(Path.Combine(home, ".claude")) && !File.Exists(config)) return null;
+        if (!Directory.Exists(Path.Join(home, ".claude")) && !File.Exists(config)) return null;
         Backup(config, backups);
         if (data["mcpServers"] is not JsonObject servers) data["mcpServers"] = servers = new JsonObject();
         servers[Name] = ClaudeEntry(port);
@@ -425,7 +421,7 @@ public static partial class Registration
     {
         string folder = CodexHome(home);
         if (!Directory.Exists(folder) && Which("codex") is null) return null;
-        string config = Path.Combine(folder, "config.toml");
+        string config = Path.Join(folder, "config.toml");
         string text = File.Exists(config) ? File.ReadAllText(config, Encoding.UTF8) : "";
         var data = ReadToml(text);
         // nexus-relay plugin of any catalog (« nexus » private, « nexus-plugins » of NexusSystem)
@@ -488,7 +484,7 @@ public static partial class Registration
     public static int RunCli(string[] args)
     {
         string home = RelayPaths.UserHome();
-        string backups = Option(args, "--backups") ?? Path.Combine(home, ".nexus", "nexus-relay", "backups");
+        string backups = Option(args, "--backups") ?? Path.Join(home, ".nexus", "nexus-relay", "backups");
         if (args.Contains("--register-hooks", StringComparer.Ordinal))
             return RegisterHooks(home, Option(args, "--command") ?? Environment.ProcessPath ?? throw new InvalidOperationException("executable path unknown"), backups);
         int port = int.TryParse(Option(args, "--port"), out int p) ? p : 16181;

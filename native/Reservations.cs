@@ -91,10 +91,8 @@ public static partial class Reservations
 
         var rawParts = rest.Split('\\', StringSplitOptions.RemoveEmptyEntries);
         var normalizedParts = new List<string>();
-        foreach (var seg in rawParts)
+        foreach (var seg in rawParts.Where(s => s != "."))
         {
-            if (seg == ".")
-                continue;
             if (seg == "..")
             {
                 if (normalizedParts.Count > 0)
@@ -187,7 +185,7 @@ public static partial class Reservations
         {
             return Regex.IsMatch(text, sb.ToString(), RegexOptions.CultureInvariant);
         }
-        catch
+        catch (ArgumentException)
         {
             return true;
         }
@@ -233,13 +231,13 @@ public static partial class Reservations
         return true;
     }
 
-    private static string Folder(RelayBox box) => Path.Combine(box.Root, "reservations");
+    private static string Folder(RelayBox box) => Path.Join(box.Root, "reservations");
 
     private static IDisposable BetweenProcesses(RelayBox box, double waitSeconds = 10.0)
     {
         var folder = Folder(box);
         Directory.CreateDirectory(folder);
-        var lockFile = Path.Combine(folder, ".lock");
+        var lockFile = Path.Join(folder, ".lock");
         var sw = Stopwatch.StartNew();
         while (true)
         {
@@ -257,7 +255,7 @@ public static partial class Reservations
                     throw;
                 }
             }
-            catch
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
             {
                 if (sw.Elapsed.TotalSeconds > waitSeconds)
                 {
@@ -274,7 +272,7 @@ public static partial class Reservations
     {
         public void Dispose()
         {
-            try { stream.Unlock(0, 1); } catch { }
+            try { stream.Unlock(0, 1); } catch (Exception e) when (e is IOException or ObjectDisposedException) { /* Already unlocked: closing the stream releases it anyway. */ }
             stream.Dispose();
         }
     }
@@ -285,21 +283,9 @@ public static partial class Reservations
         var folder = Folder(box);
         if (!Directory.Exists(folder))
             return [];
-        var list = new List<JsonObject>();
-        foreach (var p in Directory.EnumerateFiles(folder, "*.json").OrderBy(Path.GetFileName, StringComparer.Ordinal))
-        {
-            if (RelayBox.ReadJson(p) is not JsonObject r)
-                continue;
-            if (r["released"] is not null)
-                continue;
-            double expiresAt = r["expires_at"]?.GetValue<double>() ?? 0.0;
-            if (expiresAt <= checkAt)
-                continue;
-            if (r["owner_pid"] is JsonValue pv && pv.TryGetValue<int>(out int pid) && !RelayBox.PidAlive(pid))
-                continue;
-            list.Add(r);
-        }
-        return list;
+        return [.. Directory.EnumerateFiles(folder, "*.json").OrderBy(Path.GetFileName, StringComparer.Ordinal).Select(p => RelayBox.ReadJson(p)).OfType<JsonObject>()
+            .Where(r => r["released"] is null && (r["expires_at"]?.GetValue<double>() ?? 0.0) > checkAt)
+            .Where(r => r["owner_pid"] is not JsonValue pv || !pv.TryGetValue<int>(out int pid) || RelayBox.PidAlive(pid))];
     }
 
     public static bool OtherHolder(JsonObject held, string agent, string? session)
@@ -334,11 +320,8 @@ public static partial class Reservations
             var theirPaths = (held["paths"] as JsonArray)?.Select(x => x?.GetValue<string>() ?? "").Where(s => s.Length > 0).ToList() ?? [];
             foreach (var mine in paths)
             {
-                foreach (var theirs in theirPaths)
-                {
-                    if (Overlap(mine, theirs))
-                        found.Add((held, mine, theirs));
-                }
+                foreach (var theirs in theirPaths.Where(t => Overlap(mine, t)))
+                    found.Add((held, mine, theirs));
             }
         }
         return found;
@@ -420,25 +403,12 @@ public static partial class Reservations
 
         double at = Now();
         var key = wanted.Select(Norm).ToList();
-        JsonObject? same = null;
-        foreach (var r in Active(box, at))
-        {
-            if (r["agent"]?.GetValue<string>() != agent)
-                continue;
-            if ((r["session"]?.GetValue<string>() ?? null) != session)
-                continue;
-            if ((r["automatic"]?.GetValue<bool>() ?? false) != automatic)
-                continue;
-            bool rIsAutoReason = (r["reason"]?.GetValue<string>() ?? "") == AutoReason;
-            if (rIsAutoReason != (reason == AutoReason))
-                continue;
-            var rPaths = (r["paths"] as JsonArray)?.Select(x => Norm(x!.GetValue<string>())).OrderBy(x => x, StringComparer.Ordinal).ToList() ?? [];
-            if (rPaths.SequenceEqual(key, StringComparer.Ordinal))
-            {
-                same = r;
-                break;
-            }
-        }
+        JsonObject? same = Active(box, at)
+            .Where(r => r["agent"]?.GetValue<string>() == agent
+                && (r["session"]?.GetValue<string>() ?? null) == session
+                && (r["automatic"]?.GetValue<bool>() ?? false) == automatic
+                && ((r["reason"]?.GetValue<string>() ?? "") == AutoReason) == (reason == AutoReason))
+            .FirstOrDefault(r => ((r["paths"] as JsonArray)?.Select(x => Norm(x!.GetValue<string>())).OrderBy(x => x, StringComparer.Ordinal).ToList() ?? []).SequenceEqual(key, StringComparer.Ordinal));
 
         var id = same?["id"]?.GetValue<string>()
             ?? $"{DateTimeOffset.FromUnixTimeSeconds((long)at).UtcDateTime.ToString("yyyyMMddTHHmmss", CultureInfo.InvariantCulture)}-{RelayBox.RandomHex(3)}";
@@ -473,22 +443,16 @@ public static partial class Reservations
             else
             {
                 var absentArr = new JsonArray();
-                foreach (var w in wanted)
-                {
-                    if (!File.Exists(w) && !Directory.Exists(w))
-                        absentArr.Add(Norm(w));
-                }
+                foreach (var w in wanted.Where(w => !File.Exists(w) && !Directory.Exists(w)))
+                    absentArr.Add(Norm(w));
                 record["absent_at_start"] = absentArr;
             }
 
             var pendingTools = new SortedSet<string>(StringComparer.Ordinal);
             if (same?["pending_tools"] is JsonArray existingPending)
             {
-                foreach (var pt in existingPending)
-                {
-                    if (pt?.GetValue<string>() is string s && !string.IsNullOrEmpty(s))
-                        pendingTools.Add(s);
-                }
+                foreach (var s in existingPending.Select(pt => pt?.GetValue<string>()).OfType<string>().Where(s => s.Length > 0))
+                    pendingTools.Add(s);
             }
             if (!string.IsNullOrEmpty(tool))
                 pendingTools.Add(tool);
@@ -500,7 +464,7 @@ public static partial class Reservations
                 record["pending_unknown"] = true;
         }
 
-        RelayBox.WriteState(Path.Combine(Folder(box), $"{id}.json"), record);
+        RelayBox.WriteState(Path.Join(Folder(box), $"{id}.json"), record);
         Purge(box, at);
         return record;
     }
@@ -523,14 +487,14 @@ public static partial class Reservations
                     var mtime = new DateTimeOffset(File.GetLastWriteTimeUtc(path)).ToUnixTimeSeconds();
                     ended = Math.Min(ended, mtime);
                 }
-                catch
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException)
                 {
                     continue;
                 }
             }
             if (ended > 0 && (at - ended) > KeepEndedSeconds)
             {
-                try { File.Delete(path); } catch { }
+                try { File.Delete(path); } catch (Exception e) when (e is IOException or UnauthorizedAccessException) { /* Purged on a later pass. */ }
             }
         }
     }
@@ -566,7 +530,7 @@ public static partial class Reservations
                 var taken = (JsonObject)target.DeepClone();
                 taken["released"] = Iso(Now());
                 taken["released_by"] = agent;
-                RelayBox.WriteState(Path.Combine(Folder(box), $"{reservation}.json"), taken);
+                RelayBox.WriteState(Path.Join(Folder(box), $"{reservation}.json"), taken);
                 return [reservation];
             }
             if (targetAgent != agent)
@@ -588,7 +552,7 @@ public static partial class Reservations
             var id = record["id"]!.GetValue<string>();
             var clone = (JsonObject)record.DeepClone();
             clone["released"] = Iso(Now());
-            RelayBox.WriteState(Path.Combine(Folder(box), $"{id}.json"), clone);
+            RelayBox.WriteState(Path.Join(Folder(box), $"{id}.json"), clone);
             done.Add(id);
         }
         return done;
@@ -632,7 +596,7 @@ public static partial class Reservations
             if (File.Exists(path) && (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)
                 return false;
         }
-        catch
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException)
         {
             return false;
         }
@@ -677,7 +641,7 @@ public static partial class Reservations
                     return null;
                 return output;
             }
-            catch
+            catch (Exception e) when (e is System.ComponentModel.Win32Exception or InvalidOperationException or IOException)
             {
                 return null;
             }
@@ -729,7 +693,7 @@ public static partial class Reservations
             {
                 if (record["agent"]?.GetValue<string>() != agent ||
                     record["session"]?.GetValue<string>() != session ||
-                    (record["automatic"]?.GetValue<bool>() ?? false) != true ||
+                    !(record["automatic"]?.GetValue<bool>() ?? false) ||
                     record["reason"]?.GetValue<string>() != AutoReason)
                 {
                     continue;
@@ -740,11 +704,8 @@ public static partial class Reservations
                     .Where(s => s.Length > 0)
                     .ToHashSet(StringComparer.Ordinal) ?? new HashSet<string>(StringComparer.Ordinal);
 
-                if (!sessionEnded)
-                {
-                    if (tool is null || !pending.Remove(tool))
-                        continue;
-                }
+                if (!sessionEnded && (tool is null || !pending.Remove(tool)))
+                    continue;
 
                 var pendingArr = new JsonArray();
                 foreach (var pt in pending.OrderBy(x => x, StringComparer.Ordinal))
@@ -769,7 +730,7 @@ public static partial class Reservations
                     record["released"] = Iso(Now());
                     ended.Add(id);
                 }
-                RelayBox.WriteState(Path.Combine(Folder(box), $"{id}.json"), record);
+                RelayBox.WriteState(Path.Join(Folder(box), $"{id}.json"), record);
             }
         }
         return ended;
@@ -816,9 +777,10 @@ public static partial class Reservations
         public string szExeFile;
     }
 
-    [DllImport("kernel32.dll", SetLastError = true)]
-    private static extern IntPtr CreateToolhelp32Snapshot(uint dwFlags, uint th32ProcessID);
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    private static partial IntPtr CreateToolhelp32Snapshot(uint dwFlags, uint th32ProcessID);
 
+    // Process32FirstW/NextW stay DllImport: PROCESSENTRY32W carries a ByValTStr field that LibraryImport cannot marshal.
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool Process32FirstW(IntPtr hSnapshot, ref PROCESSENTRY32W lppe);
@@ -827,9 +789,9 @@ public static partial class Reservations
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool Process32NextW(IntPtr hSnapshot, ref PROCESSENTRY32W lppe);
 
-    [DllImport("kernel32.dll", SetLastError = true)]
+    [LibraryImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool CloseHandle(IntPtr hObject);
+    private static partial bool CloseHandle(IntPtr hObject);
 
     private static Dictionary<int, (int ParentPid, string Exe)> ProcessTable()
     {

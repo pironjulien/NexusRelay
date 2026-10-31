@@ -7,11 +7,11 @@ namespace NexusRelay;
 public static class NativeUpdater
 {
     private static readonly Lock Gate = new();
-    private static string StateFile => Path.Combine(RelayPaths.UserHome(), ".nexus", "status", "relay.json");
-    private static string ProductState => Path.Combine(RelayPaths.UserHome(), ".nexus", "nexus-relay");
-    private static string Marker => Path.Combine(ProductState, "update.json");
-    private static string Source => Environment.GetEnvironmentVariable("NEXUS_RELAY_SOURCE_ROOT") ?? RelayBox.ReadJson(Path.Combine(ProductState, "settings.json"))?["installed_source"]?.ToString() ?? "";
-    private static bool Managed => Source.Length > 0 && RelayBox.PlainPath(Source) == RelayBox.PlainPath(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NexusRelay", "app")) && File.Exists(Path.Combine(Source, "get.ps1")) && !Directory.Exists(Path.Combine(Source, ".git"));
+    private static string StateFile => Path.Join(RelayPaths.UserHome(), ".nexus", "status", "relay.json");
+    private static string ProductState => Path.Join(RelayPaths.UserHome(), ".nexus", "nexus-relay");
+    private static string Marker => Path.Join(ProductState, "update.json");
+    private static string Source => Environment.GetEnvironmentVariable("NEXUS_RELAY_SOURCE_ROOT") ?? RelayBox.ReadJson(Path.Join(ProductState, "settings.json"))?["installed_source"]?.ToString() ?? "";
+    private static bool Managed => Source.Length > 0 && RelayBox.PlainPath(Source) == RelayBox.PlainPath(Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NexusRelay", "app")) && File.Exists(Path.Join(Source, "get.ps1")) && !Directory.Exists(Path.Join(Source, ".git"));
     private static Version Parse(string? value) => Version.TryParse(Regex.Match(value ?? "", @"\d+\.\d+\.\d+").Value, out var version) ? version : new(0, 0, 0);
     public static JsonObject Status(JsonObject? changes = null)
     {
@@ -40,7 +40,8 @@ public static class NativeUpdater
         using var client = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false }) { Timeout = TimeSpan.FromSeconds(10) };
         try
         {
-            using var response = client.Send(new HttpRequestMessage(HttpMethod.Head, "https://github.com/pironjulien/NexusRelay/releases/latest"));
+            using var request = new HttpRequestMessage(HttpMethod.Head, "https://github.com/pironjulien/NexusRelay/releases/latest");
+            using var response = client.Send(request);
             var match = Regex.Match(response.Headers.Location?.ToString() ?? "", @"/tag/v?(\d+\.\d+\.\d+)$");
             Status(new() { ["latest"] = match.Success ? match.Groups[1].Value : null, ["checked_at"] = RelayBox.NowIso(), ["message"] = match.Success ? null : "Latest version unavailable" });
         }
@@ -57,9 +58,13 @@ public static class NativeUpdater
         bool entered = false;
         try
         {
-            DetachedProcess.Start(Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe"), ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", Path.Combine(Source, "scripts", "update-native.ps1"), "-Root", Source], () => entered = true, show: 0);
+            DetachedProcess.Start(Path.Join(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe"), ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", Path.Join(Source, "scripts", "update-native.ps1"), "-Root", Source], () => entered = true, show: 0);
         }
-        catch (Exception e) { if (!entered) File.Delete(Marker); return (409, Status(new() { ["state"] = entered ? "updating" : "failed", ["message"] = e.Message })); }
+        catch (Exception e) // Boundary: any launch failure is reported as the update status, never thrown to the HTTP caller.
+        {
+            if (!entered) File.Delete(Marker);
+            return (409, Status(new() { ["state"] = entered ? "updating" : "failed", ["message"] = e.Message }));
+        }
         return (202, Status(new() { ["state"] = "updating", ["message"] = "Updating to " + (latest ?? "latest") }));
     }
 }

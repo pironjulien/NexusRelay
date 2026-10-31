@@ -12,12 +12,12 @@ public sealed class RegistrationTests : IDisposable
     private readonly Isolation iso = new();
     private readonly string home;
     private string codex;
-    private string Backups => Path.Combine(iso.Root, "backups");
+    private string Backups => Path.Join(iso.Root, "backups");
 
     public RegistrationTests()
     {
-        home = Path.Combine(iso.Root, "profile");
-        codex = Path.Combine(home, ".codex");
+        home = Path.Join(iso.Root, "profile");
+        codex = Path.Join(home, ".codex");
         iso.Set("CODEX_HOME", null);
         iso.Set("PATH", Environment.SystemDirectory);  // neither `claude` nor `codex`: never the real ones
     }
@@ -39,7 +39,7 @@ public sealed class RegistrationTests : IDisposable
 
     private string CachedPlugin(JsonObject? hooks)
     {
-        string manifest = Path.Combine(codex, "plugins", "cache", "nexus-plugins", "nexus-relay", "local", ".codex-plugin", "plugin.json");
+        string manifest = Path.Join(codex, "plugins", "cache", "nexus-plugins", "nexus-relay", "local", ".codex-plugin", "plugin.json");
         var data = new JsonObject { ["name"] = "nexus-relay", ["version"] = "1.10.0" };
         if (hooks is not null) data["hooks"] = hooks;
         Write(manifest, data);
@@ -56,7 +56,7 @@ public sealed class RegistrationTests : IDisposable
             Assert.True(Registration.OurHandler(new JsonObject { ["command"] = command }));
         }
         Assert.Equal("\"C:\\A B\\NexusRelay.exe\" --edit-guard codex --finish-tool", Registration.Command(@"C:\A B\NexusRelay.exe", "codex", "--finish-tool"));
-        string manifest = Path.Combine(iso.Root, "plugin.json");
+        string manifest = Path.Join(iso.Root, "plugin.json");
         Write(manifest, new JsonObject { ["name"] = "nexus-relay", ["hooks"] = NativeHooks() });
         Assert.All(Registration.Events, e => Assert.True(Registration.ManifestCarriesGuard(manifest, e.Event)));
         foreach (string legacy in new[] { Python, @"pwsh -NoProfile -File D:\fixture\.nexus\nexus-relay\hooks\invoke-hook.ps1 -Agent codex" })
@@ -71,16 +71,16 @@ public sealed class RegistrationTests : IDisposable
     public void Codex_declares_without_inventing_trust_nor_touching_the_rest()
     {
         var foreign = new JsonObject { ["matcher"] = "^Bash$", ["hooks"] = new JsonArray(new JsonObject { ["type"] = "command", ["command"] = "echo moi" }) };
-        Write(Path.Combine(codex, "hooks.json"), new JsonObject { ["hooks"] = new JsonObject { ["PreToolUse"] = new JsonArray(foreign.DeepClone()) } });
+        Write(Path.Join(codex, "hooks.json"), new JsonObject { ["hooks"] = new JsonObject { ["PreToolUse"] = new JsonArray(foreign.DeepClone()) } });
         const string original = "model = \"x\"\n\n[features]\nhooks = true\n";
-        Write(Path.Combine(codex, "config.toml"), original);
+        Write(Path.Join(codex, "config.toml"), original);
         Assert.StartsWith("declared", Registration.CodexHooks(home, Exe, Backups));
-        var groups = Read(Path.Combine(codex, "hooks.json"))["hooks"]!["PreToolUse"]!.AsArray();
+        var groups = Read(Path.Join(codex, "hooks.json"))["hooks"]!["PreToolUse"]!.AsArray();
         Assert.True(JsonNode.DeepEquals(groups[0], foreign));
         Assert.Equal("apply_patch", groups[1]!["matcher"]?.ToString());
-        Assert.Equal(original, File.ReadAllText(Path.Combine(codex, "config.toml")));
+        Assert.Equal(original, File.ReadAllText(Path.Join(codex, "config.toml")));
         Assert.Contains("already declared", Registration.CodexHooks(home, Exe, Backups));
-        var events = Read(Path.Combine(codex, "hooks.json"))["hooks"]!;
+        var events = Read(Path.Join(codex, "hooks.json"))["hooks"]!;
         Assert.Contains("--finish-tool", events["PostToolUse"]![0]!["hooks"]![0]!["command"]!.ToString());
         Assert.Contains("--finish-session", events["Stop"]![0]!["hooks"]![0]!["command"]!.ToString());
     }
@@ -88,9 +88,9 @@ public sealed class RegistrationTests : IDisposable
     [Fact]
     public void Codex_retired_python_global_entries_are_replaced_by_the_engine()
     {
-        Write(Path.Combine(codex, "hooks.json"), Hooks((_, phase) => Python + " codex " + phase));
+        Write(Path.Join(codex, "hooks.json"), Hooks((_, phase) => Python + " codex " + phase));
         Assert.StartsWith("declared", Registration.CodexHooks(home, Exe, Backups));
-        var events = Read(Path.Combine(codex, "hooks.json"))["hooks"]!.AsObject();
+        var events = Read(Path.Join(codex, "hooks.json"))["hooks"]!.AsObject();
         Assert.All(events, e => Assert.Single(e.Value!.AsArray()));
         Assert.All(events, e => Assert.Contains("NexusRelay.exe --edit-guard codex", e.Value![0]!["hooks"]![0]!["command"]!.ToString()));
     }
@@ -99,13 +99,13 @@ public sealed class RegistrationTests : IDisposable
     public void Codex_personal_plugin_carrying_the_engine_removes_the_global_entry()
     {
         var foreign = new JsonObject { ["matcher"] = "^Bash$", ["hooks"] = new JsonArray(new JsonObject { ["type"] = "command", ["command"] = "echo moi" }) };
-        Write(Path.Combine(codex, "hooks.json"), new JsonObject { ["hooks"] = new JsonObject { ["PreToolUse"] = new JsonArray(foreign.DeepClone()) } });
-        Write(Path.Combine(codex, "config.toml"), "model = \"x\"\n");
+        Write(Path.Join(codex, "hooks.json"), new JsonObject { ["hooks"] = new JsonObject { ["PreToolUse"] = new JsonArray(foreign.DeepClone()) } });
+        Write(Path.Join(codex, "config.toml"), "model = \"x\"\n");
         Assert.StartsWith("declared", Registration.CodexHooks(home, Exe, Backups));
-        Write(Path.Combine(codex, "plugins", "nexus-relay", ".codex-plugin", "plugin.json"), new JsonObject { ["name"] = "nexus-relay", ["hooks"] = NativeHooks() });
+        Write(Path.Join(codex, "plugins", "nexus-relay", ".codex-plugin", "plugin.json"), new JsonObject { ["name"] = "nexus-relay", ["hooks"] = NativeHooks() });
         Assert.Contains("global entry removed", Registration.CodexHooks(home, Exe, Backups));
-        Assert.True(JsonNode.DeepEquals(Read(Path.Combine(codex, "hooks.json"))["hooks"]!["PreToolUse"], new JsonArray(foreign.DeepClone())));
-        var config = Toml(Path.Combine(codex, "config.toml"));
+        Assert.True(JsonNode.DeepEquals(Read(Path.Join(codex, "hooks.json"))["hooks"]!["PreToolUse"], new JsonArray(foreign.DeepClone())));
+        var config = Toml(Path.Join(codex, "config.toml"));
         Assert.Equal("x", config["model"]);
         Assert.False(config.ContainsKey("hooks"));
         Assert.Equal("carried by the nexus-relay plugin", Registration.CodexHooks(home, Exe, Backups));
@@ -114,7 +114,7 @@ public sealed class RegistrationTests : IDisposable
     [Fact]
     public void Codex_installed_cache_removes_every_duplicate_and_remaps_trust()
     {
-        codex = Path.Combine(iso.Root, "profil d'IA");
+        codex = Path.Join(iso.Root, "profil d'IA");
         iso.Set("CODEX_HOME", codex);
         CachedPlugin(NativeHooks());
         var own = new JsonObject { ["type"] = "command", ["command"] = Registration.Command(Exe, "codex") };
@@ -124,7 +124,7 @@ public sealed class RegistrationTests : IDisposable
             new JsonObject { ["matcher"] = "^Bash$", ["hooks"] = new JsonArray(foreign[0].DeepClone(), own.DeepClone(), foreign[1].DeepClone()) },
             new JsonObject { ["matcher"] = "*", ["hooks"] = new JsonArray(foreign[2].DeepClone()) });
         var stop = new JsonArray(new JsonObject { ["hooks"] = new JsonArray(new JsonObject { ["type"] = "command", ["command"] = "echo stop" }) });
-        string hooksPath = Path.Combine(codex, "hooks.json");
+        string hooksPath = Path.Join(codex, "hooks.json");
         Write(hooksPath, new JsonObject { ["hooks"] = new JsonObject { ["PreToolUse"] = groups.DeepClone(), ["Stop"] = stop.DeepClone() } });
         string prefix = hooksPath + ":pre_tool_use:";
         var state = new Dictionary<string, (string Hash, bool? Enabled)>();
@@ -136,7 +136,7 @@ public sealed class RegistrationTests : IDisposable
             text.Append($"\n[hooks.state.{System.Text.Json.JsonSerializer.Serialize(key)}]\ntrusted_hash = \"{hash}\"\n");  // quoted TOML keys too
             if (enabled is not null) text.Append($"enabled = {(enabled.Value ? "true" : "false")}\n");
         }
-        Write(Path.Combine(codex, "config.toml"), text.ToString());
+        Write(Path.Join(codex, "config.toml"), text.ToString());
         Assert.Contains("global entry removed", Registration.CodexHooks(iso.Root, Exe, Backups));
         var expected = new JsonObject
         {
@@ -144,7 +144,7 @@ public sealed class RegistrationTests : IDisposable
             ["Stop"] = stop.DeepClone(),
         };
         Assert.True(JsonNode.DeepEquals(Read(hooksPath)["hooks"], expected), Read(hooksPath).ToJsonString());
-        var config = Toml(Path.Combine(codex, "config.toml"));
+        var config = Toml(Path.Join(codex, "config.toml"));
         var trust = (TomlTable)((TomlTable)config["hooks"])["state"];
         string Hash(string key) => (string)((TomlTable)trust[key])["trusted_hash"];
         Assert.Equal(4, trust.Count);
@@ -154,11 +154,11 @@ public sealed class RegistrationTests : IDisposable
         Assert.Equal("sha256:2:0", Hash(prefix + "1:0"));
         Assert.Equal("sha256:unrelated", Hash("another-hook.json:stop:0:0"));
         Assert.Equal(true, ((TomlTable)((TomlTable)config["plugins"])["nexus-relay@nexus-plugins"])["enabled"]);
-        Assert.Contains("# garder ce commentaire", File.ReadAllText(Path.Combine(codex, "config.toml")));
-        var before = (File.ReadAllBytes(hooksPath), File.ReadAllBytes(Path.Combine(codex, "config.toml")));
+        Assert.Contains("# garder ce commentaire", File.ReadAllText(Path.Join(codex, "config.toml")));
+        var before = (File.ReadAllBytes(hooksPath), File.ReadAllBytes(Path.Join(codex, "config.toml")));
         Assert.Equal("carried by the nexus-relay plugin", Registration.CodexHooks(iso.Root, Exe, Backups));
         Assert.Equal(before.Item1, File.ReadAllBytes(hooksPath));
-        Assert.Equal(before.Item2, File.ReadAllBytes(Path.Combine(codex, "config.toml")));
+        Assert.Equal(before.Item2, File.ReadAllBytes(Path.Join(codex, "config.toml")));
     }
 
     [Theory]
@@ -168,11 +168,11 @@ public sealed class RegistrationTests : IDisposable
     {
         Directory.CreateDirectory(codex);
         Assert.StartsWith("declared", Registration.CodexHooks(home, Exe, Backups));
-        string config = Path.Combine(codex, "config.toml");
+        string config = Path.Join(codex, "config.toml");
         File.AppendAllText(config, "\n[plugins.\"nexus-relay@nexus-plugins\"]\nenabled = false\n");
         if (installed) CachedPlugin(NativeHooks());
         Assert.Contains("kept disabled", Registration.CodexHooks(home, Exe, Backups));
-        Assert.Null(Read(Path.Combine(codex, "hooks.json"))["hooks"]?["PreToolUse"]);
+        Assert.Null(Read(Path.Join(codex, "hooks.json"))["hooks"]?["PreToolUse"]);
         var parsed = Toml(config);
         Assert.Equal(false, ((TomlTable)((TomlTable)parsed["plugins"])["nexus-relay@nexus-plugins"])["enabled"]);
         Assert.False(parsed.ContainsKey("hooks"));
@@ -185,9 +185,9 @@ public sealed class RegistrationTests : IDisposable
     public void Codex_orphaned_or_old_cache_does_not_remove_the_guard(bool registered, bool carries)
     {
         CachedPlugin(carries ? NativeHooks() : null);
-        if (registered) Write(Path.Combine(codex, "config.toml"), "[plugins.\"nexus-relay@nexus-plugins\"]\nenabled = true\n");
+        if (registered) Write(Path.Join(codex, "config.toml"), "[plugins.\"nexus-relay@nexus-plugins\"]\nenabled = true\n");
         Assert.StartsWith("declared", Registration.CodexHooks(home, Exe, Backups));
-        var hooks = Read(Path.Combine(codex, "hooks.json"))["hooks"]!["PreToolUse"]!.AsArray();
+        var hooks = Read(Path.Join(codex, "hooks.json"))["hooks"]!["PreToolUse"]!.AsArray();
         Assert.Single(hooks);
         Assert.True(Registration.Ours(hooks[0]));
     }
@@ -200,9 +200,9 @@ public sealed class RegistrationTests : IDisposable
         var hooks = NativeHooks();
         hooks["hooks"]!["PreToolUse"]![0]!["matcher"] = matcher;
         CachedPlugin(hooks);
-        Write(Path.Combine(codex, "config.toml"), "[plugins.\"nexus-relay@nexus-plugins\"]\nenabled = true\n");
+        Write(Path.Join(codex, "config.toml"), "[plugins.\"nexus-relay@nexus-plugins\"]\nenabled = true\n");
         Assert.StartsWith("declared", Registration.CodexHooks(home, Exe, Backups));
-        var groups = Read(Path.Combine(codex, "hooks.json"))["hooks"]!["PreToolUse"]!.AsArray();
+        var groups = Read(Path.Join(codex, "hooks.json"))["hooks"]!["PreToolUse"]!.AsArray();
         Assert.Single(groups);
         Assert.Equal("apply_patch", groups[0]!["matcher"]?.ToString());
     }
@@ -215,26 +215,26 @@ public sealed class RegistrationTests : IDisposable
         hooks["hooks"]!.AsObject().Remove("Stop");
         CachedPlugin(hooks);
         const string original = "[plugins.\"nexus-relay@nexus-plugins\"]\nenabled = true\n";
-        Write(Path.Combine(codex, "config.toml"), original);
+        Write(Path.Join(codex, "config.toml"), original);
         Assert.Contains("Codex review required", Registration.CodexHooks(home, Exe, Backups));
-        Assert.Equal(["PostToolUse", "Stop"], Read(Path.Combine(codex, "hooks.json"))["hooks"]!.AsObject().Select(p => p.Key).Order());
-        Assert.Equal(original, File.ReadAllText(Path.Combine(codex, "config.toml")));
+        Assert.Equal(["PostToolUse", "Stop"], Read(Path.Join(codex, "hooks.json"))["hooks"]!.AsObject().Select(p => p.Key).Order());
+        Assert.Equal(original, File.ReadAllText(Path.Join(codex, "config.toml")));
     }
 
     [Fact]
     public void Codex_update_preserves_foreign_handlers_and_their_trust()
     {
-        string path = Path.Combine(codex, "hooks.json");
+        string path = Path.Join(codex, "hooks.json");
         var own = new JsonObject { ["type"] = "command", ["command"] = Python + " codex --finish-tool" };
         var foreign = new JsonObject { ["type"] = "command", ["command"] = "echo preserve-me" };
         Write(path, new JsonObject { ["hooks"] = new JsonObject { ["PostToolUse"] = new JsonArray(new JsonObject { ["matcher"] = "other-tool", ["hooks"] = new JsonArray(own, foreign.DeepClone()) }) } });
         string prefix = path + ":post_tool_use:";
-        Write(Path.Combine(codex, "config.toml"), $"[hooks.state.{System.Text.Json.JsonSerializer.Serialize(prefix + "0:1")}]\ntrusted_hash = \"sha256:foreign\"\nenabled = false\n");
+        Write(Path.Join(codex, "config.toml"), $"[hooks.state.{System.Text.Json.JsonSerializer.Serialize(prefix + "0:1")}]\ntrusted_hash = \"sha256:foreign\"\nenabled = false\n");
         Registration.CodexHooks(home, Exe, Backups);
         var events = Read(path)["hooks"]!;
         Assert.True(JsonNode.DeepEquals(events["PostToolUse"]![0], new JsonObject { ["matcher"] = "other-tool", ["hooks"] = new JsonArray(foreign.DeepClone()) }));
         Assert.Equal("apply_patch", events["PostToolUse"]![1]!["matcher"]?.ToString());
-        var trust = (TomlTable)((TomlTable)Toml(Path.Combine(codex, "config.toml"))["hooks"])["state"];
+        var trust = (TomlTable)((TomlTable)Toml(Path.Join(codex, "config.toml"))["hooks"])["state"];
         Assert.Single(trust);
         Assert.Equal("sha256:foreign", ((TomlTable)trust[prefix + "0:0"])["trusted_hash"]);
         Assert.Equal(false, ((TomlTable)trust[prefix + "0:0"])["enabled"]);
@@ -243,7 +243,7 @@ public sealed class RegistrationTests : IDisposable
     [Fact]
     public void Antigravity_hook_added_next_to_the_others_and_disabled_choice_kept()
     {
-        string path = Path.Combine(home, ".gemini", "config", "hooks.json");
+        string path = Path.Join(home, ".gemini", "config", "hooks.json");
         Write(path, """{"autre": {"Stop": []}}""");
         Assert.StartsWith("declared", Registration.AntigravityHooks(home, Exe, Backups));
         var data = Read(path);
@@ -263,8 +263,8 @@ public sealed class RegistrationTests : IDisposable
     [Fact]
     public void Claude_code_by_its_file_without_writing_the_token()
     {
-        Directory.CreateDirectory(Path.Combine(home, ".claude"));
-        string config = Path.Combine(home, ".claude.json");
+        Directory.CreateDirectory(Path.Join(home, ".claude"));
+        string config = Path.Join(home, ".claude.json");
         Write(config, """{"mcpServers": {"autre": {"command": "x"}}, "theme": "dark"}""");
         Assert.StartsWith("declared in", Registration.ClaudeCode(home, 16181, Backups));
         var data = Read(config);
@@ -279,13 +279,13 @@ public sealed class RegistrationTests : IDisposable
     public void Claude_code_user_entry_kept_plugin_recognized_and_absent()
     {
         Assert.Null(Registration.ClaudeCode(home, 16181, Backups));
-        string config = Path.Combine(home, ".claude.json");
+        string config = Path.Join(home, ".claude.json");
         const string mine = """{"mcpServers": {"nexus-relay": {"type": "http", "url": "https://ailleurs.example/mcp"}}}""";
         Write(config, mine);
         Assert.StartsWith("kept", Registration.ClaudeCode(home, 16181, Backups));
         Assert.Equal(mine, File.ReadAllText(config));
         File.Delete(config);
-        Write(Path.Combine(home, ".claude", "settings.json"), """{"enabledPlugins": {"nexus-relay@nexus-plugins": true}}""");
+        Write(Path.Join(home, ".claude", "settings.json"), """{"enabledPlugins": {"nexus-relay@nexus-plugins": true}}""");
         Assert.Equal(Registration.Plugin, Registration.ClaudeCode(home, 16181, Backups));
         Assert.False(File.Exists(config));
     }
@@ -293,9 +293,9 @@ public sealed class RegistrationTests : IDisposable
     [Fact]
     public void Claude_code_through_its_command_and_its_failure()
     {
-        string bin = Path.Combine(iso.Root, "bin");
-        string log = Path.Combine(iso.Root, "claude-calls.txt");
-        Write(Path.Combine(bin, "claude.cmd"), $"@echo %* >> \"{log}\"\r\n@exit /b 0\r\n");
+        string bin = Path.Join(iso.Root, "bin");
+        string log = Path.Join(iso.Root, "claude-calls.txt");
+        Write(Path.Join(bin, "claude.cmd"), $"@echo %* >> \"{log}\"\r\n@exit /b 0\r\n");
         iso.Set("PATH", bin + ";" + Environment.SystemDirectory);
         Assert.Equal("declared (claude mcp add-json, user scope)", Registration.ClaudeCode(home, 16181, Backups));
         var calls = File.ReadAllLines(log);
@@ -303,14 +303,14 @@ public sealed class RegistrationTests : IDisposable
         Assert.StartsWith("mcp add-json nexus-relay", calls[1]);
         Assert.Contains("127.0.0.1:16181/mcp?agent=claude", calls[1]);
         Assert.EndsWith("--scope user", calls[1].Trim());
-        Write(Path.Combine(bin, "claude.cmd"), "@echo boom 1>&2\r\n@exit /b 1\r\n");
+        Write(Path.Join(bin, "claude.cmd"), "@echo boom 1>&2\r\n@exit /b 1\r\n");
         Assert.Equal("failed: boom", Registration.ClaudeCode(home, 16181, Backups));
     }
 
     [Fact]
     public void Codex_table_added_read_back_and_replaced_in_place()
     {
-        string config = Path.Combine(codex, "config.toml");
+        string config = Path.Join(codex, "config.toml");
         Write(config, "model = \"x\"\n\n[mcp_servers.autre]\ncommand = \"y\"\n");
         Assert.StartsWith("declared in", Registration.Codex(home, 16181, Backups));
         var servers = (TomlTable)Toml(config)["mcp_servers"];
@@ -331,15 +331,15 @@ public sealed class RegistrationTests : IDisposable
     public void Codex_plugin_already_enabled_and_absent(string catalog)
     {
         Assert.Null(Registration.Codex(home, 16181, Backups));
-        Write(Path.Combine(codex, "config.toml"), $"[plugins.\"nexus-relay@{catalog}\"]\nenabled = true\n");
+        Write(Path.Join(codex, "config.toml"), $"[plugins.\"nexus-relay@{catalog}\"]\nenabled = true\n");
         Assert.Equal(Registration.Plugin, Registration.Codex(home, 16181, Backups));
-        Assert.False(Toml(Path.Combine(codex, "config.toml")).ContainsKey("mcp_servers"));
+        Assert.False(Toml(Path.Join(codex, "config.toml")).ContainsKey("mcp_servers"));
     }
 
     private (int Code, string[] Lines) Cli(params string[] args)
     {
         iso.Set("USERPROFILE", home);
-        var output = new StringWriter();
+        using var output = new StringWriter();
         var previous = Console.Out;
         Console.SetOut(output);
         try { int code = Registration.RunCli(args); return (code, output.ToString().Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)); }
@@ -355,18 +355,18 @@ public sealed class RegistrationTests : IDisposable
         Assert.Equal(0, code);
         Assert.Equal("NEXUS_PACK_RESULT Claude Code=absent; Codex=declared; Antigravity=plugin", lines[^1]);
 
-        File.Delete(Path.Combine(codex, "config.toml"));
+        File.Delete(Path.Join(codex, "config.toml"));
         iso.Set("NEXUS_PACK_TARGETS", "codex, claude-desktop");
-        Directory.CreateDirectory(Path.Combine(home, ".claude"));
-        Write(Path.Combine(home, ".claude.json"), """{"theme": "dark"}""");
+        Directory.CreateDirectory(Path.Join(home, ".claude"));
+        Write(Path.Join(home, ".claude.json"), """{"theme": "dark"}""");
         (code, lines) = Cli("--register-clients", "--backups", Backups, "--antigravity", "plugin installed in X");
         Assert.Equal(0, code);
         Assert.Equal("NEXUS_PACK_RESULT Codex=declared", lines[^1]);
-        Assert.Equal("""{"theme": "dark"}""", File.ReadAllText(Path.Combine(home, ".claude.json")));
-        Assert.Contains("nexus-relay", File.ReadAllText(Path.Combine(codex, "config.toml")));
+        Assert.Equal("""{"theme": "dark"}""", File.ReadAllText(Path.Join(home, ".claude.json")));
+        Assert.Contains("nexus-relay", File.ReadAllText(Path.Join(codex, "config.toml")));
         (code, lines) = Cli("--register-hooks", "--backups", Backups, "--command", Exe);
         Assert.Equal(0, code);
-        Assert.Equal(["Codex (edit guard): declared in " + Path.Combine(codex, "hooks.json") + "; Codex review required for new hooks"], lines);
-        Assert.False(Directory.Exists(Path.Combine(home, ".gemini")));
+        Assert.Equal(["Codex (edit guard): declared in " + Path.Join(codex, "hooks.json") + "; Codex review required for new hooks"], lines);
+        Assert.False(Directory.Exists(Path.Join(home, ".gemini")));
     }
 }

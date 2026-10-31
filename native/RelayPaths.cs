@@ -9,7 +9,7 @@ namespace NexusRelay;
 
 public static partial class RelayPaths
 {
-    public const string Version = "1.10.6";
+    public const string Version = "1.10.7";
     public static readonly string[] Agents = ["claude", "antigravity", "codex"];
     public const string User = "user";
     public static readonly string[] Parties = ["claude", "antigravity", "codex", "user"];
@@ -38,7 +38,7 @@ public static partial class RelayPaths
         }
         try
         {
-            var settingsPath = Path.Combine(UserHome(), ".nexus", "nexus-relay", "settings.json");
+            var settingsPath = Path.Join(UserHome(), ".nexus", "nexus-relay", "settings.json");
             if (File.Exists(settingsPath))
             {
                 var node = JsonNode.Parse(File.ReadAllText(settingsPath, Encoding.UTF8)) as JsonObject;
@@ -49,7 +49,7 @@ public static partial class RelayPaths
                 }
             }
         }
-        catch
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or InvalidOperationException)
         {
             // Ignore unreadable settings
         }
@@ -74,7 +74,7 @@ public static partial class RelayPaths
         var overridePath = Environment.GetEnvironmentVariable("NEXUS_RELAY_HOME");
         return !string.IsNullOrWhiteSpace(overridePath)
             ? Path.GetFullPath(overridePath)
-            : Path.Combine(UserHome(), ".nexus", "relay");
+            : Path.Join(UserHome(), ".nexus", "relay");
     }
 
     public static string GeminiHome()
@@ -82,10 +82,10 @@ public static partial class RelayPaths
         var overridePath = Environment.GetEnvironmentVariable("NEXUS_RELAY_GEMINI_HOME");
         return !string.IsNullOrWhiteSpace(overridePath)
             ? Path.GetFullPath(overridePath)
-            : Path.Combine(UserHome(), ".gemini");
+            : Path.Join(UserHome(), ".gemini");
     }
 
-    public static string BrainDir() => Path.Combine(GeminiHome(), "antigravity", "brain");
+    public static string BrainDir() => Path.Join(GeminiHome(), "antigravity", "brain");
 
     public static string NormalizeAgent(string? name)
     {
@@ -140,12 +140,12 @@ public static partial class RelayPaths
                 $"invalid conversation id: '{conversation}'",
                 $"identifiant de conversation invalide : '{conversation}'"));
         }
-        return Path.Combine(brain ?? BrainDir(), conversation, ".system_generated", "logs", "transcript.jsonl");
+        return Path.Join(brain ?? BrainDir(), conversation, ".system_generated", "logs", "transcript.jsonl");
     }
 
     public static bool ConversationAlive(string conversation)
     {
-        var root = Path.Combine(GeminiHome(), "antigravity");
+        var root = Path.Join(GeminiHome(), "antigravity");
         var dbPath = Path.Combine(root, "conversations", $"{conversation}.db");
         if (!File.Exists(dbPath))
             return false;
@@ -157,7 +157,7 @@ public static partial class RelayPaths
             var note = File.ReadAllText(notePath, Encoding.UTF8);
             return !note.Replace(" ", "", StringComparison.Ordinal).Contains("archived:true", StringComparison.Ordinal);
         }
-        catch
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
             return true;
         }
@@ -174,7 +174,7 @@ public static partial class RelayPaths
                 return Convert.ToHexStringLower(SHA256.HashData(bytes));
             }
         }
-        catch
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
             // Fallback
         }
@@ -211,7 +211,7 @@ public static partial class RelayPaths
             string? target = content.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault(s => s.StartsWith("sha256:", StringComparison.Ordinal))?[7..];
             var wanted = content.StartsWith("force", StringComparison.Ordinal) ||
                 (target is not null ? !target.Equals(loadedFingerprint, StringComparison.OrdinalIgnoreCase) : CodeFingerprint() != loadedFingerprint);
-            try { File.Delete(taken); } catch { }
+            try { File.Delete(taken); } catch (Exception cleanup) when (cleanup is IOException or UnauthorizedAccessException) { /* A leftover taken request is harmless. */ }
             return wanted;
         }
         catch
@@ -228,7 +228,7 @@ public static partial class RelayPaths
         {
             forced = File.ReadAllText(takenPath, Encoding.UTF8).Trim().StartsWith("force", StringComparison.Ordinal);
         }
-        catch
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
             forced = false;
         }
@@ -243,7 +243,7 @@ public static partial class RelayPaths
                 File.Delete(takenPath);
             }
         }
-        catch
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
             // Ignore cleanup failure
         }
@@ -251,7 +251,7 @@ public static partial class RelayPaths
 
     public static void MarkRestartable(string name)
     {
-        var path = Path.Combine(RelayHome(), $"{name}-restart.pid");
+        var path = Path.Join(RelayHome(), $"{name}-restart.pid");
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         File.WriteAllText(path, Environment.ProcessId.ToString(), new UTF8Encoding(false));
     }

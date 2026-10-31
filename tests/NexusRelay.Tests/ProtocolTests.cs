@@ -53,7 +53,7 @@ public sealed class ProtocolTests : IDisposable
         Assert.Equal(1, Native.Data(follow[2])["answered_total"]!.GetValue<int>());
         Assert.Equal(0, Native.Data(follow[2])["open_total"]!.GetValue<int>());
         Assert.True(Native.Data(follow[3])["closed"]!.GetValue<bool>());
-        Assert.True(File.Exists(Path.Combine(iso.Relay, "v1", "salon", "nexusrelay.md")));
+        Assert.True(File.Exists(Path.Join(iso.Relay, "v1", "salon", "nexusrelay.md")));
     }
 
     [Fact]
@@ -68,7 +68,7 @@ public sealed class ProtocolTests : IDisposable
         Assert.Equal("annulé", Native.Data(cancels[0])["state"]?.ToString());
         Assert.Equal("error", Native.Data(cancels[1])["status"]?.ToString());
 
-        string protectedFile = Path.Combine(iso.Root, "protected.py");
+        string protectedFile = Path.Join(iso.Root, "protected.py");
         Native.Stdio("claude", Native.Call("reserve", new() { ["paths"] = new JsonArray(protectedFile), ["reason"] = "refactoring critique" }));
         var codex = Native.Run(["--edit-guard", "codex"], new JsonObject { ["session_id"] = "sess-codex-1", ["tool_name"] = "apply_patch", ["tool_input"] = new JsonObject { ["command"] = $"*** Update File: {protectedFile}\n@@\n" } }.ToJsonString());
         Assert.Equal("deny", JsonNode.Parse(codex.Out)!["hookSpecificOutput"]?["permissionDecision"]?.ToString());
@@ -115,7 +115,7 @@ public sealed class ProtocolTests : IDisposable
         Assert.Equal("native", health["runtime"]?.ToString());
         Assert.Equal(daemon.Process.Id, health["pid"]!.GetValue<int>());
         Assert.Null(health["activities"]);
-        File.WriteAllText(Path.Combine(iso.Relay, "daemon-restart.request"), "force test");
+        File.WriteAllText(Path.Join(iso.Relay, "daemon-restart.request"), "force test");
         Assert.True(daemon.Process.WaitForExit(10_000));
         Assert.Equal(0, daemon.Process.ExitCode);
     }
@@ -193,7 +193,7 @@ public sealed class ProtocolTests : IDisposable
         var answer = box.Post("codex", "claude", "fixture answer", "parity-a", replyTo: first.Id);
         var waiting = Task.Run(() => daemon.Rpc(WaitCall([first.Id, second.Id], timeout: 10)));
         Wait.Until(() => box.State("waited")?.Count == 2, 5, "both waits reserved");
-        File.WriteAllText(Path.Combine(iso.Relay, "daemon-restart.request"), "force fixture");
+        File.WriteAllText(Path.Join(iso.Relay, "daemon-restart.request"), "force fixture");
         Assert.True(waiting.Wait(6000));
         var group = Payload(waiting.Result);
         Assert.Equal("partial", group["status"]?.ToString());
@@ -209,9 +209,9 @@ public sealed class ProtocolTests : IDisposable
         using var daemon = new Daemon(fixture: false);
         var box = iso.Box();
         Wait.Until(() => box.State("native-cards-check") is not null, 10, "card watch state");
-        string folder = Path.Combine(box.Root, "cartes");
+        string folder = Path.Join(box.Root, "cartes");
         Directory.CreateDirectory(folder);
-        File.WriteAllText(Path.Combine(folder, "codex-fixture.json"), new JsonObject
+        File.WriteAllText(Path.Join(folder, "codex-fixture.json"), new JsonObject
         {
             ["app"] = "codex", ["version"] = "fixture", ["surveyed_at"] = "2026-10-29T22:00:00Z", ["elements"] = new JsonArray(new JsonObject { ["role"] = "button" }),
             ["landmarks"] = new JsonObject { ["NEW_CHAT"] = new JsonObject { ["path"] = "vue de départ" }, ["ARCHIVE"] = null },
@@ -226,7 +226,7 @@ public sealed class ProtocolTests : IDisposable
     {
         using var first = new Daemon();
         using var second = new Daemon();
-        string probe = Path.Combine(Paths.Repo(), "tests", "native_restart", "probe.ps1");
+        string probe = Path.Join(Paths.Repo(), "tests", "native_restart", "probe.ps1");
         string[] common = ["-Mailbox", iso.Relay, "-Executable", Native.Exe];
         var wrong = JsonNode.Parse(Native.Pwsh(probe, [.. common, "-Port", first.Port.ToString(), "-Request"]).Out)!;
         Assert.False(wrong["ok"]!.GetValue<bool>());

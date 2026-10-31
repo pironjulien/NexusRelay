@@ -8,14 +8,14 @@ public static class CodexSpace
     {
         string? value = Environment.GetEnvironmentVariable(variable)?.Trim();
         if (!string.IsNullOrEmpty(value)) return value;
-        return RelayBox.ReadJson(Path.Combine(RelayPaths.UserHome(), ".nexus", "nexus-relay", "settings.json"))?[key]?.ToString()?.Trim() ?? "";
+        return RelayBox.ReadJson(Path.Join(RelayPaths.UserHome(), ".nexus", "nexus-relay", "settings.json"))?[key]?.ToString()?.Trim() ?? "";
     }
     public static JsonObject Configured()
     {
         string workspace = Setting("NEXUS_RELAY_CODEX_WORKSPACE", "codex_workspace"), label = Setting("NEXUS_RELAY_CODEX_PROJECT", "codex_project"), id = Setting("NEXUS_RELAY_CODEX_PROJECT_ID", "codex_project_id");
         bool explicitChoice = workspace.Length + label.Length + id.Length > 0;
         if (explicitChoice && (workspace.Length == 0 || label.Length == 0 || id.Length == 0)) throw new RelayError("Codex execution space requires workspace path, project label and official project ID");
-        return new() { ["path"] = explicitChoice ? Path.GetFullPath(workspace) : Path.Combine(RelayPaths.RelayHome(), "codex-projet"), ["label"] = explicitChoice ? label : "Nexus Relay", ["project_id"] = id.Length > 0 ? id : null, ["explicit"] = explicitChoice, ["ownership"] = "verified Relay conversation IDs only" };
+        return new() { ["path"] = explicitChoice ? Path.GetFullPath(workspace) : Path.Join(RelayPaths.RelayHome(), "codex-projet"), ["label"] = explicitChoice ? label : "Nexus Relay", ["project_id"] = id.Length > 0 ? id : null, ["explicit"] = explicitChoice, ["ownership"] = "verified Relay conversation IDs only" };
     }
     public static bool AcceptsCreated(string created)
     {
@@ -40,12 +40,12 @@ public static class CodexSpace
     public static JsonObject RegisterHistory(RelayBox box)
     {
         var chats = AppSessions.CodexChats().ToDictionary(c => c.Id); var registry = box.State("codex-owned") ?? new JsonObject { ["threads"] = new JsonObject() }; var registered = new JsonArray();
-        string legacy = Path.Combine(RelayPaths.RelayHome(), "codex-projet"), configured = Configured()["path"]!.ToString();
+        string legacy = Path.Join(RelayPaths.RelayHome(), "codex-projet"), configured = Configured()["path"]!.ToString();
         foreach (var message in box.All().Where(m => m.To == "codex" && !m.Info))
         {
-            foreach (var wake in box.Events(message.Id).Where(e => e["kind"]?.ToString() == "réveil" && e["status"]?.ToString() is "started" or "uncertain"))
+            var woken = box.Events(message.Id).Where(e => e["kind"]?.ToString() == "réveil" && e["status"]?.ToString() is "started" or "uncertain").Select(e => e["conversation"]?.ToString()).OfType<string>();
+            foreach (var (id, chat) in woken.Select(id => (id, chats.GetValueOrDefault(id))).Where(p => p.Item2 is { Child: false } && !Protected(p.id) && registry["threads"]?[p.id]?["verified"]?.GetValue<bool>() != true).Select(p => (p.id, p.Item2!)))
             {
-                if (wake["conversation"]?.ToString() is not string id || !chats.TryGetValue(id, out var chat) || chat.Child || Protected(id) || registry["threads"]?[id]?["verified"]?.GetValue<bool>() == true) continue;
                 if (RelayBox.PlainPath(chat.Cwd) != RelayBox.PlainPath(legacy) && RelayBox.PlainPath(chat.Cwd) != RelayBox.PlainPath(configured)) continue;
                 if (!File.Exists(chat.Path)) continue;
                 string marker = "read(id=\"" + message.Id + "\")";
@@ -57,12 +57,9 @@ public static class CodexSpace
                     while ((line = reader.ReadLine()) is not null)
                     {
                         if (!line.Contains(message.Id, StringComparison.Ordinal)) continue;
-                        foreach (var entry in AppSessions.Lines(line)) if (entry["type"]?.ToString() == "response_item" && entry["payload"]?["type"]?.ToString() == "message" && entry["payload"]?["role"]?.ToString() == "user")
-                            foreach (var content in (entry["payload"]?["content"] as JsonArray ?? []).OfType<JsonObject>())
-                            {
-                                string text = content["text"]?.ToString() ?? "";
-                                if ((text.StartsWith("Nexus Relay : message d'un pair pour toi, ", StringComparison.Ordinal) || text.StartsWith("Nexus Relay: message from a peer for you, ", StringComparison.Ordinal)) && text.Contains(marker, StringComparison.Ordinal)) proof = true;
-                            }
+                        proof = AppSessions.Lines(line).Where(e => e["type"]?.ToString() == "response_item" && e["payload"]?["type"]?.ToString() == "message" && e["payload"]?["role"]?.ToString() == "user")
+                            .SelectMany(entry => (entry["payload"]?["content"] as JsonArray ?? []).OfType<JsonObject>().Select(content => content["text"]?.ToString() ?? ""))
+                            .Any(text => (text.StartsWith("Nexus Relay : message d'un pair pour toi, ", StringComparison.Ordinal) || text.StartsWith("Nexus Relay: message from a peer for you, ", StringComparison.Ordinal)) && text.Contains(marker, StringComparison.Ordinal));
                         if (proof) break;
                     }
                 }

@@ -20,7 +20,7 @@ public sealed class RpcRequest : IDisposable
         previous = Local.Value; Local.Value = this;
     }
     public static void Cancel(string scope, JsonNode? id) { if (id is not null && Running.TryGetValue(scope + "|" + id.ToJsonString(), out var source)) source.Cancel(); }
-    public void Check() { if (disconnected?.Invoke() == true) cancelled.Cancel(); cancelled.Token.ThrowIfCancellationRequested(); }
+    public void Check() { if (disconnected?.Invoke() == true) { cancelled.Cancel(); } cancelled.Token.ThrowIfCancellationRequested(); }
     public void Progress(double elapsed, double total) { Check(); progress?.Invoke(elapsed, total); }
     public void Dispose() { Local.Value = previous; Running.TryRemove(key, out _); cancelled.Dispose(); }
 }

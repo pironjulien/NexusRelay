@@ -79,9 +79,9 @@ public sealed class ContractTests : IDisposable
     public void Card_semantics_replay_the_recorded_oracle_calls()
     {
         var golden = Golden("cards.json");
-        string state = Path.Combine(iso.Root, "cards");
+        string state = Path.Join(iso.Root, "cards");
         Directory.CreateDirectory(state);
-        iso.Set("NEXUS_RELAY_HOME", Path.Combine(state, "relay"));
+        iso.Set("NEXUS_RELAY_HOME", Path.Join(state, "relay"));
         foreach (var (name, data) in golden["files"]!.AsObject()) File.WriteAllBytes(Path.Combine(state, name), Convert.FromBase64String(data!.ToString()));
         string escaped = JsonSerializer.Serialize(state)[1..^1];
         int index = 0;
@@ -133,7 +133,7 @@ public sealed class ContractTests : IDisposable
     public static string Asar(string path, IEnumerable<(string Name, byte[] Data)> files)
     {
         var tree = new JsonObject { ["files"] = new JsonObject() };
-        var blob = new MemoryStream();
+        using var blob = new MemoryStream();
         foreach (var (name, data) in files)
         {
             var node = tree;
@@ -157,7 +157,7 @@ public sealed class ContractTests : IDisposable
     [Fact]
     public void Reads_localized_asar_index_with_unicode_and_escapes()
     {
-        string asar = Asar(Path.Combine(iso.Root, "app.asar"),
+        string asar = Asar(Path.Join(iso.Root, "app.asar"),
         [
             ("webview/assets/fr-FR-fixture.js", Encoding.Latin1.GetBytes("export default {\"archive\":\"Archiver\",\"mode\":`Changer de mode\\xA0: {mode}`,\"emoji\":\"\\uD83D\\uDE00\"}")),
             ("native-menu-locales/fr-FR.json", Encoding.UTF8.GetBytes("""{"quit": "Quitter"}""")),
@@ -172,13 +172,13 @@ public sealed class ContractTests : IDisposable
     [Fact]
     public void Where_reads_historical_complete_cards_without_the_application()
     {
-        string folder = Path.Combine(iso.Relay, "v1", "cartes");
+        string folder = Path.Join(iso.Relay, "v1", "cartes");
         Directory.CreateDirectory(folder);
         var element = new JsonObject { ["role"] = "menuitem", ["aria"] = "Archiver", ["text"] = "", ["data"] = new JsonObject { ["data-testid"] = "archive-chat" }, ["path"] = new JsonArray("vue de départ", "menu « Actions du chat »") };
         JsonObject Card(string version, string at, JsonArray elements) => new() { ["app"] = "codex", ["version"] = version, ["surveyed_at"] = at, ["elements"] = elements, ["index"] = new JsonObject { ["archive"] = "Archiver" } };
-        File.WriteAllText(Path.Combine(folder, "codex-1.json"), Card("1", "2026-10-20T10:00:00Z", [element]).ToJsonString());
-        File.WriteAllText(Path.Combine(folder, "codex-2.json"), Card("2", "2026-10-21T10:00:00Z", []).ToJsonString());
-        File.WriteAllText(Path.Combine(folder, "codex-3.partiel.json"), Card("3", "2099-01-01T00:00:00Z", [element.DeepClone()]).ToJsonString());
+        File.WriteAllText(Path.Join(folder, "codex-1.json"), Card("1", "2026-10-20T10:00:00Z", [element]).ToJsonString());
+        File.WriteAllText(Path.Join(folder, "codex-2.json"), Card("2", "2026-10-21T10:00:00Z", []).ToJsonString());
+        File.WriteAllText(Path.Join(folder, "codex-3.partiel.json"), Card("3", "2099-01-01T00:00:00Z", [element.DeepClone()]).ToJsonString());
         var data = Native.Data(Native.Stdio("claude", Native.Call("where", new() { ["app"] = "codex", ["what"] = "ARCHIVE" }))[0]);
         Assert.Equal("success", data["status"]?.ToString());
         Assert.Equal("2", data["version"]?.ToString());
@@ -195,7 +195,7 @@ public sealed class ContractTests : IDisposable
     {
         foreach (var root in new[] { Environment.SpecialFolder.ProgramFiles, Environment.SpecialFolder.ProgramFilesX86, Environment.SpecialFolder.LocalApplicationData })
         {
-            string path = Path.Combine(Environment.GetFolderPath(root), "Google", "Chrome", "Application", "chrome.exe");
+            string path = Path.Join(Environment.GetFolderPath(root), "Google", "Chrome", "Application", "chrome.exe");
             if (File.Exists(path)) return path;
         }
         return null;
@@ -205,7 +205,7 @@ public sealed class ContractTests : IDisposable
     {
         string chrome = Chrome() ?? throw new InvalidOperationException("Chrome is required for the card survey tests");
         int port = Native.FreePort();
-        string profile = Path.Combine(iso.Root, "browser", Guid.NewGuid().ToString("N"));
+        string profile = Path.Join(iso.Root, "browser", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(profile);
         var start = new ProcessStartInfo(chrome) { UseShellExecute = false, CreateNoWindow = true, WindowStyle = ProcessWindowStyle.Hidden };
         // Chromium's Windows sandbox needs the real OS profile identity; its data still goes only to --user-data-dir.
@@ -220,7 +220,7 @@ public sealed class ContractTests : IDisposable
             while (DateTime.UtcNow < until && url is null)
             {
                 try { url = JsonNode.Parse(http.GetStringAsync($"http://127.0.0.1:{port}/json/list").GetAwaiter().GetResult())!.AsArray().OfType<JsonObject>().FirstOrDefault(t => t["type"]?.ToString() == "page" && t["url"]?.ToString().StartsWith("file:") == true)?["webSocketDebuggerUrl"]?.ToString(); }
-                catch (Exception e) when (e is HttpRequestException or TaskCanceledException) { }
+                catch (Exception e) when (e is HttpRequestException or TaskCanceledException) { /* Debugger not up yet: retried until the deadline. */ }
                 if (url is null) Thread.Sleep(100);
             }
             Assert.NotNull(url);

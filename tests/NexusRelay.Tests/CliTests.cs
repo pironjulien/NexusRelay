@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
@@ -9,11 +10,11 @@ using System.Text.Json.Nodes;
 namespace NexusRelay.Tests;
 
 /// <summary>Windows' own SQLite, to write app database fixtures.</summary>
-internal static class Sqlite
+internal static partial class Sqlite
 {
-    [DllImport("winsqlite3.dll", EntryPoint = "sqlite3_open_v2", CallingConvention = CallingConvention.Cdecl)] private static extern int Open([MarshalAs(UnmanagedType.LPUTF8Str)] string path, out nint db, int flags, nint vfs);
-    [DllImport("winsqlite3.dll", EntryPoint = "sqlite3_exec", CallingConvention = CallingConvention.Cdecl)] private static extern int Exec(nint db, [MarshalAs(UnmanagedType.LPUTF8Str)] string sql, nint callback, nint arg, out nint error);
-    [DllImport("winsqlite3.dll", EntryPoint = "sqlite3_close", CallingConvention = CallingConvention.Cdecl)] private static extern int Close(nint db);
+    [LibraryImport("winsqlite3.dll", EntryPoint = "sqlite3_open_v2", StringMarshalling = StringMarshalling.Utf8), UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])] private static partial int Open(string path, out nint db, int flags, nint vfs);
+    [LibraryImport("winsqlite3.dll", EntryPoint = "sqlite3_exec", StringMarshalling = StringMarshalling.Utf8), UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])] private static partial int Exec(nint db, string sql, nint callback, nint arg, out nint error);
+    [LibraryImport("winsqlite3.dll", EntryPoint = "sqlite3_close"), UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])] private static partial int Close(nint db);
     public static string Q(string text) => "'" + text.Replace("'", "''") + "'";
     public static void Run(string path, string sql)
     {
@@ -34,7 +35,7 @@ public sealed class CliTests : IDisposable
     public void Edit_guard_begin_finish_and_notice_in_utf8()
     {
         Native.Git(iso.Root, "init", "-q");
-        string target = Path.Combine(iso.Root, "épreuve.py");
+        string target = Path.Join(iso.Root, "épreuve.py");
         var edit = new JsonObject { ["session_id"] = "root-a", ["tool_use_id"] = "appel-1", ["tool_name"] = "apply_patch", ["tool_input"] = new JsonObject { ["command"] = $"*** Add File: {target}" } };
         var begin = Native.Run(["--edit-guard", "codex"], edit.ToJsonString());
         Assert.Equal(0, begin.Code);
@@ -58,10 +59,10 @@ public sealed class CliTests : IDisposable
     [Fact]
     public void Commit_guard_allows_siblings_and_rejects_other_chats()
     {
-        string repository = Path.Combine(iso.Root, "repo");
+        string repository = Path.Join(iso.Root, "repo");
         Directory.CreateDirectory(repository);
         Native.Git(repository, "init", "-q");
-        string target = Path.Combine(repository, "a.py");
+        string target = Path.Join(repository, "a.py");
         File.WriteAllText(target, "change = 1\n");
         Native.Git(repository, "add", "a.py");
         var box = iso.Box();
@@ -85,19 +86,19 @@ public sealed class CliTests : IDisposable
     {
         // The hooks installed by scripts/install_commit_guard.ps1, run by Git's own sh with HOME pointing at a fixture
         // profile whose ~/.nexus/nexus-relay/bin holds the engine.
-        string bin = Path.Combine(iso.Home, ".nexus", "nexus-relay", "bin");
+        string bin = Path.Join(iso.Home, ".nexus", "nexus-relay", "bin");
         Directory.CreateDirectory(bin);
         foreach (string file in Directory.EnumerateFiles(AppContext.BaseDirectory, "*", SearchOption.TopDirectoryOnly))
-            File.Copy(file, Path.Combine(bin, Path.GetFileName(file)));
-        string repository = Path.Combine(iso.Root, "guarded");
+            File.Copy(file, Path.Join(bin, Path.GetFileName(file)));
+        string repository = Path.Join(iso.Root, "guarded");
         Directory.CreateDirectory(repository);
         Native.Git(repository, "init", "-q");
         Native.Git(repository, "config", "user.email", "fixture@example.org");
         Native.Git(repository, "config", "user.name", "Fixture");
-        var install = Native.Pwsh(Path.Combine(Paths.Repo(), "scripts", "install_commit_guard.ps1"), "-Root", repository);
+        var install = Native.Pwsh(Path.Join(Paths.Repo(), "scripts", "install_commit_guard.ps1"), "-Root", repository);
         Assert.True(install.Code == 0, install.Err + install.Out);
         Assert.Contains("pre-commit", install.Out);
-        string target = Path.Combine(repository, "réservé.txt");
+        string target = Path.Join(repository, "réservé.txt");
         File.WriteAllText(target, "x");
         var box = iso.Box();
         Reservations.Reserve(box, "antigravity", [target], "fixture held by another agent");
@@ -113,7 +114,7 @@ public sealed class CliTests : IDisposable
     [Fact]
     public void History_registration_never_adopts_a_human_child_or_current_chat()
     {
-        string documents = Path.Combine(iso.Root, "Documents");
+        string documents = Path.Join(iso.Root, "Documents");
         iso.Set("NEXUS_RELAY_CODEX_WORKSPACE", documents);
         iso.Set("NEXUS_RELAY_CODEX_PROJECT", "Documents");
         iso.Set("NEXUS_RELAY_CODEX_PROJECT_ID", "official-fixture-id");
@@ -125,13 +126,13 @@ public sealed class CliTests : IDisposable
             var ask = box.Post("claude", "codex", "fixture", "ownership");
             string text = $"Nexus Relay : message d'un pair pour toi, read(id=\"{ask.Id}\").";
             if (chat == "quoted") text = "A user quote: " + text;
-            string log = Path.Combine(iso.Root, chat + ".jsonl");
+            string log = Path.Join(iso.Root, chat + ".jsonl");
             File.WriteAllText(log, new JsonObject { ["type"] = "response_item", ["payload"] = new JsonObject { ["type"] = "message", ["role"] = "user", ["content"] = new JsonArray(new JsonObject { ["type"] = "input_text", ["text"] = text }) } }.ToJsonString() + "\n");
             sql.Append($"INSERT INTO threads VALUES({Sqlite.Q(chat)},{Sqlite.Q(log)},{Sqlite.Q(documents)},1);");
             if (chat != "human") box.Event(ask.Id, "réveil", new() { ["status"] = "started", ["conversation"] = chat });
         }
         sql.Append("INSERT INTO thread_spawn_edges VALUES('relay','child');");
-        Sqlite.Run(Path.Combine(iso.CodexHome, "state_5.sqlite"), sql.ToString());
+        Sqlite.Run(Path.Join(iso.CodexHome, "state_5.sqlite"), sql.ToString());
         var result = Native.Json("--register-known-relay-chats");
         Assert.Equal(["relay"], (result["registered"] as JsonArray)!.Select(n => n!.ToString()));
         var registry = box.State("codex-owned")!;
@@ -145,10 +146,10 @@ public sealed class CliTests : IDisposable
     [Fact]
     public void Codex_long_running_turn_remains_busy_until_durable_completion()
     {
-        string log = Path.Combine(iso.Root, "rollout.jsonl");
+        string log = Path.Join(iso.Root, "rollout.jsonl");
         File.WriteAllText(log, """{"timestamp": "2000-01-01T00:00:00Z", "payload": {"type": "task_started"}}""" + "\n");
         File.SetLastWriteTimeUtc(log, DateTime.UtcNow.AddHours(-2));
-        Sqlite.Run(Path.Combine(iso.CodexHome, "state_5.sqlite"), CodexSchema + $"INSERT INTO threads VALUES('long',{Sqlite.Q(log)},'workspace',0);");
+        Sqlite.Run(Path.Join(iso.CodexHome, "state_5.sqlite"), CodexSchema + $"INSERT INTO threads VALUES('long',{Sqlite.Q(log)},'workspace',0);");
         Assert.Equal("working", Activity()["codex"]?["status"]?.ToString());
         File.AppendAllText(log, """{"timestamp": "2000-01-01T02:00:00Z", "payload": {"type": "task_complete"}}""" + "\n");
         Assert.Equal("idle", Activity()["codex"]?["status"]?.ToString());
@@ -159,10 +160,10 @@ public sealed class CliTests : IDisposable
     [Fact]
     public void Antigravity_old_incomplete_transcript_remains_busy_and_missing_is_unknown()
     {
-        string root = Path.Combine(iso.Gemini, "antigravity");
+        string root = Path.Join(iso.Gemini, "antigravity");
         const string conversation = "12345678-1234-1234-1234-123456789abc";
-        Sqlite.Run(Path.Combine(root, "conversations", conversation + ".db"), "CREATE TABLE steps(idx INTEGER,step_type INTEGER,step_payload BLOB); INSERT INTO steps VALUES(1,1,X'616374697665');");
-        string transcript = Path.Combine(root, "brain", conversation, ".system_generated", "logs", "transcript.jsonl");
+        Sqlite.Run(Path.Join(root, "conversations", conversation + ".db"), "CREATE TABLE steps(idx INTEGER,step_type INTEGER,step_payload BLOB); INSERT INTO steps VALUES(1,1,X'616374697665');");
+        string transcript = Path.Join(root, "brain", conversation, ".system_generated", "logs", "transcript.jsonl");
         Directory.CreateDirectory(Path.GetDirectoryName(transcript)!);
         File.WriteAllText(transcript, """{"created_at": "2000-01-01T00:00:00Z", "type": "GENERIC", "status": "RUNNING"}""" + "\n");
         File.SetLastWriteTimeUtc(transcript, DateTime.UtcNow.AddHours(-2));
@@ -176,7 +177,7 @@ public sealed class CliTests : IDisposable
     [Fact]
     public void Quota_reads_the_selected_family_and_observation_time()
     {
-        string path = Path.Combine(iso.Root, "quota.json");
+        string path = Path.Join(iso.Root, "quota.json");
         iso.Set("NEXUS_RELAY_KEYPAD_QUOTA", path);
         var observed = DateTimeOffset.UtcNow;
         var data = new JsonObject
@@ -211,10 +212,10 @@ public sealed class CliTests : IDisposable
     [Fact]
     public void User_application_survives_caller_job_with_negative_control()
     {
-        string output = Path.Combine(Paths.Scratch, "..", "lifetime");
-        var build = Native.RunFile("dotnet", ["publish", Path.Combine(Paths.Repo(), "tests", "native_lifetime", "LifetimeFixture.csproj"), "-c", "Release", "-o", output, "--nologo", "-v", "q"], timeoutS: 180);
+        string output = Path.Join(Paths.Scratch, "..", "lifetime");
+        var build = Native.RunFile("dotnet", ["publish", Path.Join(Paths.Repo(), "tests", "native_lifetime", "LifetimeFixture.csproj"), "-c", "Release", "-o", output, "--nologo", "-v", "q"], timeoutS: 180);
         Assert.True(build.Code == 0, build.Out + build.Err);
-        var result = Native.RunFile(Path.Combine(output, "LifetimeFixture.exe"), ["--test"], timeoutS: 45);
+        var result = Native.RunFile(Path.Join(output, "LifetimeFixture.exe"), ["--test"], timeoutS: 45);
         Assert.True(result.Code == 0, result.Out + result.Err);
         var lines = result.Out.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Select(l => JsonNode.Parse(l)!).ToList();
         Assert.Equal(2, lines.Count);
@@ -227,8 +228,8 @@ public sealed class CliTests : IDisposable
             Assert.Equal(broker, line["survived_job_close"]!.GetValue<bool>());
             Assert.Equal(broker, line["child_normal_exit"]!.GetValue<bool>());
         }
-        Assert.False(Directory.Exists(Path.Combine(Paths.Repo(), "tests", "native_lifetime", "bin")));
-        Assert.False(Directory.Exists(Path.Combine(Paths.Repo(), "tests", "native_lifetime", "obj")));
+        Assert.False(Directory.Exists(Path.Join(Paths.Repo(), "tests", "native_lifetime", "bin")));
+        Assert.False(Directory.Exists(Path.Join(Paths.Repo(), "tests", "native_lifetime", "obj")));
     }
 
     [Fact]
@@ -249,12 +250,12 @@ public sealed class CliTests : IDisposable
         var box = iso.Box();
         var info = box.Post("claude", "antigravity", "Context only", "native-delivery", info: true);
         var first = box.Post("claude", "antigravity", "Technical fixture", "native-delivery");
-        string calls = Path.Combine(iso.Root, "calls.jsonl");
+        string calls = Path.Join(iso.Root, "calls.jsonl");
         const string conversation = "12345678-1234-1234-1234-123456789abc";
-        string folder = Path.Combine(iso.Gemini, "antigravity", "conversations");
+        string folder = Path.Join(iso.Gemini, "antigravity", "conversations");
         Directory.CreateDirectory(folder);
-        File.WriteAllText(Path.Combine(folder, conversation + ".db"), "");
-        string script = Path.Combine(iso.Root, "fake_agentapi.ps1");
+        File.WriteAllText(Path.Join(folder, conversation + ".db"), "");
+        string script = Path.Join(iso.Root, "fake_agentapi.ps1");
         File.WriteAllText(script, """
             $line = ConvertTo-Json -Compress -InputObject @($args)
             [IO.File]::AppendAllText($env:TEST_CALLS, $line + "`n", [Text.UTF8Encoding]::new($false))
@@ -280,7 +281,11 @@ public sealed class CliTests : IDisposable
             Assert.True(box.HasEvent(info.Id, "livré"));
             Assert.Equal(conversation, box.TopicState("native-delivery", "agy")?["conversation"]?.ToString());
         }
-        finally { if (!sidecar.HasExited) sidecar.Kill(true); sidecar.WaitForExit(10_000); }
+        finally
+        {
+            if (!sidecar.HasExited) sidecar.Kill(true);
+            sidecar.WaitForExit(10_000);
+        }
     }
 
     /// <summary>Minimal Chrome debugger: /json/list, then a WebSocket answering Runtime.evaluate.</summary>
@@ -298,8 +303,8 @@ public sealed class CliTests : IDisposable
                 while (!stop.IsCancellationRequested)
                 {
                     TcpClient client;
-                    try { client = await listener.AcceptTcpClientAsync(stop.Token); } catch (Exception) { return; }
-                    _ = Task.Run(() => { try { Serve(client); } catch (Exception e) when (e is IOException or SocketException or ObjectDisposedException or EndOfStreamException) { } finally { client.Dispose(); } });
+                    try { client = await listener.AcceptTcpClientAsync(stop.Token); } catch (Exception e) when (e is OperationCanceledException or ObjectDisposedException or SocketException) { return; }
+                    _ = Task.Run(() => { using (client) { try { Serve(client); } catch (Exception e) when (e is IOException or SocketException or ObjectDisposedException or EndOfStreamException) { /* The test closed the connection. */ } } });
                 }
             });
         }

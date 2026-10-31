@@ -28,14 +28,10 @@ public static partial class SearchAndSummary
         int index = 0;
         foreach (var rune in text.EnumerateRunes())
         {
-            foreach (var c in rune.ToString().Normalize(NormalizationForm.FormD).EnumerateRunes())
+            foreach (string lower in rune.ToString().Normalize(NormalizationForm.FormD).EnumerateRunes().Where(c => Rune.GetUnicodeCategory(c) != UnicodeCategory.NonSpacingMark).Select(c => Rune.ToLowerInvariant(c).ToString()))
             {
-                if (Rune.GetUnicodeCategory(c) != UnicodeCategory.NonSpacingMark)
-                {
-                    string lower = Rune.ToLowerInvariant(c).ToString();
-                    sb.Append(lower);
-                    for (int i = 0; i < lower.Length; i++) where.Add(index);
-                }
+                sb.Append(lower);
+                for (int i = 0; i < lower.Length; i++) where.Add(index);
             }
             index += rune.Utf16SequenceLength;
         }
@@ -135,9 +131,8 @@ public static partial class SearchAndSummary
             var plain = Bare(msg.Text);
             int totalScore = 0;
             bool allMatch = true;
-            foreach (var term in wanted)
+            foreach (int c in wanted.Select(term => CountOccurrences(plain, term)))
             {
-                int c = CountOccurrences(plain, term);
                 if (c == 0)
                 {
                     allMatch = false;
@@ -167,13 +162,7 @@ public static partial class SearchAndSummary
         {
             var item = scored[i];
             var (folded, where) = Fold(item.Message.Text);
-            int first = int.MaxValue;
-            foreach (var term in wanted)
-            {
-                int idx = folded.IndexOf(term, StringComparison.Ordinal);
-                if (idx >= 0 && idx < first)
-                    first = idx;
-            }
+            int first = wanted.Select(term => folded.IndexOf(term, StringComparison.Ordinal)).Where(idx => idx >= 0).DefaultIfEmpty(int.MaxValue).Min();
             int origStart = (first < where.Count && where.Count > 0) ? where[first] : 0;
             hits.Add((item.Message, item.Score, Snippet(item.Message.Text, origStart)));
         }
