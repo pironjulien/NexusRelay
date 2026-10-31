@@ -12,7 +12,8 @@
 #      codex_router_start  commandes qui le lancent, essayées dans l'ordre (NEXUS_RELAY_CODEX_ROUTER_START)
 #  - démon partagé (127.0.0.1:16181, jeton du poste) déclaré au superviseur des démons (tâche « Nexus MCP Daemons ») par
 #    ~\.nexus\daemons\specs\nexus-relay.json (clé exe) ; chaque client le joint par URL avec son agent (?agent=…)
-#  - Claude Code : serveur MCP et skill par le plugin nexus-relay (dossier claude\), rien ici
+#  - Claude Code et Codex : serveur MCP, skill et hooks par le plugin nexus-relay du catalogue NexusSystem (dossier
+#    plugin\, source unique des trois IA), rien ici
 #  - Antigravity : plugin ~\.gemini\config\plugins\nexus-relay (serveur MCP par URL, skill, sidecar permanent
 #    « nexus-relay/relay ») et son activation dans ~\.gemini\config\config.json, dans le projet Antigravity « Nexus Relay »
 #    (créé ici, dossier ~\.nexus\relay\agy-projet)
@@ -272,9 +273,9 @@ if ($null -ne $packTargets -and $packTargets -notcontains 'antigravity') {
     $agyResult = ''
 } else {
     $plugin = Join-Path $agyRoot 'plugins\nexus-relay'
-    $copied = Copy-Tree (Join-Path $project 'plugins\nexus-relay') $plugin
-    if ($french -and (Test-Path (Join-Path $project 'fr\plugins\nexus-relay'))) {
-        $copied += Copy-Tree (Join-Path $project 'fr\plugins\nexus-relay') $plugin  # copie française par-dessus
+    $copied = Copy-Tree (Join-Path $project 'plugin\antigravity') $plugin
+    if ($french -and (Test-Path (Join-Path $project 'fr\plugin\antigravity'))) {
+        $copied += Copy-Tree (Join-Path $project 'fr\plugin\antigravity') $plugin  # copie française par-dessus
     }
     $mcp = [ordered]@{ mcpServers = [ordered]@{ 'nexus-relay' = [ordered]@{
         serverUrl = (Get-Url 'antigravity'); headers = [ordered]@{ Authorization = "Bearer $token" } } } }

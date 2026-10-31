@@ -1,0 +1,23 @@
+{
+  "name": "nexus-relay",
+  "displayName": "Nexus Relay",
+  "version": "1.10.5",
+  "description": "Direct link between Claude, Codex and Antigravity on one Windows PC: topic rooms, multi-agent review, delegated tasks. Served by the local NexusRelay daemon, installed by NexusSystem (or NexusRelay's get.ps1).",
+  "author": {
+    "name": "Julien Piron",
+    "url": "https://github.com/pironjulien"
+  },
+  "homepage": "https://julienpiron.fr/nexusrelay/",
+  "repository": "https://github.com/pironjulien/NexusRelay",
+  "license": "MIT",
+  "keywords": [
+    "multi-agent",
+    "claude",
+    "codex",
+    "antigravity",
+    "mcp"
+  ],
+  "icon": "./assets/logo.png",
+  "documentationUrl": "https://github.com/pironjulien/NexusRelay#readme",
+  "supportUrl": "https://github.com/pironjulien/NexusRelay/issues"
+}

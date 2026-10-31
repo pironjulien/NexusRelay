@@ -256,7 +256,7 @@ public sealed class InstallerTests : IDisposable
         string fr = Path.Combine(Repo, "fr");
         foreach (string path in Directory.EnumerateFiles(fr, "*", SearchOption.AllDirectories))
             Assert.True(File.Exists(Path.Combine(Repo, Path.GetRelativePath(fr, path))), path);
-        foreach (string plugin in new[] { "plugins/nexus-relay/plugin.json", "fr/plugins/nexus-relay/plugin.json", "codex/.codex-plugin/plugin.json" })
+        foreach (string plugin in new[] { "plugin/antigravity/plugin.json", "fr/plugin/antigravity/plugin.json", "plugin/.claude-plugin/plugin.json", "plugin/.codex-plugin/plugin.json" })
             Assert.Equal(RelayPaths.Version, JsonNode.Parse(File.ReadAllText(Path.Combine(Repo, plugin)))!["version"]?.ToString());
         Assert.Contains($"<Version>{RelayPaths.Version}</Version>", File.ReadAllText(Path.Combine(Repo, "native", "NexusRelay.csproj")));
         Assert.Contains($"## [{RelayPaths.Version}]", File.ReadAllText(Path.Combine(Repo, "CHANGELOG.md")));
@@ -264,7 +264,7 @@ public sealed class InstallerTests : IDisposable
         Assert.Equal(RelayPaths.Version, server["version"]?.ToString());
         Assert.All(server["packages"]!.AsArray(), p => Assert.Contains($"/v{RelayPaths.Version}/", p!["identifier"]!.ToString()));
         Assert.Equal(RelayPaths.Version, JsonNode.Parse(File.ReadAllText(Path.Combine(Repo, "mcpb", "manifest.json")))!["version"]?.ToString());
-        foreach (string name in new[] { "claude/skills/nexus-relay/SKILL.md", "plugins/nexus-relay/skills/nexus-relay/SKILL.md" })
+        foreach (string name in new[] { "plugin/skills/nexus-relay/SKILL.md", "plugin/codex/skills/nexus-relay/SKILL.md", "plugin/antigravity/skills/nexus-relay/SKILL.md" })
             Assert.DoesNotContain("é", File.ReadAllText(Path.Combine(Repo, name)));  // English for the public
     }
 

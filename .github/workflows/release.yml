@@ -44,6 +44,9 @@ jobs:
           if ((Get-Content native/RelayPaths.cs -Raw) -notmatch "Version = `"$([regex]::Escape($version))`"") { throw "RelayPaths.Version is not $version" }
           if ((Get-Content server.json -Raw | ConvertFrom-Json).version -ne $version) { throw "server.json is not $version" }
           if ((Get-Content mcpb/manifest.json -Raw | ConvertFrom-Json).version -ne $version) { throw "mcpb/manifest.json is not $version" }
+          foreach ($manifest in 'plugin/.claude-plugin/plugin.json', 'plugin/.codex-plugin/plugin.json', 'plugin/antigravity/plugin.json', 'fr/plugin/antigravity/plugin.json') {
+            if ((Get-Content $manifest -Raw | ConvertFrom-Json).version -ne $version) { throw "$manifest is not $version" }
+          }
       - name: Tests (test.ps1)
         shell: pwsh
         run: ./test.ps1
@@ -54,7 +57,10 @@ jobs:
           Add-Type -AssemblyName System.IO.Compression.FileSystem
           $stage = Join-Path $env:RUNNER_TEMP 'stage'
           New-Item -ItemType Directory dist, $stage | Out-Null
-          $shared = 'install.ps1', 'get.ps1', 'LICENSE', 'README.md', 'CHANGELOG.md', 'plugins', 'fr', 'codex-projet', 'claude', 'codex'
+          $shared = 'install.ps1', 'get.ps1', 'LICENSE', 'README.md', 'CHANGELOG.md', 'codex-projet'
+          # Only the Antigravity part of plugin/ ships with the engine (install.ps1 deploys it); Claude Code and Codex take
+          # plugin/ from the NexusSystem catalog.
+          $deployed = 'plugin/antigravity', 'fr/plugin/antigravity', 'fr/codex-projet'
           $scripts = 'Configure-AntigravityRelay.ps1', 'Restart-Relay.ps1', 'Resolve-RelayPath.ps1', 'install_commit_guard.ps1', 'Resolve-NexusToken.ps1', 'pre-commit', 'post-commit', 'update-native.ps1'
           foreach ($rid in 'win-x64', 'win-arm64') {
             $engine = Join-Path $stage "engine-$rid"
@@ -64,6 +70,7 @@ jobs:
             $zip = Join-Path $stage "zip-$rid"
             New-Item -ItemType Directory "$zip\scripts" | Out-Null
             Copy-Item $shared $zip -Recurse
+            foreach ($folder in $deployed) { $into = Join-Path $zip (Split-Path $folder); New-Item -ItemType Directory -Force $into | Out-Null; Copy-Item $folder $into -Recurse }
             $scripts | ForEach-Object { Copy-Item "scripts/$_" "$zip\scripts" }
             Copy-Item $engine "$zip\bin" -Recurse
             [IO.Compression.ZipFile]::CreateFromDirectory($zip, "$PWD\dist\NexusRelay-$rid.zip")
@@ -71,7 +78,7 @@ jobs:
             $bundle = Join-Path $stage "mcpb-$rid"
             New-Item -ItemType Directory $bundle | Out-Null
             Copy-Item mcpb/manifest.json $bundle
-            Copy-Item plugins/nexus-relay/logo.png "$bundle\icon.png"
+            Copy-Item plugin/antigravity/logo.png "$bundle\icon.png"
             Copy-Item $engine "$bundle\server" -Recurse
             [IO.Compression.ZipFile]::CreateFromDirectory($bundle, "$PWD\dist\nexus-relay-$rid.mcpb")
           }

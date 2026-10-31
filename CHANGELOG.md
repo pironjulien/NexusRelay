@@ -6,6 +6,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.10.5] - 2026-10-31
+
+### Changed
+- `plugin/` is now the single source of the nexus-relay plugin for all three AI apps: Claude Code
+  (`.claude-plugin`, `.mcp.json`, `hooks/hooks.json`, `skills/`), Codex (`.codex-plugin` with its edit hooks,
+  `.codex-mcp.json`, `codex/skills/`) and Antigravity (`antigravity/`, deployed by `install.ps1`, French copy in
+  `fr/plugin/antigravity`). The skill stays specific to each app because each one is woken differently. The former
+  `claude/`, `codex/` and `plugins/` copies and the unused French Claude/Codex copies are removed; the NexusSystem
+  catalog points to `plugin/` at the release tag. Release archives ship only the Antigravity part.
+
+### Fixed
+- Claude Code now receives the host skill (open exchanges, review rounds) instead of Antigravity's answering skill,
+  which the NexusSystem catalog had been publishing for Claude.
+
 ## [1.10.4] - 2026-10-30
 
 ### Fixed

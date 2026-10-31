@@ -1,0 +1,70 @@
+{
+  "name": "nexus-relay",
+  "version": "1.10.5",
+  "description": "Direct link between Claude, Codex and Antigravity on one Windows PC: topic rooms, multi-agent review, delegated tasks. Served by the local NexusRelay daemon, installed by NexusSystem (or NexusRelay's get.ps1).",
+  "author": {
+    "name": "Julien Piron",
+    "url": "https://julienpiron.fr"
+  },
+  "repository": "https://github.com/pironjulien/NexusRelay",
+  "license": "MIT",
+  "keywords": [
+    "multi-agent",
+    "codex",
+    "claude",
+    "antigravity",
+    "mcp"
+  ],
+  "mcpServers": "./.codex-mcp.json",
+  "skills": "./codex/skills/",
+  "hooks": {
+    "hooks": {
+      "PreToolUse": [
+        {
+          "matcher": "apply_patch",
+          "hooks": [
+            {
+              "type": "command",
+              "command": "cmd.exe /d /c \"%USERPROFILE%\\.nexus\\nexus-relay\\bin\\NexusRelay.exe\" --edit-guard codex",
+              "timeout": 15,
+              "async": false
+            }
+          ]
+        }
+      ],
+      "PostToolUse": [
+        {
+          "matcher": "apply_patch",
+          "hooks": [
+            {
+              "type": "command",
+              "command": "cmd.exe /d /c \"%USERPROFILE%\\.nexus\\nexus-relay\\bin\\NexusRelay.exe\" --edit-guard codex --finish-tool",
+              "timeout": 15,
+              "async": false
+            }
+          ]
+        }
+      ],
+      "Stop": [
+        {
+          "hooks": [
+            {
+              "type": "command",
+              "command": "cmd.exe /d /c \"%USERPROFILE%\\.nexus\\nexus-relay\\bin\\NexusRelay.exe\" --edit-guard codex --finish-session",
+              "timeout": 15,
+              "async": false
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "interface": {
+    "displayName": "Nexus Relay",
+    "shortDescription": "Direct link with Claude and Antigravity",
+    "developerName": "Julien Piron",
+    "category": "Productivity",
+    "composerIcon": "./assets/icon.png",
+    "logo": "./assets/logo.png"
+  }
+}

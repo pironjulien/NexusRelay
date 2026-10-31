@@ -4,7 +4,7 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <AssemblyName>NexusRelay</AssemblyName>
     <RootNamespace>NexusRelay</RootNamespace>
-    <Version>1.10.4</Version>
+    <Version>1.10.5</Version>
   </PropertyGroup>
   <ItemGroup>
     <EmbeddedResource Include="ToolContracts.json" LogicalName="NexusRelay.ToolContracts.json" />

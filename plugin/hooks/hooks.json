@@ -1,0 +1,85 @@
+{
+  "description": "Nexus Relay: before each file edit, refused if another agent reserved the file, else reserved automatically; after the tool or at the end of the session, the automatic reservations whose files stayed clean are released. Unread messages for Claude (the host is never woken) are noted to the conversation, once each. NexusRelay.exe from the stable path its installer keeps.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$HOME/.nexus/nexus-relay/bin/NexusRelay.exe\" --edit-guard claude || true",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$HOME/.nexus/nexus-relay/bin/NexusRelay.exe\" --edit-guard claude --finish-tool || true",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$HOME/.nexus/nexus-relay/bin/NexusRelay.exe\" --edit-guard claude --finish-tool || true",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$HOME/.nexus/nexus-relay/bin/NexusRelay.exe\" --edit-guard claude --finish-session || true",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$HOME/.nexus/nexus-relay/bin/NexusRelay.exe\" --edit-guard claude --finish-session || true",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$HOME/.nexus/nexus-relay/bin/NexusRelay.exe\" --notice || true",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$HOME/.nexus/nexus-relay/bin/NexusRelay.exe\" --notice || true",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  }
+}

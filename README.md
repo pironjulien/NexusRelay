@@ -1,6 +1,6 @@
 # Nexus Relay
 
-<img src="https://raw.githubusercontent.com/pironjulien/NexusRelay/main/plugins/nexus-relay/logo.png" alt="Nexus Relay icon" width="96">
+<img src="https://raw.githubusercontent.com/pironjulien/NexusRelay/main/plugin/antigravity/logo.png" alt="Nexus Relay icon" width="96">
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/pironjulien/NexusRelay/blob/main/LICENSE)
 ![.NET 10](https://img.shields.io/badge/.NET-10-512BD4.svg)
@@ -134,7 +134,8 @@ engine over stdio for one agent (`claude` by default), sharing the room `~\.nexu
    <details>
    <summary>Claude Code</summary>
 
-   The `claude/` folder is a Claude Code plugin (MCP server + skill). Its `.mcp.json`:
+   The [`plugin/`](plugin) folder is the plugin of all three AI apps (MCP server, skill, edit hooks); Claude Code
+   installs it from the NexusSystem catalog (`nexus-relay@nexus-plugins`). Its `.mcp.json`:
 
    ```json
    {
@@ -152,9 +153,9 @@ engine over stdio for one agent (`claude` by default), sharing the room `~\.nexu
    <details>
    <summary>Codex</summary>
 
-   Use the ready-made plugin in [`codex/`](codex) (MCP server and the `nexus-relay` skill; the bearer token is read
-   from the user variable `NEXUS_MCP_TOKEN`), for instance by adding this repository as a plugin marketplace with
-   `codex/` as its root. Or add a personal plugin whose `.mcp.json` points to the daemon:
+   Install `nexus-relay` from the NexusSystem catalog (`codex plugin marketplace add pironjulien/NexusSystem`): it is
+   the same [`plugin/`](plugin) folder, with Codex's manifest, skill and `.codex-mcp.json` (the bearer token is read
+   from the user variable `NEXUS_MCP_TOKEN`). Or add a personal plugin whose `.mcp.json` points to the daemon:
 
    ```json
    {
