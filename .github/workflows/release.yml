@@ -8,7 +8,8 @@
 #   product-dev-release attests them (Sigstore build provenance, NexusRelay-X.Y.Z.intoto.jsonl; verify with
 #   `gh attestation verify <file> --repo pironjulien/NexusRelay`, keyless) and publishes the pre-release
 #   vX.Y.Z-dev.N (NexusSystem's development channel); get.ps1 then installs it on a clean runner (NEXUS_RELEASE_TAG).
-# - Stable: "Run workflow" (promote: a vX.Y.Z-dev.N, or empty for the newest) runs product-promote: the SAME files
+# - Stable: right after that build when its version is not released yet, or "Run workflow" (promote: a vX.Y.Z-dev.N,
+#   or empty for the newest), product-promote runs: the SAME files
 #   become the release vX.Y.Z with the CHANGELOG section; then server.json (both bundles, with their SHA-256) goes to
 #   the MCP registry by GitHub OIDC (no token stored), and the one-line install is run from releases/latest.
 #   registry: only re-send a stable release's server.json.
@@ -126,20 +127,22 @@ jobs:
       contents: write
       id-token: write
       attestations: write
-    uses: pironjulien/NexusSystem/.github/workflows/product-dev-release.yml@a409925bafd1184acc207dd90ca4a43ba987d0e3  # v1.6.39
+    uses: pironjulien/NexusSystem/.github/workflows/product-dev-release.yml@9cf03f2ac93e207307351b393130ff1cfe2aef7b  # v1.6.40
     with:
       product: NexusRelay
       version: ${{ needs.build.outputs.version }}
 
   promote:
-    if: github.event_name == 'workflow_dispatch' && github.repository == 'pironjulien/NexusRelay'
+    # Right after the push that built a new version (same files), or by hand ("Run workflow").
+    needs: dev
+    if: always() && (needs.dev.result == 'success' || github.event_name == 'workflow_dispatch') && github.repository == 'pironjulien/NexusRelay'
     permissions:
       contents: write
       id-token: write
-    uses: pironjulien/NexusSystem/.github/workflows/product-promote.yml@a409925bafd1184acc207dd90ca4a43ba987d0e3  # v1.6.39
+    uses: pironjulien/NexusSystem/.github/workflows/product-promote.yml@9cf03f2ac93e207307351b393130ff1cfe2aef7b  # v1.6.40
     with:
       product: NexusRelay
-      promote: ${{ inputs.promote }}
+      promote: ${{ inputs.promote || needs.dev.outputs.tag }}
       registry-only: ${{ inputs.registry }}
       mcp-package: ''  # two packages: published by the registry job below
 
@@ -147,7 +150,7 @@ jobs:
     # server.json to the official MCP registry: both stable bundles (URL and SHA-256, checked against the attested
     # SHA256SUMS.txt of the release). mcp-publisher pinned by version and SHA-256; GitHub OIDC login, no token stored.
     needs: promote
-    if: always() && github.event_name == 'workflow_dispatch' && (needs.promote.outputs.tag != '' || inputs.registry != '')
+    if: always() && (needs.promote.outputs.tag != '' || inputs.registry != '')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:

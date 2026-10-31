@@ -6,6 +6,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Release: a push whose version is not released yet becomes the stable release right after its development build
+  (same files); "Run workflow" still promotes by hand. CodeQL and OpenSSF Scorecard workflows removed.
+
 ## [1.10.7] - 2026-10-31
 
 ### Changed
