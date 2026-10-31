@@ -9,7 +9,8 @@
 # Run it again to update. Each release file also has a Sigstore build provenance attestation:
 #   gh attestation verify NexusRelay-win-x64.zip --repo pironjulien/NexusRelay
 # NEXUS_RELAY_SOURCE (a local folder: a checkout, built with the .NET 10 SDK, or an extracted release) installs that
-# copy instead. NEXUS_PACK=1 (the Nexus pack, get-nexus.ps1): no question, no wait, no window; exit code 0 on success;
+# copy instead. NEXUS_RELEASE_TAG: install that release (vX.Y.Z, or a development build vX.Y.Z-dev.N) instead of the
+# latest. NEXUS_PACK=1 (the Nexus pack, get-nexus.ps1): no question, no wait, no window; exit code 0 on success;
 # a last "NEXUS_PACK_RESULT ..." line (one word per AI client).
 # Test variables: NEXUS_RELAY_ROOT (install folder instead of %LOCALAPPDATA%\NexusRelay), NEXUS_RELAY_DOWNLOAD_ONLY=1
 # (download, check and mirror only; nothing is installed nor declared).
@@ -37,15 +38,22 @@ if ($env:NEXUS_RELAY_SOURCE) {
     $arch = $env:PROCESSOR_ARCHITEW6432
     if (-not $arch) { $arch = $env:PROCESSOR_ARCHITECTURE }
     $rid = switch ($arch) { 'ARM64' { 'win-arm64' } 'AMD64' { 'win-x64' } default { throw "Unsupported processor architecture: $arch (x64 or ARM64 needed)." } }
-    # Latest tag from the releases/latest redirect (no GitHub API, so no rate limit).
-    $request = [Net.WebRequest]::Create('https://github.com/pironjulien/NexusRelay/releases/latest')
-    $request.Method = 'HEAD'
-    $request.AllowAutoRedirect = $false
-    try { $response = $request.GetResponse() } catch [Net.WebException] { $response = $_.Exception.Response }
-    $location = if ($response) { [string]$response.Headers['Location'] } else { '' }
-    if ($response) { $response.Close() }
-    $tag = ($location -split '/tag/')[-1]
-    if ($tag -notmatch '^v\d+\.\d+\.\d+$') { throw "Latest NexusRelay release not found (redirect: '$location')." }
+    if ($env:NEXUS_RELEASE_TAG) {
+        # NEXUS_RELEASE_TAG (set by NexusSystem for its development channel): that release instead, a stable vX.Y.Z or
+        # a development vX.Y.Z-dev.N build, checked against its own SHA256SUMS.txt like any other.
+        if ($env:NEXUS_RELEASE_TAG -notmatch '^v\d+\.\d+\.\d+(-dev\.\d+)?$') { throw "NEXUS_RELEASE_TAG is not a release tag: $env:NEXUS_RELEASE_TAG" }
+        $tag = $env:NEXUS_RELEASE_TAG
+    } else {
+        # Latest tag from the releases/latest redirect (no GitHub API, so no rate limit).
+        $request = [Net.WebRequest]::Create('https://github.com/pironjulien/NexusRelay/releases/latest')
+        $request.Method = 'HEAD'
+        $request.AllowAutoRedirect = $false
+        try { $response = $request.GetResponse() } catch [Net.WebException] { $response = $_.Exception.Response }
+        $location = if ($response) { [string]$response.Headers['Location'] } else { '' }
+        if ($response) { $response.Close() }
+        $tag = ($location -split '/tag/')[-1]
+        if ($tag -notmatch '^v\d+\.\d+\.\d+$') { throw "Latest NexusRelay release not found (redirect: '$location')." }
+    }
     $name = "NexusRelay-$rid.zip"
     Write-Output "Downloading NexusRelay $tag ($rid)..."
     $download = Join-Path $root 'download'

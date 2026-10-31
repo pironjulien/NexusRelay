@@ -6,6 +6,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.10.6] - 2026-10-31
+
+### Added
+- Development builds on every push to `main`: the release workflow checks one version everywhere, runs `test.ps1`,
+  builds both archives and both MCP bundles, and the shared NexusSystem workflow `product-dev-release` attests them and
+  publishes the pre-release `vX.Y.Z-dev.N` (NexusSystem's development channel; `releases/latest` never points to it).
+  The one-line install is then run from that build on a clean runner.
+- `get.ps1` honours `NEXUS_RELEASE_TAG`: it installs that release (`vX.Y.Z` or a development build `vX.Y.Z-dev.N`)
+  instead of the latest, checked against its own `SHA256SUMS.txt` like any other.
+
+### Changed
+- A stable release is now the promotion of a tested development build: "Run workflow" runs the shared NexusSystem
+  workflow `product-promote`, which publishes the same files, unchanged, as `vX.Y.Z` with this changelog's section.
+  Pushing a `vX.Y.Z` tag no longer releases anything.
+- The MCP registry step stays in this repository, after the promotion, because `server.json` lists two bundles (x64
+  and Arm64); both are checked against the release's attested `SHA256SUMS.txt`. The `registry` input re-sends a stable
+  release's `server.json` alone.
+
 ## [1.10.5] - 2026-10-31
 
 ### Changed

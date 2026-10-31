@@ -1,33 +1,50 @@
-# Release: on a vX.Y.Z tag, runs test.ps1, publishes the native engine self-contained for win-x64 and win-arm64 (no .NET
-# to install), and attaches to the "NexusRelay X.Y.Z" GitHub release:
-#   - NexusRelay-win-x64.zip / NexusRelay-win-arm64.zip: engine (bin\) and installer (install.ps1, scripts, plugins),
-#     installed by get.ps1 after checking SHA256SUMS.txt;
-#   - nexus-relay-win-x64.mcpb / nexus-relay-win-arm64.mcpb: MCP bundles (stdio), listed in the official MCP registry;
-#   - get.ps1, SHA256SUMS.txt and the Sigstore build provenance of every file (NexusRelay-X.Y.Z.intoto.jsonl; verify with
-#     `gh attestation verify <file> --repo pironjulien/NexusRelay`, keyless).
-# Then server.json (with the bundles' SHA-256) goes to the MCP registry by GitHub OIDC (no token stored), and the
-# one-line install is run from the published release on a clean runner.
-# Actions pinned by commit SHA; Dependabot (github-actions) keeps them up to date.
+# Release, in two channels, with the shared Nexus release workflows of NexusSystem.
+# - Development: every push to main runs test.ps1 and publishes the native engine self-contained for win-x64 and
+#   win-arm64 (no .NET to install):
+#     - NexusRelay-win-x64.zip / NexusRelay-win-arm64.zip: engine (bin\) and installer (install.ps1, scripts, plugins),
+#       installed by get.ps1 after checking SHA256SUMS.txt;
+#     - nexus-relay-win-x64.mcpb / nexus-relay-win-arm64.mcpb: MCP bundles (stdio), listed in the official MCP registry;
+#     - get.ps1 and SHA256SUMS.txt.
+#   product-dev-release attests them (Sigstore build provenance, NexusRelay-X.Y.Z.intoto.jsonl; verify with
+#   `gh attestation verify <file> --repo pironjulien/NexusRelay`, keyless) and publishes the pre-release
+#   vX.Y.Z-dev.N (NexusSystem's development channel); get.ps1 then installs it on a clean runner (NEXUS_RELEASE_TAG).
+# - Stable: "Run workflow" (promote: a vX.Y.Z-dev.N, or empty for the newest) runs product-promote: the SAME files
+#   become the release vX.Y.Z with the CHANGELOG section; then server.json (both bundles, with their SHA-256) goes to
+#   the MCP registry by GitHub OIDC (no token stored), and the one-line install is run from releases/latest.
+#   registry: only re-send a stable release's server.json.
+# The registry step stays here: the shared one fills a single package, this server lists two (x64 and arm64).
+# Actions and shared workflows pinned by commit SHA; Dependabot (github-actions) keeps them up to date.
 name: Release
 
 on:
   push:
-    tags: ["v*.*.*"]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      promote:
+        description: Development build to publish as stable (vX.Y.Z-dev.N; empty = the newest)
+        required: false
+        default: ''
+      registry:
+        description: Only send this stable release's server.json (vX.Y.Z) to the MCP registry again
+        required: false
+        default: ''
 
 permissions: {}
 
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
-  release:
-    if: github.repository == 'pironjulien/NexusRelay'
+  build:
+    if: github.event_name == 'push' && github.repository == 'pironjulien/NexusRelay'
     runs-on: windows-latest
     timeout-minutes: 30
     permissions:
-      contents: write
-      id-token: write
-      attestations: write
+      contents: read
     outputs:
-      x64: ${{ steps.packages.outputs.x64 }}
-      arm64: ${{ steps.packages.outputs.arm64 }}
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -35,23 +52,27 @@ jobs:
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68  # v6.0.0
         with:
           global-json-file: global.json
-      - name: Version of the tag everywhere
+      - name: One version everywhere
+        id: version
         shell: pwsh
-        env:
-          TAG: ${{ github.ref_name }}
         run: |
-          $version = $env:TAG.TrimStart('v')
-          if ((Get-Content native/RelayPaths.cs -Raw) -notmatch "Version = `"$([regex]::Escape($version))`"") { throw "RelayPaths.Version is not $version" }
-          if ((Get-Content server.json -Raw | ConvertFrom-Json).version -ne $version) { throw "server.json is not $version" }
-          if ((Get-Content mcpb/manifest.json -Raw | ConvertFrom-Json).version -ne $version) { throw "mcpb/manifest.json is not $version" }
-          foreach ($manifest in 'plugin/.claude-plugin/plugin.json', 'plugin/.codex-plugin/plugin.json', 'plugin/antigravity/plugin.json', 'fr/plugin/antigravity/plugin.json') {
-            if ((Get-Content $manifest -Raw | ConvertFrom-Json).version -ne $version) { throw "$manifest is not $version" }
+          $version = [regex]::Match((Get-Content native/RelayPaths.cs -Raw), 'Version = "([^"]+)"').Groups[1].Value
+          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw "native/RelayPaths.cs: no X.Y.Z version ($version)." }
+          $found = [ordered]@{
+            'native/NexusRelay.csproj' = ([xml](Get-Content native/NexusRelay.csproj -Raw)).Project.PropertyGroup.Version | Where-Object { $_ } | Select-Object -First 1
+            'server.json' = (Get-Content server.json -Raw | ConvertFrom-Json).version
+            'mcpb/manifest.json' = (Get-Content mcpb/manifest.json -Raw | ConvertFrom-Json).version
           }
+          foreach ($manifest in 'plugin/.claude-plugin/plugin.json', 'plugin/.codex-plugin/plugin.json', 'plugin/antigravity/plugin.json', 'fr/plugin/antigravity/plugin.json') {
+            $found[$manifest] = (Get-Content $manifest -Raw | ConvertFrom-Json).version
+          }
+          $wrong = @($found.GetEnumerator() | Where-Object { $_.Value -ne $version } | ForEach-Object { "$($_.Key)=$($_.Value)" })
+          if ($wrong) { throw "Version $version expected: $($wrong -join ', ')" }
+          "version=$version" >> $env:GITHUB_OUTPUT
       - name: Tests (test.ps1)
         shell: pwsh
         run: ./test.ps1
       - name: Packages
-        id: packages
         shell: pwsh
         run: |
           Add-Type -AssemblyName System.IO.Compression.FileSystem
@@ -86,43 +107,47 @@ jobs:
           Get-ChildItem dist -File | ForEach-Object { '{0}  {1}' -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower(), $_.Name } |
             Set-Content dist/SHA256SUMS.txt -Encoding utf8NoBOM
           Get-Content dist/SHA256SUMS.txt
-          "x64=$((Get-FileHash dist/nexus-relay-win-x64.mcpb -Algorithm SHA256).Hash.ToLower())" >> $env:GITHUB_OUTPUT
-          "arm64=$((Get-FileHash dist/nexus-relay-win-arm64.mcpb -Algorithm SHA256).Hash.ToLower())" >> $env:GITHUB_OUTPUT
       - name: The x64 engine of the archive starts and lists its tools
         shell: pwsh
         run: |
           Expand-Archive dist/NexusRelay-win-x64.zip "$env:RUNNER_TEMP\check"
           $tools = & "$env:RUNNER_TEMP\check\bin\NexusRelay.exe" --schemas | ConvertFrom-Json
           if (@($tools).Count -ne 20) { throw "tools: $(@($tools).Count)" }
-      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8  # v4.2.2
-        id: provenance
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
-          subject-path: dist/*
-      - name: Provenance bundle
-        shell: pwsh
-        env:
-          BUNDLE: ${{ steps.provenance.outputs.bundle-path }}
-          TAG: ${{ github.ref_name }}
-        run: Copy-Item $env:BUNDLE "dist/NexusRelay-$($env:TAG.TrimStart('v')).intoto.jsonl"
-      - name: GitHub release
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.ref_name }}
-        run: |
-          $version = $env:TAG.TrimStart('v')
-          $lines = Get-Content CHANGELOG.md
-          $start = [Array]::FindIndex($lines, [Predicate[string]] { param($l) $l -like "## ``[$version``]*" })
-          if ($start -lt 0) { throw "CHANGELOG.md has no [$version] section." }
-          $end = [Array]::FindIndex($lines, $start + 1, [Predicate[string]] { param($l) $l -like '## *' })
-          if ($end -lt 0) { $end = $lines.Count }
-          $lines[($start + 1)..($end - 1)] | Set-Content notes.md -Encoding utf8NoBOM
-          gh release create $env:TAG (Get-ChildItem dist -File).FullName --title "NexusRelay $version" --notes-file notes.md --verify-tag
+          name: dist
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 3
+
+  dev:
+    needs: build
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    uses: pironjulien/NexusSystem/.github/workflows/product-dev-release.yml@a409925bafd1184acc207dd90ca4a43ba987d0e3  # v1.6.39
+    with:
+      product: NexusRelay
+      version: ${{ needs.build.outputs.version }}
+
+  promote:
+    if: github.event_name == 'workflow_dispatch' && github.repository == 'pironjulien/NexusRelay'
+    permissions:
+      contents: write
+      id-token: write
+    uses: pironjulien/NexusSystem/.github/workflows/product-promote.yml@a409925bafd1184acc207dd90ca4a43ba987d0e3  # v1.6.39
+    with:
+      product: NexusRelay
+      promote: ${{ inputs.promote }}
+      registry-only: ${{ inputs.registry }}
+      mcp-package: ''  # two packages: published by the registry job below
 
   registry:
-    # server.json with the SHA-256 of the attached bundles, to the official MCP registry. mcp-publisher pinned by version
-    # and SHA-256; GitHub OIDC login, no token stored.
-    needs: release
+    # server.json to the official MCP registry: both stable bundles (URL and SHA-256, checked against the attested
+    # SHA256SUMS.txt of the release). mcp-publisher pinned by version and SHA-256; GitHub OIDC login, no token stored.
+    needs: promote
+    if: always() && github.event_name == 'workflow_dispatch' && (needs.promote.outputs.tag != '' || inputs.registry != '')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -135,17 +160,28 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
-      - name: Bundle hashes into server.json
+      - name: server.json for this release
         env:
-          X64: ${{ needs.release.outputs.x64 }}
-          ARM64: ${{ needs.release.outputs.arm64 }}
+          TAG: ${{ inputs.registry || needs.promote.outputs.tag }}
+          REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
-          jq --arg x64 "$X64" --arg arm64 "$ARM64" \
-            '.packages |= map(.fileSha256 = (if (.identifier | endswith("win-arm64.mcpb")) then $arm64 else $x64 end))' \
-            server.json > server.filled.json
-          mv server.filled.json server.json
-          cat server.json
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Not a release tag: $TAG"; exit 1; }
+          base="https://github.com/${REPOSITORY}/releases/download/${TAG}"
+          sums=$(curl -fsSL --retry 5 "$base/SHA256SUMS.txt" | tr -d '\r')
+          jq --arg v "${TAG#v}" '.version = $v' server.json > server.release.json
+          for package in nexus-relay-win-x64.mcpb nexus-relay-win-arm64.mcpb; do
+            curl -fsSL --retry 5 -o "$package" "$base/$package"
+            sha=$(sha256sum "$package" | cut -d' ' -f1)
+            grep -qx "${sha}  ${package}" <<<"$sums" || { echo "$package differs from the attested SHA256SUMS.txt"; exit 1; }
+            jq --arg p "$package" --arg u "$base/$package" --arg s "$sha" \
+              '.packages |= map(if (.identifier | endswith("/" + $p)) then (.identifier = $u | .fileSha256 = $s) else . end)' \
+              server.release.json > server.next.json
+            mv server.next.json server.release.json
+          done
+          jq -e --arg b "$base/" '(.packages | length) == 2 and all(.packages[]; (.identifier | startswith($b)) and (.fileSha256 | test("^[0-9a-f]{64}$")))' \
+            server.release.json > /dev/null || { echo "server.json packages not all filled for $TAG"; exit 1; }
+          cat server.release.json
       - name: Install mcp-publisher (pinned, checksum verified)
         run: |
           curl -fsSL -o mcp-publisher.tar.gz \
@@ -153,11 +189,13 @@ jobs:
           echo "${PUBLISHER_SHA256}  mcp-publisher.tar.gz" | sha256sum --strict -c
           tar xzf mcp-publisher.tar.gz mcp-publisher
       - run: ./mcp-publisher login github-oidc
-      - run: ./mcp-publisher publish server.json
+      - run: ./mcp-publisher publish server.release.json
 
   install-from-release:
-    # The one-line install exactly as the public runs it: latest release, SHA-256 check, no SDK, no Python.
-    needs: release
+    # The one-line install exactly as the public runs it, no SDK, no Python: the development build just published
+    # (NEXUS_RELEASE_TAG) on a push, releases/latest after a promotion; SHA-256 checked in both cases.
+    needs: [dev, promote]
+    if: always() && (needs.dev.outputs.tag != '' || needs.promote.outputs.tag != '')
     runs-on: windows-latest
     timeout-minutes: 15
     permissions:
@@ -170,7 +208,8 @@ jobs:
         shell: powershell
         env:
           NEXUS_PACK: "1"
-          TAG: ${{ github.ref_name }}
+          NEXUS_RELEASE_TAG: ${{ needs.dev.outputs.tag }}
+          TAG: ${{ needs.dev.outputs.tag || needs.promote.outputs.tag }}
         run: |
           $ErrorActionPreference = 'Stop'
           New-Item -ItemType Directory -Force "$HOME\.codex", "$HOME\.claude" | Out-Null
@@ -178,7 +217,7 @@ jobs:
           if ($LASTEXITCODE) { $out; throw "get.ps1 failed ($LASTEXITCODE)" }
           $out
           if (@($out)[-1] -notmatch '^NEXUS_PACK_RESULT Claude Code=declared; Codex=declared') { throw "pack line: $(@($out)[-1])" }
-          if (-not ($out -match "Downloading NexusRelay $env:TAG")) { throw "not installed from $env:TAG" }
+          if (-not ($out -match "Downloading NexusRelay $([regex]::Escape($env:TAG)) ")) { throw "not installed from $env:TAG" }
           $code = 0
           foreach ($i in 1..60) {
             try { Invoke-WebRequest -UseBasicParsing http://127.0.0.1:16181/mcp | Out-Null; $code = 200 }
@@ -189,4 +228,4 @@ jobs:
           if ($code -ne 401) { throw "daemon: $code" }
           $token = [Environment]::GetEnvironmentVariable('NEXUS_MCP_TOKEN', 'User')
           $state = Invoke-RestMethod -UseBasicParsing http://127.0.0.1:16181/api/update -Headers @{ Authorization = "Bearer $token" }
-          if ($state.version -ne $env:TAG.TrimStart('v')) { throw "version: $($state.version)" }
+          if ($state.version -ne ($env:TAG.TrimStart('v') -replace '-dev\.\d+$')) { throw "version: $($state.version)" }
