@@ -8,7 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Release: a push whose version is not released yet becomes the stable release right after its development build
-  (same files); "Run workflow" still promotes by hand. CodeQL and OpenSSF Scorecard workflows removed.
+  (same files); "Run workflow" still promotes by hand.
+
+### Security
+- CodeQL (GitHub default setup) and the OpenSSF Scorecard workflow run again on every push to main.
 
 ## [1.10.7] - 2026-10-31
 
