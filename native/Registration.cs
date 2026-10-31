@@ -159,8 +159,13 @@ public static partial class Registration
             && ManifestCarriesGuard(Path.Join(folder, "plugins", Name, ".codex-plugin", "plugin.json"), @event)) return true;
         return active.Select(name => name.Split('@', 2))
             .Where(parts => parts.Length == 2 && parts[1] is not ("" or "." or "..") && parts[1].IndexOfAny(['/', '\\']) < 0)
-            .Any(parts => ManifestCarriesGuard(Path.Combine(folder, "plugins", "cache", parts[1], Name, "local", ".codex-plugin", "plugin.json"), @event));
+            .Any(parts => CachedCopies(Path.Combine(folder, "plugins", "cache", parts[1], Name))
+                .Any(copy => ManifestCarriesGuard(Path.Join(copy, ".codex-plugin", "plugin.json"), @event)));
     }
+
+    /// <summary>Codex caches a repo-marketplace plugin under "local" or under its version (git-subdir sources).</summary>
+    private static IEnumerable<string> CachedCopies(string pluginCache) =>
+        Directory.Exists(pluginCache) ? Directory.EnumerateDirectories(pluginCache) : [];
 
     [GeneratedRegex(@"(?m)^[ \t]*\[[^\r\n]*(?:\r?\n|$)")]
     private static partial Regex TableHeader();

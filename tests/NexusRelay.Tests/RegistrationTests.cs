@@ -39,7 +39,8 @@ public sealed class RegistrationTests : IDisposable
 
     private string CachedPlugin(JsonObject? hooks)
     {
-        string manifest = Path.Join(codex, "plugins", "cache", "nexus-plugins", "nexus-relay", "local", ".codex-plugin", "plugin.json");
+        // Codex's real layout for a git-subdir catalog plugin: one folder per version, not "local".
+        string manifest = Path.Join(codex, "plugins", "cache", "nexus-plugins", "nexus-relay", "1.10.0", ".codex-plugin", "plugin.json");
         var data = new JsonObject { ["name"] = "nexus-relay", ["version"] = "1.10.0" };
         if (hooks is not null) data["hooks"] = hooks;
         Write(manifest, data);

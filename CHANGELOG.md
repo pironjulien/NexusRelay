@@ -6,6 +6,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.10.8] - 2026-10-31
+
+### Fixed
+- Codex: the global edit-guard hooks in `~/.codex/hooks.json` are removed again once the nexus-relay plugin carries
+  them. The installer looked for the cached plugin only under `cache/<catalog>/nexus-relay/local`, while Codex caches
+  a catalog plugin under its version folder, so the guard ran twice (global and plugin).
+
 ### Changed
 - Release: a push whose version is not released yet becomes the stable release right after its development build
   (same files); "Run workflow" still promotes by hand.
