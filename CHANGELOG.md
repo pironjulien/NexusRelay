@@ -6,6 +6,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.10.9] - 2026-10-31
+
+### Fixed
+- Edit guard: a file outside any Git work tree (memory notes, scratch files) is released at the end of the
+  conversation's turn. Its automatic reservation waited for a commit that can never come, so it blocked every other
+  conversation for the full 60 minutes.
+
 ## [1.10.8] - 2026-10-31
 
 ### Fixed

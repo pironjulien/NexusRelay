@@ -57,6 +57,22 @@ public sealed class CliTests : IDisposable
     }
 
     [Fact]
+    public void Edit_guard_releases_a_file_outside_git_at_the_end_of_the_turn()
+    {
+        string target = Path.Join(iso.Root, "notes", "mémoire.md");
+        Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+        File.WriteAllText(target, "avant");
+        var edit = new JsonObject { ["session_id"] = "root-b", ["tool_use_id"] = "appel-2", ["tool_name"] = "Edit", ["tool_input"] = new JsonObject { ["file_path"] = target } };
+        Assert.Equal("", Native.Run(["--edit-guard", "claude"], edit.ToJsonString()).Out);
+        File.WriteAllText(target, "après");
+        Native.Run(["--edit-guard", "claude", "--finish-tool"], edit.ToJsonString());
+        var box = iso.Box();
+        Assert.Single(Reservations.Active(box));  // still in the turn: other conversations keep waiting
+        Native.Run(["--edit-guard", "claude", "--finish-session"], new JsonObject { ["session_id"] = "root-b" }.ToJsonString());
+        Assert.Empty(Reservations.Active(box));  // no commit will ever come: the turn's end releases it
+    }
+
+    [Fact]
     public void Commit_guard_allows_siblings_and_rejects_other_chats()
     {
         string repository = Path.Join(iso.Root, "repo");

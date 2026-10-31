@@ -1,7 +1,7 @@
 {
   "name": "nexus-relay",
   "displayName": "Nexus Relay",
-  "version": "1.10.8",
+  "version": "1.10.9",
   "description": "Direct link between Claude, Codex and Antigravity on one Windows PC: topic rooms, multi-agent review, delegated tasks. Served by the local NexusRelay daemon, installed by NexusSystem (or NexusRelay's get.ps1).",
   "author": {
     "name": "Julien Piron",

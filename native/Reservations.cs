@@ -587,6 +587,64 @@ public static partial class Reservations
         return list;
     }
 
+    private static string? ExistingDirectory(string path)
+    {
+        var directory = Path.GetDirectoryName(path);
+        while (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
+        {
+            var parent = Path.GetDirectoryName(directory);
+            if (parent == directory)
+                return null;
+            directory = parent;
+        }
+        return string.IsNullOrEmpty(directory) ? null : directory;
+    }
+
+    private static string? Git(string directory, params string[] args)
+    {
+        try
+        {
+            var psi = new ProcessStartInfo("git")
+            {
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                StandardOutputEncoding = Encoding.UTF8,
+            };
+            psi.Environment["GIT_OPTIONAL_LOCKS"] = "0";
+            psi.ArgumentList.Add("--literal-pathspecs");
+            psi.ArgumentList.Add("-c");
+            psi.ArgumentList.Add("core.fsmonitor=false");
+            psi.ArgumentList.Add("-C");
+            psi.ArgumentList.Add(directory);
+            foreach (var a in args)
+                psi.ArgumentList.Add(a);
+
+            using var proc = Process.Start(psi);
+            if (proc is null)
+                return null;
+            var output = proc.StandardOutput.ReadToEnd();
+            if (!proc.WaitForExit(5000) || proc.ExitCode != 0)
+                return null;
+            return output;
+        }
+        catch (Exception e) when (e is System.ComponentModel.Win32Exception or InvalidOperationException or IOException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>A file outside any Git work tree (memory notes, scratch files) has no commit to wait for: the end of the
+    /// conversation's turn is its only "done" signal.</summary>
+    private static bool OutsideGit(string path)
+    {
+        if (path.IndexOfAny(['*', '?']) >= 0 || Directory.Exists(path))
+            return false;
+        var directory = ExistingDirectory(path);
+        return directory is not null && Git(directory, "rev-parse", "--is-inside-work-tree") is null;
+    }
+
     private static bool Unchanged(string path, bool absentAtStart)
     {
         if (path.IndexOfAny(['*', '?']) >= 0 || Directory.Exists(path))
@@ -601,51 +659,11 @@ public static partial class Reservations
             return false;
         }
 
-        var directory = Path.GetDirectoryName(path);
-        while (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
-        {
-            var parent = Path.GetDirectoryName(directory);
-            if (parent == directory)
-                return false;
-            directory = parent;
-        }
-        if (string.IsNullOrEmpty(directory))
+        var directory = ExistingDirectory(path);
+        if (directory is null)
             return false;
 
-        string? RunGit(params string[] args)
-        {
-            try
-            {
-                var psi = new ProcessStartInfo("git")
-                {
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    StandardOutputEncoding = Encoding.UTF8,
-                };
-                psi.Environment["GIT_OPTIONAL_LOCKS"] = "0";
-                psi.ArgumentList.Add("--literal-pathspecs");
-                psi.ArgumentList.Add("-c");
-                psi.ArgumentList.Add("core.fsmonitor=false");
-                psi.ArgumentList.Add("-C");
-                psi.ArgumentList.Add(directory);
-                foreach (var a in args)
-                    psi.ArgumentList.Add(a);
-
-                using var proc = Process.Start(psi);
-                if (proc is null)
-                    return null;
-                var output = proc.StandardOutput.ReadToEnd();
-                if (!proc.WaitForExit(5000) || proc.ExitCode != 0)
-                    return null;
-                return output;
-            }
-            catch (Exception e) when (e is System.ComponentModel.Win32Exception or InvalidOperationException or IOException)
-            {
-                return null;
-            }
-        }
+        string? RunGit(params string[] args) => Git(directory, args);
 
         var tracked = RunGit("ls-files", "--stage", "-v", "-z", "--", path);
         if (tracked is null)
@@ -722,7 +740,7 @@ public static partial class Reservations
 
                 bool clean = pending.Count == 0 &&
                     !(record["pending_unknown"]?.GetValue<bool>() ?? false) &&
-                    recPaths.All(p => Unchanged(p, absentSet.Contains(Norm(p))));
+                    recPaths.All(p => Unchanged(p, absentSet.Contains(Norm(p))) || (sessionEnded && OutsideGit(p)));
 
                 var id = record["id"]!.GetValue<string>();
                 if (clean)
