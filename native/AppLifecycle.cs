@@ -55,9 +55,8 @@ public static partial class AppLifecycle
             }
             string conversations = Path.Join(RelayPaths.GeminiHome(), "antigravity", "conversations");
             if (!Directory.Exists(conversations)) return AppTransport.Result("unknown", "Antigravity conversation inventory unavailable");
-            foreach (string id in Directory.EnumerateFiles(conversations, "*.db").Select(file => Path.GetFileNameWithoutExtension(file)))
+            foreach (string id in Directory.EnumerateFiles(conversations, "*.db").Select(file => Path.GetFileNameWithoutExtension(file)).Where(id => RelayPaths.IsConversationId(id) && RelayPaths.ConversationAlive(id)))
             {
-                if (!RelayPaths.IsConversationId(id) || !RelayPaths.ConversationAlive(id)) continue;
                 var turn = AppSessions.AntigravityError(id) ?? AppSessions.AntigravityTurn(id);
                 if (!turn.Finished) return AppTransport.Result(turn.At is null ? "unknown" : "working", "An Antigravity conversation has no durable completion; old timestamps do not establish idleness");
             }

@@ -157,12 +157,9 @@ public static partial class Registration
         var active = plugins.Where(p => Enabled(p.Value, true)).Select(p => p.Key).ToList();
         if ((plugins.Count == 0 || active.Contains("nexus-relay@personal"))
             && ManifestCarriesGuard(Path.Join(folder, "plugins", Name, ".codex-plugin", "plugin.json"), @event)) return true;
-        foreach (var parts in active.Select(name => name.Split('@', 2)))
-        {
-            if (parts.Length != 2 || parts[1] is "" or "." or ".." || parts[1].IndexOfAny(['/', '\\']) >= 0) continue;
-            if (ManifestCarriesGuard(Path.Combine(folder, "plugins", "cache", parts[1], Name, "local", ".codex-plugin", "plugin.json"), @event)) return true;
-        }
-        return false;
+        return active.Select(name => name.Split('@', 2))
+            .Where(parts => parts.Length == 2 && parts[1] is not ("" or "." or "..") && parts[1].IndexOfAny(['/', '\\']) < 0)
+            .Any(parts => ManifestCarriesGuard(Path.Combine(folder, "plugins", "cache", parts[1], Name, "local", ".codex-plugin", "plugin.json"), @event));
     }
 
     [GeneratedRegex(@"(?m)^[ \t]*\[[^\r\n]*(?:\r?\n|$)")]

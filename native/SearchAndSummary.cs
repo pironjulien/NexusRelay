@@ -28,9 +28,8 @@ public static partial class SearchAndSummary
         int index = 0;
         foreach (var rune in text.EnumerateRunes())
         {
-            foreach (var c in rune.ToString().Normalize(NormalizationForm.FormD).EnumerateRunes().Where(c => Rune.GetUnicodeCategory(c) != UnicodeCategory.NonSpacingMark))
+            foreach (string lower in rune.ToString().Normalize(NormalizationForm.FormD).EnumerateRunes().Where(c => Rune.GetUnicodeCategory(c) != UnicodeCategory.NonSpacingMark).Select(c => Rune.ToLowerInvariant(c).ToString()))
             {
-                string lower = Rune.ToLowerInvariant(c).ToString();
                 sb.Append(lower);
                 for (int i = 0; i < lower.Length; i++) where.Add(index);
             }
@@ -163,12 +162,7 @@ public static partial class SearchAndSummary
         {
             var item = scored[i];
             var (folded, where) = Fold(item.Message.Text);
-            int first = int.MaxValue;
-            foreach (int idx in wanted.Select(term => folded.IndexOf(term, StringComparison.Ordinal)))
-            {
-                if (idx >= 0 && idx < first)
-                    first = idx;
-            }
+            int first = wanted.Select(term => folded.IndexOf(term, StringComparison.Ordinal)).Where(idx => idx >= 0).DefaultIfEmpty(int.MaxValue).Min();
             int origStart = (first < where.Count && where.Count > 0) ? where[first] : 0;
             hits.Add((item.Message, item.Score, Snippet(item.Message.Text, origStart)));
         }

@@ -350,7 +350,7 @@ public static class NativeCards
     public static void RefreshDue(RelayBox box, Action? heartbeat = null)
     {
         var state = box.State("native-cards-check") ?? new(); double now = Reservations.Now();
-        foreach (string app in new[] { "codex", "antigravity" }.Where(a => !(now - (state[a]?.GetValue<double>() ?? 0) < 1800)))
+        foreach (string app in new[] { "codex", "antigravity" }.Where(a => now - (state[a]?.GetValue<double>() ?? 0) >= 1800))
         {
             string? exe = AppTransport.Executable(app); if (exe is null) continue;
             string? version = FileVersionInfo.GetVersionInfo(exe).ProductVersion; var last = Cards(app).FirstOrDefault();

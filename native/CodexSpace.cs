@@ -57,11 +57,9 @@ public static class CodexSpace
                     while ((line = reader.ReadLine()) is not null)
                     {
                         if (!line.Contains(message.Id, StringComparison.Ordinal)) continue;
-                        foreach (var entry in AppSessions.Lines(line).Where(e => e["type"]?.ToString() == "response_item" && e["payload"]?["type"]?.ToString() == "message" && e["payload"]?["role"]?.ToString() == "user"))
-                            foreach (string text in (entry["payload"]?["content"] as JsonArray ?? []).OfType<JsonObject>().Select(content => content["text"]?.ToString() ?? ""))
-                            {
-                                if ((text.StartsWith("Nexus Relay : message d'un pair pour toi, ", StringComparison.Ordinal) || text.StartsWith("Nexus Relay: message from a peer for you, ", StringComparison.Ordinal)) && text.Contains(marker, StringComparison.Ordinal)) proof = true;
-                            }
+                        proof = AppSessions.Lines(line).Where(e => e["type"]?.ToString() == "response_item" && e["payload"]?["type"]?.ToString() == "message" && e["payload"]?["role"]?.ToString() == "user")
+                            .SelectMany(entry => (entry["payload"]?["content"] as JsonArray ?? []).OfType<JsonObject>().Select(content => content["text"]?.ToString() ?? ""))
+                            .Any(text => (text.StartsWith("Nexus Relay : message d'un pair pour toi, ", StringComparison.Ordinal) || text.StartsWith("Nexus Relay: message from a peer for you, ", StringComparison.Ordinal)) && text.Contains(marker, StringComparison.Ordinal));
                         if (proof) break;
                     }
                 }

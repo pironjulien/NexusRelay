@@ -283,19 +283,9 @@ public static partial class Reservations
         var folder = Folder(box);
         if (!Directory.Exists(folder))
             return [];
-        var list = new List<JsonObject>();
-        foreach (var r in Directory.EnumerateFiles(folder, "*.json").OrderBy(Path.GetFileName, StringComparer.Ordinal).Select(p => RelayBox.ReadJson(p)).OfType<JsonObject>())
-        {
-            if (r["released"] is not null)
-                continue;
-            double expiresAt = r["expires_at"]?.GetValue<double>() ?? 0.0;
-            if (expiresAt <= checkAt)
-                continue;
-            if (r["owner_pid"] is JsonValue pv && pv.TryGetValue<int>(out int pid) && !RelayBox.PidAlive(pid))
-                continue;
-            list.Add(r);
-        }
-        return list;
+        return [.. Directory.EnumerateFiles(folder, "*.json").OrderBy(Path.GetFileName, StringComparer.Ordinal).Select(p => RelayBox.ReadJson(p)).OfType<JsonObject>()
+            .Where(r => r["released"] is null && (r["expires_at"]?.GetValue<double>() ?? 0.0) > checkAt)
+            .Where(r => r["owner_pid"] is not JsonValue pv || !pv.TryGetValue<int>(out int pid) || RelayBox.PidAlive(pid))];
     }
 
     public static bool OtherHolder(JsonObject held, string agent, string? session)
@@ -413,23 +403,12 @@ public static partial class Reservations
 
         double at = Now();
         var key = wanted.Select(Norm).ToList();
-        JsonObject? same = null;
-        foreach (var r in Active(box, at).Where(r => r["agent"]?.GetValue<string>() == agent))
-        {
-            if ((r["session"]?.GetValue<string>() ?? null) != session)
-                continue;
-            if ((r["automatic"]?.GetValue<bool>() ?? false) != automatic)
-                continue;
-            bool rIsAutoReason = (r["reason"]?.GetValue<string>() ?? "") == AutoReason;
-            if (rIsAutoReason != (reason == AutoReason))
-                continue;
-            var rPaths = (r["paths"] as JsonArray)?.Select(x => Norm(x!.GetValue<string>())).OrderBy(x => x, StringComparer.Ordinal).ToList() ?? [];
-            if (rPaths.SequenceEqual(key, StringComparer.Ordinal))
-            {
-                same = r;
-                break;
-            }
-        }
+        JsonObject? same = Active(box, at)
+            .Where(r => r["agent"]?.GetValue<string>() == agent
+                && (r["session"]?.GetValue<string>() ?? null) == session
+                && (r["automatic"]?.GetValue<bool>() ?? false) == automatic
+                && ((r["reason"]?.GetValue<string>() ?? "") == AutoReason) == (reason == AutoReason))
+            .FirstOrDefault(r => ((r["paths"] as JsonArray)?.Select(x => Norm(x!.GetValue<string>())).OrderBy(x => x, StringComparer.Ordinal).ToList() ?? []).SequenceEqual(key, StringComparer.Ordinal));
 
         var id = same?["id"]?.GetValue<string>()
             ?? $"{DateTimeOffset.FromUnixTimeSeconds((long)at).UtcDateTime.ToString("yyyyMMddTHHmmss", CultureInfo.InvariantCulture)}-{RelayBox.RandomHex(3)}";
