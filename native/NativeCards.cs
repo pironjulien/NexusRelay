@@ -15,7 +15,7 @@ public static class NativeCards
     }
     private static readonly JsonObject Ui = Contracts();
     private static readonly Regex Danger = new(Ui["danger"]!.ToString(), RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
-    private static string Folder => Path.Combine(RelayPaths.RelayHome(), "v1", "cartes");
+    private static string Folder => Path.Join(RelayPaths.RelayHome(), "v1", "cartes");
     private static string Label(JsonObject item) => item["aria"]?.ToString() is string aria && aria.Length > 0 ? aria : item["text"]?.ToString() ?? "";
     private static string Norm(string value) => Regex.Replace(string.Concat(value.Normalize(NormalizationForm.FormKD).ToLowerInvariant().Replace("ß","ss",StringComparison.Ordinal).Where(c=>CharUnicodeInfo.GetUnicodeCategory(c)!=UnicodeCategory.NonSpacingMark)), @"\s+", " ").Trim();
     private static void CheckApp(string app) { if (app is not ("codex" or "antigravity")) throw new RelayError("Expected app codex or antigravity"); }
@@ -60,9 +60,8 @@ public static class NativeCards
         var scored = new List<(int Score, JsonObject Item)>();
         foreach (var item in elements)
         {
-            int score;
-            if (rules[what.Trim().ToUpperInvariant()] is JsonObject rule) score = Matches(item, rule) ? 100 : 0;
-            else score = new[] { Label(item), item["text"]?.ToString() ?? "" }.Concat((item["data"] as JsonObject ?? new()).Select(kv => kv.Key + "=" + kv.Value)).Select(Norm).Select(f => f == query ? 100 : f.StartsWith(query, StringComparison.Ordinal) ? 60 : f.Contains(query, StringComparison.Ordinal) ? 30 : 0).Max();
+            int score = rules[what.Trim().ToUpperInvariant()] is JsonObject rule ? (Matches(item, rule) ? 100 : 0)
+                : new[] { Label(item), item["text"]?.ToString() ?? "" }.Concat((item["data"] as JsonObject ?? new()).Select(kv => kv.Key + "=" + kv.Value)).Select(Norm).Select(f => f == query ? 100 : f.StartsWith(query, StringComparison.Ordinal) ? 60 : f.Contains(query, StringComparison.Ordinal) ? 30 : 0).Max();
             if (score > 0 && query.Length > 0) scored.Add((score - (item["path"] as JsonArray)?.Count ?? score, item));
         }
         return new(scored.OrderByDescending(x => x.Score).Take(limit).Select(pair =>
@@ -92,9 +91,9 @@ public static class NativeCards
     public static List<JsonObject> Collapse(IEnumerable<JsonObject> elements)
     {
         var result=new List<JsonObject>();
-        foreach(var group in elements.GroupBy(e=>new JsonArray(e["role"]?.DeepClone(),e["aria"]?.DeepClone(),e["data"]?.DeepClone(),e["region"]?.DeepClone(),e["popup"]?.DeepClone()).ToJsonString()))
+        foreach(var entries in elements.GroupBy(e=>new JsonArray(e["role"]?.DeepClone(),e["aria"]?.DeepClone(),e["data"]?.DeepClone(),e["region"]?.DeepClone(),e["popup"]?.DeepClone()).ToJsonString()).Select(g=>g.ToList()))
         {
-            var entries=group.ToList();if(entries.Count>3&&entries.Select(e=>e["text"]?.ToString()).Distinct().Count()>3){var first=entries[0].DeepClone().AsObject();first["text"]="";first["repeated"]=entries.Count;result.Add(first);}
+            if(entries.Count>3&&entries.Select(e=>e["text"]?.ToString()).Distinct().Count()>3){var first=entries[0].DeepClone().AsObject();first["text"]="";first["repeated"]=entries.Count;result.Add(first);}
             else result.AddRange(entries.DistinctBy(e=>e["text"]?.ToString()).Select(e=>e.DeepClone().AsObject()));
         }
         return result;
@@ -129,7 +128,7 @@ public static class NativeCards
         foreach(var key in oldMarks.Select(p=>p.Key).Union(newMarks.Select(p=>p.Key)).Order(StringComparer.Ordinal))
         {
             var was=oldMarks[key] as JsonObject;var now=newMarks[key] as JsonObject;if(was?["path"] is null)was=null;
-            if(now is not null&&now["path"] is null){if(was is not null)marks.Add(RelayPaths.Tr($"landmark {key} {now["unverified"]} (was: {was["path"]})",$"repère {key} {now["unverified"]} (était : {was["path"]})"));continue;}
+            if(now is not null&&now["path"] is null){if(was is not null){marks.Add(RelayPaths.Tr($"landmark {key} {now["unverified"]} (was: {was["path"]})",$"repère {key} {now["unverified"]} (était : {was["path"]})"));}continue;}
             if(was is not null&&now is null)marks.Add(RelayPaths.Tr($"LANDMARK GONE {key} (was: {was["path"]})",$"REPÈRE DISPARU {key} (était : {was["path"]})"));
             else if(now is not null&&was is null)marks.Add(RelayPaths.Tr($"landmark {key} found: {now["path"]}",$"repère {key} trouvé : {now["path"]}"));
             else if(now is not null&&was is not null)
@@ -150,11 +149,11 @@ public static class NativeCards
     }
     public static JsonObject Save(JsonObject card)
     {
-        var app=card["app"]?.ToString()??"";CheckApp(app);var version=card["version"]?.ToString()??throw new RelayError("Card version missing");var path=Path.Combine(Folder,app+"-"+Regex.Replace(version,@"[^\w.\-]","_")+".json");var partial=Path.ChangeExtension(path,".partiel.json");
+        var app=card["app"]?.ToString()??"";CheckApp(app);var version=card["version"]?.ToString()??throw new RelayError("Card version missing");var path=Path.Join(Folder,app+"-"+Regex.Replace(version,@"[^\w.\-]","_")+".json");var partial=Path.ChangeExtension(path,".partiel.json");
         if(card["live"] is not null&&!Complete(card)){RelayBox.WriteState(partial,card);return new(){["card"]=partial,["partial"]=true};}
         var previous=Cards(app).FirstOrDefault(c=>c["version"]?.ToString()!=version);var result=new JsonObject{["card"]=path};
         if(previous is not null){var change=Diff(previous,card);var diffFile=Path.ChangeExtension(path,".diff.json");card["diff_from"]=app+"-"+Regex.Replace(previous["version"]!.ToString(),@"[^\w.\-]","_")+".json";RelayBox.WriteState(diffFile,change);result["diff"]=diffFile;result["summary"]=DiffSummary(change);result["alerts"]=new JsonArray(change["landmarks"]!.AsArray().Where(v=>v!.ToString().StartsWith("LANDMARK GONE",StringComparison.Ordinal)||v.ToString().StartsWith("REPÈRE DISPARU",StringComparison.Ordinal)).Select(v=>v!.DeepClone()).ToArray());}
-        RelayBox.WriteState(path,card);if(File.Exists(partial))File.Delete(partial);return result;
+        RelayBox.WriteState(path,card);if(File.Exists(partial)){File.Delete(partial);}return result;
     }
     public static JsonObject Overview()
     {
@@ -197,16 +196,16 @@ public static class NativeCards
         void Walk(JsonObject node, string prefix,int depth=0)
         {
             if(depth>64)throw new IOException("ASAR hierarchy exceeds bound");
-            foreach (var kv in (node["files"] as JsonObject ?? new()).OrderBy(p=>p.Key,StringComparer.Ordinal)) if (kv.Value is JsonObject child)
+            foreach (var (key, child) in (node["files"] as JsonObject ?? new()).OrderBy(p=>p.Key,StringComparer.Ordinal).Where(kv => kv.Value is JsonObject).Select(kv => (kv.Key, (JsonObject)kv.Value!)))
             {
-                string name = prefix + "/" + kv.Key;
+                string name = prefix + "/" + key;
                 if (child["files"] is JsonObject) { Walk(child, name,depth+1); continue; }
-                bool locale = name.StartsWith("/webview/assets/", StringComparison.Ordinal) && kv.Key.StartsWith(language + "-", StringComparison.Ordinal) && name.EndsWith(".js", StringComparison.Ordinal);
+                bool locale = name.StartsWith("/webview/assets/", StringComparison.Ordinal) && key.StartsWith(language + "-", StringComparison.Ordinal) && name.EndsWith(".js", StringComparison.Ordinal);
                 bool menu = name == "/native-menu-locales/" + language + ".json";
                 if ((!locale && !menu) || child["offset"] is null) continue;
                 if(!long.TryParse(child["offset"]!.ToString(),out long offset)||child["size"] is not JsonValue lengthNode||!lengthNode.TryGetValue<int>(out int size)||offset<0||size<0||size>16*1024*1024||offset>stream.Length-(8L+headerSize)||size>stream.Length-(8L+headerSize)-offset)throw new IOException("ASAR locale asset bounds invalid");
                 stream.Position = 8L + headerSize + offset;var asset=reader.ReadBytes(size);if(asset.Length!=size)throw new IOException("Truncated ASAR locale asset");string source = Encoding.UTF8.GetString(asset);
-                if (menu) foreach (var entry in JsonNode.Parse(source) as JsonObject ?? new()) if (entry.Value is JsonValue v && v.TryGetValue<string>(out string? text)) result["menu:" + entry.Key] = text;
+                if (menu) foreach (var (entry, text) in (JsonNode.Parse(source) as JsonObject ?? new()).Select(e => (e.Key, e.Value is JsonValue v && v.TryGetValue<string>(out string? t) ? t : null)).Where(p => p.Item2 is not null)) result["menu:" + entry] = text;
                 if (locale) foreach (Match match in Regex.Matches(source, "\"([A-Za-z][\\w.\\-]*)\":(?:`((?:[^`\\\\]|\\\\.)*)`|\"((?:[^\"\\\\]|\\\\.)*)\")", RegexOptions.None, TimeSpan.FromSeconds(2))) result[match.Groups[1].Value] = Unescape(match.Groups[2].Success ? match.Groups[2].Value : match.Groups[3].Value);
             }
         }
@@ -225,7 +224,7 @@ public static class NativeCards
             if (AppTransport.Truth(page.Eval(Ui["draft"]!.ToString())) || (page.Eval(Ui["layers"]!.ToString())?.GetValue<int>() ?? 0) != 0 || app=="antigravity"&&AppTransport.Truth(page.Eval(Ui["agy_running"]!.ToString()))) return AppTransport.Result("deferred", "Existing draft, open menu or running turn is preserved");
             string version = FileVersionInfo.GetVersionInfo(executable).ProductVersion ?? File.GetLastWriteTimeUtc(executable).ToString("O");
             JsonObject index; var known = new HashSet<string>();
-            if (app == "codex") { string language = page.Eval("document.documentElement.lang")?.ToString() ?? "fr-FR"; index = CodexIndex(Path.Combine(Path.GetDirectoryName(executable)!, "resources", "app.asar"), language); }
+            if (app == "codex") { string language = page.Eval("document.documentElement.lang")?.ToString() ?? "fr-FR"; index = CodexIndex(Path.Join(Path.GetDirectoryName(executable)!, "resources", "app.asar"), language); }
             else
             {
                 const string bundle = """
@@ -237,8 +236,8 @@ public static class NativeCards
                 var labels = page.Eval(bundle) as JsonObject ?? new(); index = labels["index"] as JsonObject ?? new(); known.UnionWith((labels["known"] as JsonArray ?? []).Select(n => n?.ToString()).OfType<string>());
             }
             var card = RunSurvey(app,version,index,known,new CardPage(page),()=>{heartbeat?.Invoke();return AppTransport.UserPresent(app)||AppTransport.EmergencyStop()||AppLifecycle.Busy(app);},milliseconds=>{heartbeat?.Invoke();Thread.Sleep(milliseconds);heartbeat?.Invoke();});
-            var saved=Save(card);var summaryMarks=new JsonObject();foreach(var pair in card["landmarks"]!.AsObject())summaryMarks[pair.Key]=pair.Value?["path"]?.DeepClone()??pair.Value?["unverified"]?.DeepClone();var summary=new JsonObject { ["status"]="success",["app"]=app,["version"]=version,["elements"]=card["elements"]!.AsArray().Count,["labels"]=index.Count,["live"]=card["live"]!.DeepClone(),["landmarks"]=summaryMarks };
-            foreach(var entry in saved)summary[entry.Key]=entry.Value?.DeepClone();summary["path"]=saved["card"]?.DeepClone();return summary;
+            var saved=Save(card);var summaryMarks=new JsonObject();foreach(var pair in card["landmarks"]!.AsObject()){summaryMarks[pair.Key]=pair.Value?["path"]?.DeepClone()??pair.Value?["unverified"]?.DeepClone();}var summary=new JsonObject { ["status"]="success",["app"]=app,["version"]=version,["elements"]=card["elements"]!.AsArray().Count,["labels"]=index.Count,["live"]=card["live"]!.DeepClone(),["landmarks"]=summaryMarks };
+            foreach(var entry in saved){summary[entry.Key]=entry.Value?.DeepClone();}summary["path"]=saved["card"]?.DeepClone();return summary;
         }
         catch (Exception e) when (e is IOException or RelayError or System.Net.WebSockets.WebSocketException or OperationCanceledException or System.Text.Json.JsonException) { return AppTransport.Result("failed", e.Message); }
         finally { AppTransport.Locks[app].Release(); }
@@ -273,7 +272,7 @@ public static class NativeCards
             bool Press(JsonObject item) { Guard();if(Danger.IsMatch(Label(item)))return false;var expression="(()=>{const e="+Element(Locator(item))+";return e&&!new RegExp("+AppTransport.Quote(Ui["danger"]!.ToString())+",'i').test((e.getAttribute('aria-label')||e.getAttribute('title')||e.innerText||'').trim())?e:null})()";return jsOpen?AppTransport.Truth(page.Eval("(()=>{const e="+expression+";if(!e)return false;e.click();return true})()")):page.Press(expression); }
             void Close(JsonObject? trigger=null)
             {
-                for (int i = 0; i < 6; i++) { if ((page.Eval(Ui["layers"]!.ToString())?.GetValue<int>() ?? 0) == 0) return; Guard();if(i==4&&trigger is not null)Press(trigger);else if(jsOpen)page.Eval("(()=>{const t=document.activeElement||document.body;t.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',code:'Escape',bubbles:true,cancelable:true}));return 1})()");else page.Escape(); pause(500); }
+                for (int i = 0; i < 6; i++) { if ((page.Eval(Ui["layers"]!.ToString())?.GetValue<int>() ?? 0) == 0) return; Guard();if(i==4&&trigger is not null){Press(trigger);}else if(jsOpen){page.Eval("(()=>{const t=document.activeElement||document.body;t.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',code:'Escape',bubbles:true,cancelable:true}));return 1})()");}else{page.Escape();} pause(500); }
                 throw new RelayError("A menu did not close with Escape");
             }
             bool Trigger(JsonObject item) => item["popup"]?.ToString() is "menu" or "true" || spec["triggers"] is JsonObject triggers && triggers.Count > 0 && triggers.All(kv => item["data"]?[kv.Key]?.ToString() == kv.Value?.ToString());
@@ -334,14 +333,14 @@ public static class NativeCards
                             else
                             {
                                 bool pressed = false;
-                                foreach (var previous in (before?["current"] as JsonArray ?? []).OfType<JsonObject>().Reverse()) if (!((current?["current"] as JsonArray ?? []).Any(e => JsonNode.DeepEquals(e, previous)))) { if (Press(previous)) { pressed = true; break; } }
+                                foreach (var previous in (before?["current"] as JsonArray ?? []).OfType<JsonObject>().Reverse().Where(p => !(current?["current"] as JsonArray ?? []).Any(e => JsonNode.DeepEquals(e, p)))) if (Press(previous)) { pressed = true; break; }
                                 if (!pressed) { var back = Raw().OfType<JsonObject>().Where(e => e["role"]?.ToString() == "button" && Label(e) is "Retour" or "Back").ToList(); if (back.Count != 1 || !Press(back[0])) break; }
                             }
                             pause(1200);
                         }
                         restored = JsonNode.DeepEquals(page.Eval(viewScript), before);
                     }
-                    catch (Exception e) { outcome = "interrompu : " + e.Message; }
+                    catch (Exception e) { outcome = "interrompu : " + e.Message; } // Boundary: a failed view restore is reported in the card, never thrown.
                 }
             }
             var live = new JsonObject { ["status"] = outcome, ["pages"] = pages, ["menus"] = visitedMenus.Count, ["view_restored"] = restored, ["chat_open"] = (before?["current"] as JsonArray ?? []).OfType<JsonObject>().Any(e=>e["data"]?["data-app-action-sidebar-thread-id"] is not null) };
@@ -351,9 +350,8 @@ public static class NativeCards
     public static void RefreshDue(RelayBox box, Action? heartbeat = null)
     {
         var state = box.State("native-cards-check") ?? new(); double now = Reservations.Now();
-        foreach (string app in new[] { "codex", "antigravity" })
+        foreach (string app in new[] { "codex", "antigravity" }.Where(a => !(now - (state[a]?.GetValue<double>() ?? 0) < 1800)))
         {
-            if (now - (state[app]?.GetValue<double>() ?? 0) < 1800) continue;
             string? exe = AppTransport.Executable(app); if (exe is null) continue;
             string? version = FileVersionInfo.GetVersionInfo(exe).ProductVersion; var last = Cards(app).FirstOrDefault();
             if (version is not null && Fresh(last,version)) { state[app] = now; continue; }

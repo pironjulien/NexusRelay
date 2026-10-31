@@ -38,7 +38,7 @@ public sealed class EngineTests : IDisposable
         Assert.Equal(1, summary["answered_total"]!.GetValue<int>());
         Assert.Equal(0, summary["open_total"]!.GetValue<int>());
         Assert.True(Tool("close", new() { ["topic"] = "nexusrelay" }, "claude")["closed"]!.GetValue<bool>());
-        Assert.True(File.Exists(Path.Combine(new RelayBox().Root, "salon", "nexusrelay.md")));
+        Assert.True(File.Exists(Path.Join(new RelayBox().Root, "salon", "nexusrelay.md")));
     }
 
     [Fact]
@@ -81,7 +81,7 @@ public sealed class EngineTests : IDisposable
         box.SetClaim(message.Id, 1, "live-sidecar", "submitting", new JsonObject { ["pid"] = dead });
         Assert.Equal("uncertain", RelayBox.ClaimLabel(box.ClaimOf(message.Id, 1)!));
 
-        string target = Path.Combine(iso.Root, "shared.cs");
+        string target = Path.Join(iso.Root, "shared.cs");
         Reservations.Reserve(box, "codex", [target], "édition avant crash", ttlMin: 60, ownerPid: dead);
         var reclaimed = Reservations.Reserve(box, "claude", [target], "reprise après crash", ttlMin: 60);
         Assert.Equal("claude", reclaimed["agent"]?.ToString());
@@ -92,9 +92,9 @@ public sealed class EngineTests : IDisposable
         Assert.Equal([left], Reservations.Release(box, "claude", left, force: true));
         Assert.DoesNotContain(Reservations.Active(box), r => r["id"]?.ToString() == left);
 
-        string vault = Path.Combine(iso.Root, "vault");
+        string vault = Path.Join(iso.Root, "vault");
         Directory.CreateDirectory(vault);
-        string secret = Path.Combine(vault, "secret.txt");
+        string secret = Path.Join(vault, "secret.txt");
         File.WriteAllText(secret, "top-secret");
         iso.Set("NEXUS_RELAY_VAULTS", vault);
         Assert.Throws<RelayError>(() => box.Post("claude", "codex", "Test coffre", "recovery", files: [secret]));
@@ -117,13 +117,15 @@ public sealed class EngineTests : IDisposable
                 try { health = await http.GetAsync("/health"); } catch (HttpRequestException) { await Task.Delay(50); }
             }
             Assert.True(health?.IsSuccessStatusCode);
-            var unauthorized = await http.PostAsync("/mcp?agent=claude", new StringContent("""{"jsonrpc":"2.0","id":1,"method":"ping"}""", Encoding.UTF8, "application/json"));
+            using var ping = new StringContent("""{"jsonrpc":"2.0","id":1,"method":"ping"}""", Encoding.UTF8, "application/json");
+            var unauthorized = await http.PostAsync("/mcp?agent=claude", ping);
             Assert.Equal(HttpStatusCode.Unauthorized, unauthorized.StatusCode);
             http.DefaultRequestHeaders.Authorization = new("Bearer", token);
             async Task<JsonObject> Rpc(string method, JsonObject? parameters = null)
             {
                 var request = new JsonObject { ["jsonrpc"] = "2.0", ["id"] = 1, ["method"] = method, ["params"] = parameters ?? new JsonObject() };
-                var response = await http.PostAsync("/mcp?agent=claude", new StringContent(request.ToJsonString(), Encoding.UTF8, "application/json"));
+                using var content = new StringContent(request.ToJsonString(), Encoding.UTF8, "application/json");
+                var response = await http.PostAsync("/mcp?agent=claude", content);
                 Assert.True(response.IsSuccessStatusCode);
                 return JsonNode.Parse(await response.Content.ReadAsStringAsync())!["result"]!.AsObject();
             }
@@ -132,7 +134,7 @@ public sealed class EngineTests : IDisposable
             Assert.Equal(20, (discover["tools"] as JsonArray)!.Count);
             Assert.Equal(20, ((await Rpc("tools/list"))["tools"] as JsonArray)!.Count);
             Assert.Equal("claude", (await Rpc("tools/call", new() { ["name"] = "status", ["arguments"] = new JsonObject() }))["structuredContent"]?["me"]?.ToString());
-            var reserved = JsonNode.Parse((await Rpc("tools/call", new() { ["name"] = "reserve", ["arguments"] = new JsonObject { ["paths"] = new JsonArray(Path.Combine(iso.Root, "http_reserved.py")), ["reason"] = "test HTTP reserve" } }))["content"]![0]!["text"]!.ToString())!;
+            var reserved = JsonNode.Parse((await Rpc("tools/call", new() { ["name"] = "reserve", ["arguments"] = new JsonObject { ["paths"] = new JsonArray(Path.Join(iso.Root, "http_reserved.py")), ["reason"] = "test HTTP reserve" } }))["content"]![0]!["text"]!.ToString())!;
             Assert.Equal("success", reserved["status"]?.ToString());
             Assert.Single(((await Rpc("tools/call", new() { ["name"] = "reservations", ["arguments"] = new JsonObject() }))["structuredContent"]?["active"] as JsonArray)!);
             var released = JsonNode.Parse((await Rpc("tools/call", new() { ["name"] = "release", ["arguments"] = new JsonObject { ["id"] = reserved["id"]!.ToString() } }))["content"]![0]!["text"]!.ToString())!;
@@ -141,7 +143,7 @@ public sealed class EngineTests : IDisposable
         finally
         {
             cts.Cancel();
-            try { await server; } catch (OperationCanceledException) { }
+            try { await server; } catch (OperationCanceledException) { /* Expected: the test cancelled the server. */ }
         }
     }
 
@@ -221,8 +223,8 @@ public sealed class EngineTests : IDisposable
         Assert.False(AppAutomation.AntigravityTidyReady(box, unfinished.Topic, true, new(false, now - 20), now));
         Assert.True(AppAutomation.AntigravityTidyReady(box, unfinished.Topic, true, new(false, now - 7201), now));
         string temp = iso.Root;
-        var configured = new JsonObject { ["project_id"] = "official-id", ["path"] = Path.Combine(temp, "Documents"), ["label"] = "Documents" };
-        var evidence = new JsonObject { ["count"] = 1, ["id"] = "official-id", ["path"] = Path.Combine(temp, "Documents"), ["label"] = "Documents" };
+        var configured = new JsonObject { ["project_id"] = "official-id", ["path"] = Path.Join(temp, "Documents"), ["label"] = "Documents" };
+        var evidence = new JsonObject { ["count"] = 1, ["id"] = "official-id", ["path"] = Path.Join(temp, "Documents"), ["label"] = "Documents" };
         Assert.True(AppAutomation.ProjectMatches(evidence, configured));
         evidence["id"] = "other-id"; Assert.False(AppAutomation.ProjectMatches(evidence, configured));
         evidence["id"] = "official-id"; evidence["path"] = temp; Assert.False(AppAutomation.ProjectMatches(evidence, configured));
@@ -235,7 +237,7 @@ public sealed class EngineTests : IDisposable
         Assert.False(CodexSpace.Owns(new("parent", "", temp, false, false), box));
         var (folded, offsets) = SearchAndSummary.Fold("🎯Été𐐀");
         Assert.True(folded == "🎯ete𐐨" && offsets.Count == folded.Length && offsets[2] == 2);
-        string requestPath = Path.Combine(temp, "restart.request");
+        string requestPath = Path.Join(temp, "restart.request");
         File.WriteAllText(requestPath, "code sha256:" + RelayPaths.CodeFingerprint());
         Assert.False(RelayPaths.RestartWanted(requestPath, RelayPaths.CodeFingerprint()));
         File.WriteAllText(requestPath, "code sha256:" + new string('a', 64));
@@ -248,7 +250,7 @@ public sealed class EngineTests : IDisposable
         Assert.NotNull(AppLifecycle.RestartGuard("codex", true, false, true, true));
         Assert.NotNull(AppLifecycle.RestartGuard("antigravity", false, false, true, true));
         Assert.NotNull(AppLifecycle.RestartGuard("antigravity", false, true, false, true));
-        Assert.False(AppLifecycle.InstalledExecutable("codex", Path.Combine(temp, "ChatGPT.exe")));
-        Assert.False(AppLifecycle.InstalledExecutable("antigravity", Path.Combine(temp, "Antigravity.exe")));
+        Assert.False(AppLifecycle.InstalledExecutable("codex", Path.Join(temp, "ChatGPT.exe")));
+        Assert.False(AppLifecycle.InstalledExecutable("antigravity", Path.Join(temp, "Antigravity.exe")));
     }
 }

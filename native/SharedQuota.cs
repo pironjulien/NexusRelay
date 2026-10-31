@@ -6,7 +6,7 @@ public static class SharedQuota
 {
     public static JsonObject? Antigravity()
     {
-        string path = Environment.GetEnvironmentVariable("NEXUS_RELAY_KEYPAD_QUOTA") ?? Path.Combine(Environment.GetEnvironmentVariable("LOCALAPPDATA") ?? Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NexusKeypad", "quota-antigravity.json");
+        string path = Environment.GetEnvironmentVariable("NEXUS_RELAY_KEYPAD_QUOTA") ?? Path.Join(Environment.GetEnvironmentVariable("LOCALAPPDATA") ?? Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NexusKeypad", "quota-antigravity.json");
         if (!File.Exists(path)) return null;
         JsonObject Unknown() => new() { ["status"] = "unknown", ["source"] = "NexusKeypad shared quota", ["selection_proven"] = false, ["limits"] = new JsonArray() };
         try

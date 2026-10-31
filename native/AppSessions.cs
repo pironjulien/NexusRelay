@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json.Nodes;
@@ -7,13 +8,13 @@ namespace NexusRelay;
 public sealed record AppChat(string Id, string Path, string Cwd, bool Archived, bool Child);
 public sealed record AppTurn(bool Finished, double? At, string? Error = null, double? Last = null);
 
-public static class AppSessions
+public static partial class AppSessions
 {
-    public static string CodexHome => Environment.GetEnvironmentVariable("CODEX_HOME") ?? System.IO.Path.Combine(RelayPaths.UserHome(), ".codex");
+    public static string CodexHome => Environment.GetEnvironmentVariable("CODEX_HOME") ?? System.IO.Path.Join(RelayPaths.UserHome(), ".codex");
     public static string RelayDirectory => CodexSpace.Configured()["path"]!.ToString();
     public static List<AppChat> CodexChats()
     {
-        string db = System.IO.Path.Combine(CodexHome, "state_5.sqlite");
+        string db = System.IO.Path.Join(CodexHome, "state_5.sqlite");
         if (!File.Exists(db)) return [];
         // Windows ships SQLite. Always read-only, including WAL-backed app databases.
         nint handle = 0, statement = 0;
@@ -30,7 +31,11 @@ public static class AppSessions
             if (code != 101) throw new RelayError("Codex app database read did not finish");
             return result;
         }
-        finally { if (statement != 0) SqliteFinalize(statement); if (handle != 0) SqliteClose(handle); }
+        finally
+        {
+            if (statement != 0) SqliteFinalize(statement);
+            if (handle != 0) SqliteClose(handle);
+        }
     }
     private static string Text(nint statement, int i) => Marshal.PtrToStringUTF8(SqliteText(statement, i)) ?? "";
     public static bool IsRelay(AppChat chat) => !chat.Child && SameDirectory(chat.Cwd, RelayDirectory);
@@ -51,7 +56,7 @@ public static class AppSessions
         foreach (string line in text.Split('\n'))
         {
             JsonObject? obj = null;
-            try { obj = JsonNode.Parse(line) as JsonObject; } catch (System.Text.Json.JsonException) { }
+            try { obj = JsonNode.Parse(line) as JsonObject; } catch (System.Text.Json.JsonException) { /* Partial or non-JSON line: skipped. */ }
             if (obj is not null) yield return obj;
         }
     }
@@ -95,10 +100,10 @@ public static class AppSessions
         {
             string tail = Tail(RelayPaths.TranscriptPath(conversation), 8 * 1024 * 1024);
             if (!tail.EndsWith('\n')) return new(false, null);
-            var step = Lines(tail).LastOrDefault();
-            string? kind = step?["type"]?.ToString();
-            bool answered = kind == "PLANNER_RESPONSE" && step?["status"]?.ToString() == "DONE" && (step?["tool_calls"] is not JsonArray tools || tools.Count == 0);
-            return new(answered || kind == "ERROR_MESSAGE", Epoch(step?["created_at"]?.ToString()), kind == "ERROR_MESSAGE" ? step?["error"]?.ToString() ?? step?["text"]?.ToString() : null);
+            if (Lines(tail).LastOrDefault() is not JsonObject step) return new(false, null);
+            string? kind = step["type"]?.ToString();
+            bool answered = kind == "PLANNER_RESPONSE" && step["status"]?.ToString() == "DONE" && (step["tool_calls"] is not JsonArray tools || tools.Count == 0);
+            return new(answered || kind == "ERROR_MESSAGE", Epoch(step["created_at"]?.ToString()), kind == "ERROR_MESSAGE" ? step["error"]?.ToString() ?? step["text"]?.ToString() : null);
         }
         catch (IOException) { return new(false, null); }
     }
@@ -110,9 +115,8 @@ public static class AppSessions
             string tail = Tail(RelayPaths.TranscriptPath(conversation), 2 * 1024 * 1024);
             bool writing = !tail.EndsWith('\n'); var steps = Lines(tail).Reverse().ToList(); int count = 0; JsonObject? last = null;
             bool ended = !writing && steps.FirstOrDefault() is JsonObject final && final["type"]?.ToString() == "PLANNER_RESPONSE" && final["status"]?.ToString() == "DONE" && (final["tool_calls"] is not JsonArray calls || calls.Count == 0);
-            foreach (var step in steps)
+            foreach (var step in steps.Where(s => s["type"]?.ToString() == "GENERIC"))
             {
-                if (step["type"]?.ToString() != "GENERIC") continue;
                 if (step["status"]?.ToString() != "ERROR") break;
                 if (Epoch(step["created_at"]?.ToString()) is not double at || at < since) continue;
                 count++; last ??= step;
@@ -127,7 +131,7 @@ public static class AppSessions
     public static AppTurn? AntigravityError(string conversation)
     {
         if (!RelayPaths.IsConversationId(conversation)) return null;
-        string path = Path.Combine(RelayPaths.GeminiHome(), "antigravity", "conversations", conversation + ".db");
+        string path = Path.Join(RelayPaths.GeminiHome(), "antigravity", "conversations", conversation + ".db");
         nint db = 0, statement = 0;
         try
         {
@@ -148,18 +152,24 @@ public static class AppSessions
             { long value = 0; int shift = 0; for (int j = i + 3; j < length && shift <= 56; j++, shift += 7) { byte b = payload[j]; value |= (long)(b & 127) << shift; if (b < 128) { epoch = value; break; } } if (epoch is not null) break; }
             return new(true, epoch, reason);
         }
-        finally { if (statement != 0) SqliteFinalize(statement); if (db != 0) SqliteClose(db); }
+        finally
+        {
+            if (statement != 0) SqliteFinalize(statement);
+            if (db != 0) SqliteClose(db);
+        }
     }
     public static JsonObject? CodexUsage()
     {
         try
         {
-            var files = new[] { "sessions", "archived_sessions" }.Select(f => System.IO.Path.Combine(CodexHome, f)).Where(Directory.Exists).SelectMany(f => Directory.EnumerateFiles(f, "rollout-*.jsonl", SearchOption.AllDirectories));
+            var files = new[] { "sessions", "archived_sessions" }.Select(f => System.IO.Path.Join(CodexHome, f)).Where(Directory.Exists).SelectMany(f => Directory.EnumerateFiles(f, "rollout-*.jsonl", SearchOption.AllDirectories));
             var readings = files.OrderByDescending(File.GetLastWriteTimeUtc).Take(8).SelectMany(f => Lines(Tail(f)).Where(e => e["payload"]?["rate_limits"] is JsonObject)).OrderByDescending(e => e["timestamp"]?.ToString()).FirstOrDefault();
             if (readings is null) return null;
             var windows = new JsonObject();
-            foreach (string name in new[] { "primary", "secondary" }) if (readings["payload"]?["rate_limits"]?[name] is JsonObject w)
+            var limits = readings["payload"]?["rate_limits"];
+            foreach (string name in new[] { "primary", "secondary" }.Where(n => limits?[n] is JsonObject))
             {
+                var w = limits![name]!;
                 double reset = w["resets_at"]?.GetValue<double>() ?? 0;
                 windows[name] = new JsonObject { ["used_pct"] = reset > Reservations.Now() ? w["used_percent"]?.DeepClone() : 0, ["resets_at"] = reset, ["current"] = reset > Reservations.Now(), ["minutes"] = w["window_minutes"]?.DeepClone() };
             }
@@ -187,14 +197,14 @@ public static class AppSessions
         return null;
     }
     public static JsonObject? AntigravityUsage(RelayBox box) => SharedQuota.Antigravity() ?? box.State("antigravity-usage");
-    [DllImport("winsqlite3.dll", EntryPoint = "sqlite3_open_v2", CallingConvention = CallingConvention.Cdecl)] private static extern int SqliteOpen([MarshalAs(UnmanagedType.LPUTF8Str)] string path, out nint db, int flags, nint vfs);
-    [DllImport("winsqlite3.dll", EntryPoint = "sqlite3_prepare_v2", CallingConvention = CallingConvention.Cdecl)] private static extern int SqlitePrepare(nint db, [MarshalAs(UnmanagedType.LPUTF8Str)] string sql, int size, out nint statement, nint tail);
-    [DllImport("winsqlite3.dll", EntryPoint = "sqlite3_step", CallingConvention = CallingConvention.Cdecl)] private static extern int SqliteStep(nint statement);
-    [DllImport("winsqlite3.dll", EntryPoint = "sqlite3_column_text", CallingConvention = CallingConvention.Cdecl)] private static extern nint SqliteText(nint statement, int index);
-    [DllImport("winsqlite3.dll", EntryPoint = "sqlite3_column_int", CallingConvention = CallingConvention.Cdecl)] private static extern int SqliteInt(nint statement, int index);
-    [DllImport("winsqlite3.dll", EntryPoint = "sqlite3_column_blob", CallingConvention = CallingConvention.Cdecl)] private static extern nint SqliteBlob(nint statement, int index);
-    [DllImport("winsqlite3.dll", EntryPoint = "sqlite3_column_bytes", CallingConvention = CallingConvention.Cdecl)] private static extern int SqliteBytes(nint statement, int index);
-    [DllImport("winsqlite3.dll", EntryPoint = "sqlite3_finalize", CallingConvention = CallingConvention.Cdecl)] private static extern int SqliteFinalize(nint statement);
-    [DllImport("winsqlite3.dll", EntryPoint = "sqlite3_close", CallingConvention = CallingConvention.Cdecl)] private static extern int SqliteClose(nint db);
-    [DllImport("winsqlite3.dll", EntryPoint = "sqlite3_busy_timeout", CallingConvention = CallingConvention.Cdecl)] private static extern int SqliteBusy(nint db, int timeout);
+    [LibraryImport("winsqlite3.dll", EntryPoint = "sqlite3_open_v2", StringMarshalling = StringMarshalling.Utf8), UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])] private static partial int SqliteOpen(string path, out nint db, int flags, nint vfs);
+    [LibraryImport("winsqlite3.dll", EntryPoint = "sqlite3_prepare_v2", StringMarshalling = StringMarshalling.Utf8), UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])] private static partial int SqlitePrepare(nint db, string sql, int size, out nint statement, nint tail);
+    [LibraryImport("winsqlite3.dll", EntryPoint = "sqlite3_step"), UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])] private static partial int SqliteStep(nint statement);
+    [LibraryImport("winsqlite3.dll", EntryPoint = "sqlite3_column_text"), UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])] private static partial nint SqliteText(nint statement, int index);
+    [LibraryImport("winsqlite3.dll", EntryPoint = "sqlite3_column_int"), UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])] private static partial int SqliteInt(nint statement, int index);
+    [LibraryImport("winsqlite3.dll", EntryPoint = "sqlite3_column_blob"), UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])] private static partial nint SqliteBlob(nint statement, int index);
+    [LibraryImport("winsqlite3.dll", EntryPoint = "sqlite3_column_bytes"), UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])] private static partial int SqliteBytes(nint statement, int index);
+    [LibraryImport("winsqlite3.dll", EntryPoint = "sqlite3_finalize"), UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])] private static partial int SqliteFinalize(nint statement);
+    [LibraryImport("winsqlite3.dll", EntryPoint = "sqlite3_close"), UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])] private static partial int SqliteClose(nint db);
+    [LibraryImport("winsqlite3.dll", EntryPoint = "sqlite3_busy_timeout"), UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])] private static partial int SqliteBusy(nint db, int timeout);
 }

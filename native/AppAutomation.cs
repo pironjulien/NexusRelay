@@ -184,7 +184,7 @@ public static class AppAutomation
                     }
                     else result["restore_skipped"] = "Julien returned to Codex";
                 }
-                catch (Exception e) { result["restore_error"] = e.Message; }
+                catch (Exception e) { result["restore_error"] = e.Message; } // Boundary: restoring the user's view is best effort and reported, never thrown from finally.
                 page.Dispose();
             }
             AppTransport.Locks["codex"].Release();
@@ -213,7 +213,7 @@ public static class AppAutomation
             }
             return result;
         }
-        catch (Exception e) { Console.Error.WriteLine(e); return AppTransport.Result("failed", e.Message); }
+        catch (Exception e) { Console.Error.WriteLine(e); return AppTransport.Result("failed", e.Message); } // Boundary: automation failures become a "failed" result.
         finally { AppTransport.Locks[app].Release(); }
     }
     public static JsonObject TidyCodex(RelayBox box)
@@ -247,7 +247,7 @@ public static class AppAutomation
             }
             return new() { ["status"] = archived > 0 ? "archived" : "nothing", ["count"] = archived };
         }
-        catch (Exception e) { Console.Error.WriteLine(e); return AppTransport.Result("failed", e.Message); }
+        catch (Exception e) { Console.Error.WriteLine(e); return AppTransport.Result("failed", e.Message); } // Boundary: automation failures become a "failed" result.
         finally { AppTransport.Locks["codex"].Release(); }
     }
     public static bool AntigravityTidyReady(RelayBox box, string topic, bool retired, AppTurn turn, double now)
@@ -271,7 +271,7 @@ public static class AppAutomation
         if (AppTransport.UserPresent("antigravity") || AppTransport.EmergencyStop() || !AppTransport.Locks["antigravity"].Wait(0)) return AppTransport.Result("deferred", "Antigravity in use");
         try
         {
-            var topics = box.All().Select(m => m.Topic).Concat(Directory.Exists(Path.Combine(box.Root, "topics")) ? Directory.EnumerateDirectories(Path.Combine(box.Root, "topics")).Select(Path.GetFileName).OfType<string>() : []).Distinct().ToList();
+            var topics = box.All().Select(m => m.Topic).Concat(Directory.Exists(Path.Join(box.Root, "topics")) ? Directory.EnumerateDirectories(Path.Join(box.Root, "topics")).Select(Path.GetFileName).OfType<string>() : []).Distinct().ToList();
             if (topics.Count == 0) return AppTransport.Result("nothing");
             string? url = AppTransport.PageUrl("antigravity");
             if (url is null) return AppTransport.Result("deferred", "Antigravity debug port unavailable");
@@ -281,9 +281,8 @@ public static class AppAutomation
                 string? id = box.TopicState(topic, "agy")?["conversation"]?.ToString();
                 var retired = box.TopicState(topic, "agy_retired")?["conversations"] as JsonArray ?? [];
                 var left = new JsonArray();
-                foreach (string old in retired.Select(n => n?.ToString()).OfType<string>().Distinct())
+                foreach (string old in retired.Select(n => n?.ToString()).OfType<string>().Distinct().Where(o => RelayPaths.IsConversationId(o) && RelayPaths.ConversationAlive(o)))
                 {
-                    if (!RelayPaths.IsConversationId(old) || !RelayPaths.ConversationAlive(old)) continue;
                     if (old == id) { left.Add(old); continue; }
                     bool Ready() => AntigravityTidyReady(box, topic, true, AppSessions.AntigravityTurn(old), Reservations.Now());
                     if (ArchiveAntigravity(page, old, Ready) == "archived") archived++;
@@ -300,7 +299,7 @@ public static class AppAutomation
             page.Call("Input.dispatchMouseEvent", new() { ["type"] = "mouseMoved", ["x"] = 0, ["y"] = 0 });
             return new() { ["status"] = archived > 0 ? "archived" : "nothing", ["count"] = archived };
         }
-        catch (Exception e) { Console.Error.WriteLine(e); return AppTransport.Result("failed", e.Message); }
+        catch (Exception e) { Console.Error.WriteLine(e); return AppTransport.Result("failed", e.Message); } // Boundary: automation failures become a "failed" result.
         finally { AppTransport.Locks["antigravity"].Release(); }
     }
 }

@@ -11,10 +11,10 @@ public static class DaemonSupervisor
     public const long LogMaxBytes = 5 * 1024 * 1024;
 
     public static string SpecPath()
-        => Path.Combine(RelayPaths.UserHome(), ".nexus", "daemons", "specs", "nexus-relay.json");
+        => Path.Join(RelayPaths.UserHome(), ".nexus", "daemons", "specs", "nexus-relay.json");
 
     public static string StateDir()
-        => Path.Combine(RelayPaths.UserHome(), ".nexus", "nexus-relay");
+        => Path.Join(RelayPaths.UserHome(), ".nexus", "nexus-relay");
 
     public static (string Executable, List<string> Args, Dictionary<string, string> Env) ParseCommand(JsonObject spec)
     {
@@ -27,11 +27,8 @@ public static class DaemonSupervisor
         var args = new List<string>();
         if (spec["args"] is JsonArray arr)
         {
-            foreach (var item in arr)
-            {
-                if (item is not null)
-                    args.Add(item.ToString());
-            }
+            foreach (var item in arr.OfType<JsonNode>())
+                args.Add(item.ToString());
         }
         args.Add("--http");
         args.Add(port.ToString());
@@ -44,11 +41,8 @@ public static class DaemonSupervisor
         }
         if (spec["env"] is JsonObject envObj)
         {
-            foreach (var kv in envObj)
-            {
-                if (kv.Value is not null)
-                    env[kv.Key] = kv.Value.ToString();
-            }
+            foreach (var kv in envObj.Where(kv => kv.Value is not null))
+                env[kv.Key] = kv.Value!.ToString();
         }
         return (exe, args, env);
     }
@@ -63,7 +57,7 @@ public static class DaemonSupervisor
             fs.Lock(0, 1);
             return fs;
         }
-        catch
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
             fs?.Dispose();
             return null;
@@ -83,7 +77,7 @@ public static class DaemonSupervisor
                     File.Move(logPath, logPath + ".1", overwrite: true);
                 }
             }
-            catch
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
             {
                 // Ignore rotation failure
             }
@@ -102,16 +96,16 @@ public static class DaemonSupervisor
                     return declared;
             }
         }
-        catch
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or InvalidOperationException)
         {
             // Fallback to default
         }
-        return Path.Combine(RelayPaths.RelayHome(), "daemon-restart.request");
+        return Path.Join(RelayPaths.RelayHome(), "daemon-restart.request");
     }
 
     public static string? TakeRequest(string? requestPath = null)
     {
-        requestPath ??= Path.Combine(RelayPaths.RelayHome(), "daemon-restart.request");
+        requestPath ??= Path.Join(RelayPaths.RelayHome(), "daemon-restart.request");
         var taken = requestPath + ".lancement";
         try
         {
@@ -128,6 +122,7 @@ public static class DaemonSupervisor
         }
         catch (Exception ex)
         {
+            // Boundary: the supervisor loop never dies on a restart request it cannot take.
             Console.Error.WriteLine($"nexus-relay daemon : demande de relance non prise : {ex.Message}");
             return null;
         }
@@ -147,11 +142,12 @@ public static class DaemonSupervisor
             else
             {
                 var dir = Path.GetDirectoryName(takenPath)!;
-                RelayPaths.GiveBack(takenPath, Path.Combine(dir, "daemon-restart.request"));
+                RelayPaths.GiveBack(takenPath, Path.Join(dir, "daemon-restart.request"));
             }
         }
         catch (Exception ex)
         {
+            // Boundary: settling a request is best effort; the supervisor keeps running.
             Console.Error.WriteLine($"nexus-relay daemon : demande de relance non réglée : {ex.Message}");
         }
     }
@@ -183,6 +179,7 @@ public static class DaemonSupervisor
             }
             catch (Exception ex)
             {
+                // Boundary: an unreadable spec is retried with backoff instead of stopping the supervisor.
                 Settle(taken, launched: false);
                 Console.Error.WriteLine($"nexus-relay daemon : spec illisible ({specFile}) : {ex.Message}");
                 pause = Math.Min(MaxPauseSeconds, Math.Max(2.0, pause * 2.0));
@@ -191,7 +188,7 @@ public static class DaemonSupervisor
             }
 
             double started = clock();
-            var logPath = Path.Combine(StateDir(), "daemon.log");
+            var logPath = Path.Join(StateDir(), "daemon.log");
             RotateLogIfNeeded(logPath);
 
             int exitCode;
@@ -230,17 +227,14 @@ public static class DaemonSupervisor
             }
 
             double up = clock() - started;
-            if (exitCode == 0 && up >= MinUpSeconds)
-                pause = 0.0;
-            else
-                pause = Math.Min(MaxPauseSeconds, Math.Max(2.0, pause * 2.0));
+            pause = exitCode == 0 && up >= MinUpSeconds ? 0.0 : Math.Min(MaxPauseSeconds, Math.Max(2.0, pause * 2.0));
             sleep(pause > 0 ? pause : 0.5);
         }
     }
 
     public static int RunMain()
     {
-        using var held = AcquireLock(Path.Combine(StateDir(), "daemon.lock"));
+        using var held = AcquireLock(Path.Join(StateDir(), "daemon.lock"));
         if (held is null)
         {
             Console.Error.WriteLine("nexus-relay daemon : déjà lancé");

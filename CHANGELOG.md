@@ -6,6 +6,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.10.7] - 2026-10-31
+
+### Changed
+- Code quality pass on the CodeQL findings, behaviour unchanged. Unbraced one-line `if`/`foreach` bodies now carry
+  braces, redundant null checks are gone, and disposable objects (HTTP requests, the TCP listener, process lists, test
+  streams) are released by `using`.
+- Catch blocks name the exceptions they expect (file, JSON, process, socket errors); the deliberate boundaries that keep
+  the daemon, the sidecar, the hooks and the tool calls alive still catch everything and say why in a comment.
+- `Path.Join` replaces `Path.Combine` wherever no later segment can be rooted; `Path.Combine` stays where a rooted
+  segment must win (user paths, `PATH` lookup, plugin cache keys, unvalidated message or conversation IDs).
+- Win32 and SQLite calls use source-generated `LibraryImport`; `EnumWindows` (managed callback) and
+  `Process32FirstW`/`Process32NextW` (`ByValTStr` struct) stay `DllImport`.
+- Loops filter and project with LINQ `Where`/`Select` instead of `if`/`continue` inside the body.
+
 ## [1.10.6] - 2026-10-31
 
 ### Added

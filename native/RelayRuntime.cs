@@ -17,7 +17,7 @@ public sealed class RelayActivity : IDisposable
     }
     public void Dispose() { lock (Gate) Running.Remove(id); }
     public static void BeginClosing() { lock (Gate) closed = true; }
-    public static bool CloseIfIdle() { lock (Gate) { if (Running.Count == 0) closed = true; return Running.Count == 0 && closed; } }
+    public static bool CloseIfIdle() { lock (Gate) { if (Running.Count == 0) { closed = true; } return Running.Count == 0 && closed; } }
     public static JsonArray Snapshot() { lock (Gate) return new JsonArray(Running.Values.OrderBy(x => x.At).Select(x => (JsonNode)new JsonObject { ["quoi"] = x.Label, ["depuis_s"] = Math.Round(Reservations.Now() - x.At, 1) }).ToArray()); }
 }
 
@@ -43,9 +43,8 @@ public sealed class RelayRuntime : IDisposable
     public int Recover()
     {
         int count = 0;
-        foreach (string agent in new[] { "codex", "antigravity" }) foreach (var message in box.Unread(agent))
+        foreach (string agent in new[] { "codex", "antigravity" }) foreach (var message in box.Unread(agent).Where(m => !(Reservations.Now() - AppSessions.Epoch(m.Created) >= 3600 || !NeedsWake(m) || box.RingState(m.Id)?["incident"] is not null)))
         {
-            if (Reservations.Now() - AppSessions.Epoch(message.Created) >= 3600 || !NeedsWake(message) || box.RingState(message.Id)?["incident"] is not null) continue;
             RecoverDelivery(message);
             pending.TryAdd(message.Id, Reservations.Now() - 2); count++;
         }
@@ -114,10 +113,10 @@ public sealed class RelayRuntime : IDisposable
                 }
                 errors.TryRemove(name, out _);
             }
-            catch (Exception e) { errors[name] = $"{e.GetType().Name}: {e.Message}"; Console.Error.WriteLine($"{name}: {e.Message}"); }
+            catch (Exception e) { errors[name] = $"{e.GetType().Name}: {e.Message}"; Console.Error.WriteLine($"{name}: {e.Message}"); } // Boundary: a worker failure is reported in health, the worker loop goes on.
             activity.Dispose();
             beats[name] = Reservations.Now();
-            try { await Task.Delay(TimeSpan.FromSeconds(name == "rangement" ? 10 : 2), stop.Token); } catch (OperationCanceledException) { }
+            try { await Task.Delay(TimeSpan.FromSeconds(name == "rangement" ? 10 : 2), stop.Token); } catch (OperationCanceledException) { /* Stopping: the loop condition ends the worker. */ }
         }
     }
     private static JsonObject WithAt(JsonObject result) { result["at"] = RelayBox.NowIso(); return result; }
@@ -198,7 +197,7 @@ public sealed class RelayRuntime : IDisposable
         foreach (var message in messages)
         {
             var last = box.Events(message.Id).LastOrDefault(e => e["kind"]?.ToString() == "réveil");
-            if (status is not ("deferred" or "failed") || last?["status"]?.ToString() != status || last?["reason"]?.ToString() != result["reason"]?.ToString())
+            if (status is not ("deferred" or "failed") || last is null || last["status"]?.ToString() != status || last["reason"]?.ToString() != result["reason"]?.ToString())
                 box.Event(message.Id, "réveil", new() { ["status"] = status, ["reason"] = result["reason"]?.DeepClone(), ["via"] = result["via"]?.DeepClone(), ["conversation"] = result["conversation"]?.DeepClone(), ["tried_at"] = now });
             if (status is "started" or "uncertain")
             {
@@ -237,16 +236,16 @@ public sealed class RelayRuntime : IDisposable
             if (!box.IsRead(message) && !events.Any(e => e["kind"]?.ToString() == "en cours")) continue;
             var wake = events.LastOrDefault(e => e["kind"]?.ToString() == "réveil" && e["status"]?.ToString() is "started" or "uncertain");
             if (wake is null || events.Any(e => e["kind"]?.ToString() == "annulé")) continue;
-            string? id = wake?["conversation"]?.ToString() ?? box.TopicState(message.Topic, "codex")?["conversation"]?.ToString();
+            string? id = wake["conversation"]?.ToString() ?? box.TopicState(message.Topic, "codex")?["conversation"]?.ToString();
             var chat = chats.FirstOrDefault(c => c.Id == id);
             if (chat is null || !CodexSpace.Owns(chat, box)) continue;
-            double since = (wake?["tried_at"]?.GetValue<double>() ?? AppSessions.Epoch(wake?["at"]?.ToString()) ?? 0) - 2;
+            double since = (wake["tried_at"]?.GetValue<double>() ?? AppSessions.Epoch(wake["at"]?.ToString()) ?? 0) - 2;
             var turn = AppSessions.CodexTurn(chat.Path, since); double now = Reservations.Now();
             string? reason = turn.Finished && turn.At is double ended && now - ended >= 5 ? turn.Error ?? "Turn ended without a Relay reply" : !turn.Finished && turn.Last is double last && now - last >= 1200 ? "Turn silent for twenty minutes" : null;
             if (reason is null || box.Events(message.Id).Count != events.Count || box.Replies(message.Id).Any(r => r.Sender == "codex") || AppSessions.CodexTurn(chat.Path, since) != turn) continue;
             box.Event(message.Id, "arrêt sur erreur", new() { ["conversation"] = id, ["reason"] = reason, ["via"] = "journal Codex" });
             var ring = box.RingState(message.Id) ?? new(); ring["agent"] = "codex"; ring["incident"] = reason; ring["incident_at"] = RelayBox.NowIso(); ring["halt"] = true; box.SetRingState(message.Id, ring);
-            if (wake?["conversation"]?.ToString() == id && box.TopicState(message.Topic, "codex")?["conversation"]?.ToString() == id && latest.GetValueOrDefault(id!) <= since + 3)
+            if (wake["conversation"]?.ToString() == id && box.TopicState(message.Topic, "codex")?["conversation"]?.ToString() == id && latest.GetValueOrDefault(id!) <= since + 3)
                 box.SetTopicState(message.Topic, "codex", new() { ["conversation"] = null, ["dropped"] = id, ["at"] = RelayBox.NowIso(), ["why"] = reason });
         }
     }
@@ -265,5 +264,5 @@ public sealed class RelayRuntime : IDisposable
         var health = Health(); bool ok = (health["missing"] as JsonArray)?.Count == 0 && (health["stuck"] as JsonArray)?.Count == 0 && (health["errors"] as JsonObject)?.Count == 0;
         return new() { ["status"] = ok ? "ok" : "degraded", ["service"] = "nexus-relay", ["runtime"] = "native", ["version"] = RelayPaths.Version, ["pid"] = Environment.ProcessId, ["host"] = RelayPaths.RelayHost(), ["workers"] = health, ["activities"] = RelayActivity.Snapshot() };
     }
-    public void Dispose() { if (Interlocked.Exchange(ref disposed, 1) != 0) return; stop.Cancel(); try { Task.WaitAll(workers.Values.ToArray(), 15_000); } catch (AggregateException) { } stop.Dispose(); }
+    public void Dispose() { if (Interlocked.Exchange(ref disposed, 1) != 0) return; stop.Cancel(); try { Task.WaitAll(workers.Values.ToArray(), 15_000); } catch (AggregateException) { /* Workers end on cancellation; disposal goes on. */ } stop.Dispose(); }
 }

@@ -174,11 +174,8 @@ public sealed partial class McpServer
         foreach (var item in arr.OfType<JsonObject>())
         {
             var entry = new JsonObject();
-            foreach (var k in new[] { "name", "mime", "size", "path" })
-            {
-                if (item[k] is JsonNode n)
-                    entry[k] = n.DeepClone();
-            }
+            foreach (var k in new[] { "name", "mime", "size", "path" }.Where(k => item[k] is not null))
+                entry[k] = item[k]!.DeepClone();
             shown.Add(entry);
         }
         if (shown.Count > 0)
@@ -189,7 +186,7 @@ public sealed partial class McpServer
 
     private static FileStream WaitOn(RelayBox box, string questionId, double untilEpoch)
     {
-        var lease = DaemonSupervisor.AcquireLock(Path.Combine(box.Root, "wait-leases", questionId + ".lock")) ?? throw new RelayError("This request is already reserved by another wait_reply session");
+        var lease = DaemonSupervisor.AcquireLock(Path.Join(box.Root, "wait-leases", questionId + ".lock")) ?? throw new RelayError("This request is already reserved by another wait_reply session");
         try
         {
         lock (WaitedLock)
@@ -198,11 +195,8 @@ public sealed partial class McpServer
             var kept = new JsonObject();
             if (box.State("waited") is JsonObject existing)
             {
-                foreach (var kv in existing)
-                {
-                    if (kv.Value is JsonValue v && v.TryGetValue<double>(out double u) && u > now)
-                        kept[kv.Key] = u;
-                }
+                foreach (var (key, until) in existing.Select(kv => (kv.Key, Until: kv.Value is JsonValue v && v.TryGetValue<double>(out double u) ? u : (double?)null)).Where(p => p.Until > now))
+                    kept[key] = until!.Value;
             }
             kept[questionId] = untilEpoch;
             box.SetState("waited", kept);
@@ -222,11 +216,8 @@ public sealed partial class McpServer
             var kept = new JsonObject();
             if (box.State("waited") is JsonObject existing)
             {
-                foreach (var kv in existing)
-                {
-                    if (kv.Key != questionId && kv.Value is JsonValue v && v.TryGetValue<double>(out double u) && u > now)
-                        kept[kv.Key] = u;
-                }
+                foreach (var (key, until) in existing.Where(kv => kv.Key != questionId).Select(kv => (kv.Key, Until: kv.Value is JsonValue v && v.TryGetValue<double>(out double u) ? u : (double?)null)).Where(p => p.Until > now))
+                    kept[key] = until!.Value;
             }
             box.SetState("waited", kept);
         }
@@ -260,7 +251,7 @@ public sealed partial class McpServer
         }
         catch
         {
-            // Non-blocking
+            // Boundary: recording an abandoned wait is best effort and never fails the tool call.
         }
     }
 
@@ -300,18 +291,13 @@ public sealed partial class McpServer
                 foreach (var (topic, originals) in mine)
                 {
                     var pool = box.TopicMessages(topic);
-                    foreach (var original in originals)
+                    foreach (var original in originals.Where(o => !IsAwaited(box, o.Id)))
                     {
-                        if (IsAwaited(box, original.Id))
-                            continue;
                         var answers = pool.Where(m => m.ReplyTo == original.Id && m.Sender == original.To && m.To == me).ToList();
-                        foreach (var answer in answers)
+                        foreach (var answer in answers.Where(a => !box.IsRead(a)))
                         {
-                            if (!box.IsRead(answer))
-                            {
-                                box.MarkRead(answer);
-                                found.Add(answer);
-                            }
+                            box.MarkRead(answer);
+                            found.Add(answer);
                         }
                         if (answers.Any(a => !a.Info))
                             kept.Remove(original.Id);
@@ -322,7 +308,7 @@ public sealed partial class McpServer
         }
         catch
         {
-            // Non-blocking
+            // Boundary: late replies are a bonus; collecting them never fails the tool call.
         }
         return found;
     }
@@ -359,11 +345,11 @@ public sealed partial class McpServer
 
     private static IDisposable AcquireTakingLock(RelayBox box, string messageId)
     {
-        var folder = Path.Combine(box.Root, "locks");
+        var folder = Path.Join(box.Root, "locks");
         Directory.CreateDirectory(folder);
         uint crc = ComputeCrc32(Encoding.UTF8.GetBytes(messageId));
         uint slot = crc % 64;
-        var lockFile = Path.Combine(folder, $"demande-{slot:D2}.lock");
+        var lockFile = Path.Join(folder, $"demande-{slot:D2}.lock");
         var sw = System.Diagnostics.Stopwatch.StartNew();
         while (true)
         {
@@ -381,7 +367,7 @@ public sealed partial class McpServer
                     throw;
                 }
             }
-            catch
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
             {
                 if (sw.Elapsed.TotalSeconds > 10.0)
                 {
@@ -396,7 +382,7 @@ public sealed partial class McpServer
     {
         public void Dispose()
         {
-            try { stream.Unlock(0, 1); } catch { }
+            try { stream.Unlock(0, 1); } catch (Exception e) when (e is IOException or ObjectDisposedException) { /* Already unlocked: closing the stream releases it anyway. */ }
             stream.Dispose();
         }
     }
@@ -670,13 +656,10 @@ public sealed partial class McpServer
         if (!info && (reviewArg ?? AsksReview(text)))
         {
             extra["review"] = true;
-            foreach (var agent in RelayPaths.Agents)
+            foreach (var agent in RelayPaths.Agents.Where(a => a != me && !targets.Contains(a, StringComparer.Ordinal)))
             {
-                if (agent != me && !targets.Contains(agent, StringComparer.Ordinal))
-                {
-                    widened.Add(agent);
-                    targets.Add(agent);
-                }
+                widened.Add(agent);
+                targets.Add(agent);
             }
         }
 
@@ -1091,13 +1074,12 @@ public sealed partial class McpServer
         {
             foreach (var (id, lease) in held)
             {
-                try
+                using (lease)
                 {
                     if (!complete) MarkAbandonedWait(box, id);
                     if (!complete || results[id]["status"]?.ToString() != "restarting")
                         try { WaitDone(box, id); } catch (IOException e) { Console.Error.WriteLine($"Wait reservation: {e.Message}"); }
                 }
-                finally { lease.Dispose(); }
             }
         }
     }
@@ -1120,8 +1102,8 @@ public sealed partial class McpServer
     {
         if (message.To != "antigravity") return null;
         var delivery = box.Claims(message.Id).LastOrDefault(c => c.Claim["conversation"] is not null).Claim;
-        string? id = delivery?["conversation"]?.ToString();
-        return id is null ? null : AppSessions.AntigravityToolErrors(id, AppSessions.Epoch(delivery?["submitted"]?.ToString()) ?? AppSessions.Epoch(message.Created) ?? 0);
+        if (delivery?["conversation"]?.ToString() is not string id) return null;
+        return AppSessions.AntigravityToolErrors(id, AppSessions.Epoch(delivery["submitted"]?.ToString()) ?? AppSessions.Epoch(message.Created) ?? 0);
     }
     private static JsonArray Incidents(RelayBox box)
     {
@@ -1177,11 +1159,8 @@ public sealed partial class McpServer
         foreach (var r in Reservations.Active(box))
         {
             var item = new JsonObject();
-            foreach (var k in keys)
-            {
-                if (r[k] is JsonNode n)
-                    item[k] = n.DeepClone();
-            }
+            foreach (var k in keys.Where(k => r[k] is not null))
+                item[k] = r[k]!.DeepClone();
             arr.Add(item);
         }
         return arr;
@@ -1539,6 +1518,7 @@ public sealed partial class McpServer
         }
         catch (Exception ex)
         {
+            // Boundary: any tool failure becomes a JSON-RPC error; the server keeps serving.
             return new JsonObject
             {
                 ["jsonrpc"] = "2.0",
@@ -1623,7 +1603,7 @@ public sealed partial class McpServer
             }
             catch
             {
-                // Ignore malformed lines
+                // Boundary: a malformed line or failed dispatch never ends the stdio session.
             }
         }
         Task.WaitAll(waiting.ToArray());
@@ -1639,7 +1619,7 @@ public sealed partial class McpServer
             var tokenFile = Environment.GetEnvironmentVariable("NEXUS_MCP_TOKEN_FILE");
             if (!string.IsNullOrWhiteSpace(tokenFile) && File.Exists(tokenFile))
             {
-                try { token = File.ReadAllText(tokenFile, Encoding.UTF8).Trim(); } catch { }
+                try { token = File.ReadAllText(tokenFile, Encoding.UTF8).Trim(); } catch (Exception e) when (e is IOException or UnauthorizedAccessException) { /* Unreadable token file: keep the environment token. */ }
             }
         }
         return string.IsNullOrEmpty(token) ? null : token;
@@ -1685,7 +1665,7 @@ public sealed partial class McpServer
             {
                 try
                 {
-                    wanted |= RelayPaths.RestartWanted(Path.Combine(RelayPaths.RelayHome(), "daemon-restart.request"), loaded);
+                    wanted |= RelayPaths.RestartWanted(Path.Join(RelayPaths.RelayHome(), "daemon-restart.request"), loaded);
                     if (wanted) { RestartPending = true; RelayActivity.BeginClosing(); }
                     if (wanted && RelayActivity.CloseIfIdle()) { shutdown.Cancel(); return; }
                     await Task.Delay(TimeSpan.FromSeconds(2), shutdown.Token);
@@ -1695,11 +1675,11 @@ public sealed partial class McpServer
             }
         });
         RelayPaths.MarkRestartable("daemon");
-        var listener = new TcpListener(IPAddress.Loopback, port);
+        using var listener = new TcpListener(IPAddress.Loopback, port);
         listener.Start();
         try
         {
-            using var reg = cancellationToken.Register(() => { try { listener.Stop(); } catch { } });
+            using var reg = cancellationToken.Register(() => { try { listener.Stop(); } catch (SocketException) { /* Already stopped. */ } });
             while (!cancellationToken.IsCancellationRequested)
             {
                 TcpClient client;
@@ -1720,7 +1700,7 @@ public sealed partial class McpServer
         }
         finally
         {
-            try { listener.Stop(); } catch { }
+            try { listener.Stop(); } catch (SocketException) { /* Already stopped. */ }
             Runtime = null;
         }
     }
@@ -1743,10 +1723,8 @@ public sealed partial class McpServer
                         return;
                     byte b = buf[0];
                     headerBytes.Add(b);
-                    if ((matchState == 0 && b == '\r') ||
-                        (matchState == 1 && b == '\n') ||
-                        (matchState == 2 && b == '\r') ||
-                        (matchState == 3 && b == '\n'))
+                    // States 0 and 2 expect '\r', states 1 and 3 expect '\n'.
+                    if (b == (matchState % 2 == 0 ? '\r' : '\n'))
                     {
                         matchState++;
                         if (matchState == 4)
@@ -1871,7 +1849,7 @@ public sealed partial class McpServer
             }
             catch
             {
-                // Ignore client connection error
+                // Boundary: one client's failure never affects the listener or other clients.
             }
         }
     }

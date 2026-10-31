@@ -25,8 +25,8 @@ public static partial class RelaySettings
 
     public static List<string> Files(string? source) =>
     [
-        Path.Combine(RelayPaths.UserHome(), ".nexus", "nexus-relay", "settings.json"),
-        .. string.IsNullOrWhiteSpace(source) ? Array.Empty<string>() : [Path.Combine(source, "settings.local.json")],
+        Path.Join(RelayPaths.UserHome(), ".nexus", "nexus-relay", "settings.json"),
+        .. string.IsNullOrWhiteSpace(source) ? Array.Empty<string>() : [Path.Join(source, "settings.local.json")],
     ];
 
     public static string? Expand(string value)
@@ -44,9 +44,8 @@ public static partial class RelaySettings
     {
         var items = raw is JsonArray array ? array.ToList() : [raw];
         var result = new List<string>();
-        foreach (var item in items)
+        foreach (var item in items.OfType<JsonNode>())
         {
-            if (item is null) continue;
             string text = item is JsonValue v && v.TryGetValue<string>(out var s) ? s : item.ToJsonString();
             if (Expand(text) is { } expanded) result.Add(expanded);
         }
@@ -62,10 +61,10 @@ public static partial class RelaySettings
             try { data = JsonNode.Parse(File.ReadAllText(path, Encoding.UTF8)) as JsonObject; }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Text.Json.JsonException) { continue; }
             if (data is null) continue;
-            foreach (string key in Keys)
+            // A key present with a null value yields no values, exactly like an absent key.
+            foreach (var (key, raw) in Keys.Where(k => !found.ContainsKey(k)).Select(k => (k, data.TryGetPropertyValue(k, out var node) ? node : null)).Where(p => p.Item2 is not null))
             {
-                if (found.ContainsKey(key) || !data.ContainsKey(key)) continue;
-                var values = Values(data[key]);
+                var values = Values(raw);
                 if (key == "token_file")
                 {
                     string? existing = values.FirstOrDefault(File.Exists);

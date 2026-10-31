@@ -91,7 +91,7 @@ public sealed partial class RelayBox
 
     public RelayBox(string? root = null)
     {
-        Root = Path.GetFullPath(root ?? Path.Combine(RelayPaths.RelayHome(), "v1"));
+        Root = Path.GetFullPath(root ?? Path.Join(RelayPaths.RelayHome(), "v1"));
     }
 
     public static string NowIso()
@@ -128,7 +128,7 @@ public sealed partial class RelayBox
             var name = Path.GetFileName(path);
             throw new RelayError(RelayPaths.Tr($"{name} already exists", $"{name} existe déjà"));
         }
-        var tmp = Path.Combine(dir, $".{Path.GetFileName(path)}.{RandomHex(4)}.tmp");
+        var tmp = Path.Join(dir, $".{Path.GetFileName(path)}.{RandomHex(4)}.tmp");
         File.WriteAllText(tmp, data.ToJsonString(JsonOptions), Utf8NoBom);
         try
         {
@@ -136,7 +136,7 @@ public sealed partial class RelayBox
         }
         catch (IOException)
         {
-            try { File.Delete(tmp); } catch { }
+            try { File.Delete(tmp); } catch (Exception cleanup) when (cleanup is IOException or UnauthorizedAccessException) { /* Best-effort removal of the temporary file. */ }
             var name = Path.GetFileName(path);
             throw new RelayError(RelayPaths.Tr($"{name} already exists", $"{name} existe déjà"));
         }
@@ -146,7 +146,7 @@ public sealed partial class RelayBox
     {
         var dir = Path.GetDirectoryName(path)!;
         Directory.CreateDirectory(dir);
-        var tmp = Path.Combine(dir, $".{Path.GetFileName(path)}.{RandomHex(4)}.tmp");
+        var tmp = Path.Join(dir, $".{Path.GetFileName(path)}.{RandomHex(4)}.tmp");
         using (var stream = new FileStream(tmp, FileMode.CreateNew, FileAccess.Write, FileShare.None))
         {
             stream.Write(Utf8NoBom.GetBytes(data.ToJsonString(JsonOptions)));
@@ -168,7 +168,7 @@ public sealed partial class RelayBox
                 Thread.Sleep(5);
             }
         }
-        try { File.Delete(tmp); } catch { }
+        try { File.Delete(tmp); } catch (Exception cleanup) when (cleanup is IOException or UnauthorizedAccessException) { /* Best-effort removal of the temporary file. */ }
     }
 
     public static JsonObject? ReadJson(string path)
@@ -188,6 +188,7 @@ public sealed partial class RelayBox
             }
             catch
             {
+                // Unreadable or corrupt JSON reads as absent: callers treat state files as optional.
                 return null;
             }
         }
@@ -199,16 +200,16 @@ public sealed partial class RelayBox
     private const uint PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
     private const uint STILL_ACTIVE = 259;
 
-    [DllImport("kernel32.dll", SetLastError = true)]
-    private static extern IntPtr OpenProcess(uint dwDesiredAccess, bool bInheritHandle, uint dwProcessId);
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    private static partial IntPtr OpenProcess(uint dwDesiredAccess, [MarshalAs(UnmanagedType.Bool)] bool bInheritHandle, uint dwProcessId);
 
-    [DllImport("kernel32.dll", SetLastError = true)]
+    [LibraryImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool GetExitCodeProcess(IntPtr hProcess, out uint lpExitCode);
+    private static partial bool GetExitCodeProcess(IntPtr hProcess, out uint lpExitCode);
 
-    [DllImport("kernel32.dll", SetLastError = true)]
+    [LibraryImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool CloseHandle(IntPtr hObject);
+    private static partial bool CloseHandle(IntPtr hObject);
 
     [StructLayout(LayoutKind.Sequential)]
     private struct BY_HANDLE_FILE_INFORMATION
@@ -228,12 +229,12 @@ public sealed partial class RelayBox
         public uint nFileIndexLow;
     }
 
-    [DllImport("kernel32.dll", SetLastError = true)]
+    [LibraryImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool GetFileInformationByHandle(SafeFileHandle hFile, out BY_HANDLE_FILE_INFORMATION lpFileInformation);
+    private static partial bool GetFileInformationByHandle(SafeFileHandle hFile, out BY_HANDLE_FILE_INFORMATION lpFileInformation);
 
-    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-    private static extern uint GetFinalPathNameByHandleW(SafeFileHandle hFile, [Out] char[] lpszFilePath, uint cchFilePath, uint dwFlags);
+    [LibraryImport("kernel32.dll", StringMarshalling = StringMarshalling.Utf16, SetLastError = true)]
+    private static partial uint GetFinalPathNameByHandleW(SafeFileHandle hFile, [Out] char[] lpszFilePath, uint cchFilePath, uint dwFlags);
 
     public static bool PidAlive(int? pid)
     {
@@ -260,7 +261,7 @@ public sealed partial class RelayBox
             using var proc = System.Diagnostics.Process.GetProcessById(pid.Value);
             return !proc.HasExited;
         }
-        catch
+        catch (Exception e) when (e is ArgumentException or InvalidOperationException or System.ComponentModel.Win32Exception)
         {
             return false;
         }
@@ -286,7 +287,7 @@ public sealed partial class RelayBox
             {
                 set.Add(PlainPath(r));
             }
-            catch
+            catch (Exception e) when (e is ArgumentException or NotSupportedException or IOException)
             {
                 // Ignore invalid vault entry
             }
@@ -357,6 +358,7 @@ public sealed partial class RelayBox
         }
         catch (Exception ex)
         {
+            // Boundary: any open failure becomes a RelayError that names the attachment.
             throw new RelayError(RelayPaths.Tr(
                 $"attachment not found or unreadable: {path} ({ex.Message})",
                 $"pièce jointe introuvable ou illisible : {path} ({ex.Message})"));
@@ -444,7 +446,7 @@ public sealed partial class RelayBox
         return phase;
     }
 
-    private string MessagesFolder => Path.Combine(Root, "messages");
+    private string MessagesFolder => Path.Join(Root, "messages");
 
     private string? FindMessagePath(string messageId)
     {
@@ -462,13 +464,9 @@ public sealed partial class RelayBox
     private static List<RelayMessage> LoadMessages(IEnumerable<string> paths)
     {
         var list = new List<RelayMessage>();
-        foreach (var path in paths.OrderBy(Path.GetFileName, StringComparer.Ordinal))
+        foreach (var data in paths.OrderBy(Path.GetFileName, StringComparer.Ordinal).Select(p => ReadJson(p)).OfType<JsonObject>())
         {
-            var data = ReadJson(path);
-            if (data is not null)
-            {
-                try { list.Add(RelayMessage.FromJson(data)); } catch { }
-            }
+            try { list.Add(RelayMessage.FromJson(data)); } catch { /* A malformed message file must never hide the others. */ }
         }
         return list;
     }
@@ -513,7 +511,7 @@ public sealed partial class RelayBox
 
         var messageId = NewId();
         var extraClone = extra is not null ? (JsonObject)extra.DeepClone() : new JsonObject();
-        var attachFolder = Path.Combine(Path.GetFullPath(Root), "attachments", messageId);
+        var attachFolder = Path.Join(Path.GetFullPath(Root), "attachments", messageId);
         try
         {
             if (contents.Count > 0)
@@ -526,13 +524,13 @@ public sealed partial class RelayBox
                 extraClone["attachments"] = arr;
             }
             var message = new RelayMessage(messageId, sender, to, topic, NowIso(), text, replyTo, info, vote, extraClone);
-            WriteNew(Path.Combine(MessagesFolder, $"{message.Id}.{sender}.{to}.{topic}.json"), message.ToJson());
+            WriteNew(Path.Join(MessagesFolder, $"{message.Id}.{sender}.{to}.{topic}.json"), message.ToJson());
             Render(topic);
             return message;
         }
         catch
         {
-            try { if (Directory.Exists(attachFolder)) Directory.Delete(attachFolder, recursive: true); } catch { }
+            try { if (Directory.Exists(attachFolder)) Directory.Delete(attachFolder, recursive: true); } catch (Exception cleanup) when (cleanup is IOException or UnauthorizedAccessException) { /* Best-effort removal; the original error is rethrown. */ }
             throw;
         }
     }
@@ -544,7 +542,7 @@ public sealed partial class RelayBox
         var safe = SafeFileRegex().Replace(origName, "_");
         if (safe.Length > 96) safe = safe[..96];
         if (string.IsNullOrEmpty(safe)) safe = "fichier";
-        var target = Path.Combine(folder, $"{number:D2}-{safe}");
+        var target = Path.Join(folder, $"{number:D2}-{safe}");
         using (var fs = new FileStream(target, FileMode.CreateNew, FileAccess.Write, FileShare.None))
         {
             fs.Write(data, 0, data.Length);
@@ -642,7 +640,7 @@ public sealed partial class RelayBox
 
     // --- Read / Unread markers
     private string ReadMarkPath(string agent, string messageId)
-        => Path.Combine(Root, "read", agent, messageId);
+        => Path.Join(Root, "read", agent, messageId);
 
     public bool IsRead(RelayMessage message)
         => File.Exists(ReadMarkPath(message.To, message.Id));
@@ -654,15 +652,15 @@ public sealed partial class RelayBox
         {
             var dir = Path.GetDirectoryName(mark)!;
             Directory.CreateDirectory(dir);
-            var tmp = Path.Combine(dir, $".{Path.GetFileName(mark)}.{RandomHex(4)}.tmp");
+            var tmp = Path.Join(dir, $".{Path.GetFileName(mark)}.{RandomHex(4)}.tmp");
             File.WriteAllText(tmp, NowIso(), Utf8NoBom);
             try
             {
                 File.Move(tmp, mark, overwrite: true);
             }
-            catch
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
             {
-                try { File.Delete(tmp); } catch { }
+                try { File.Delete(tmp); } catch (Exception cleanup) when (cleanup is IOException or UnauthorizedAccessException) { /* Best-effort removal of the temporary file. */ }
             }
         }
     }
@@ -676,7 +674,7 @@ public sealed partial class RelayBox
             var txt = File.ReadAllText(mark, Encoding.UTF8).Trim();
             return string.IsNullOrEmpty(txt) ? null : txt;
         }
-        catch
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
             return null;
         }
@@ -685,7 +683,7 @@ public sealed partial class RelayBox
     public List<RelayMessage> Unread(string agent)
     {
         agent = RelayPaths.NormalizeParty(agent);
-        var marksDir = Path.Combine(Root, "read", agent);
+        var marksDir = Path.Join(Root, "read", agent);
         var done = Directory.Exists(marksDir)
             ? Directory.EnumerateFiles(marksDir).Select(Path.GetFileName).Where(n => n is not null).ToHashSet(StringComparer.Ordinal)!
             : new HashSet<string>(StringComparer.Ordinal);
@@ -717,7 +715,7 @@ public sealed partial class RelayBox
             foreach (var kv in extra)
                 obj[kv.Key] = kv.Value?.DeepClone();
         }
-        WriteNew(Path.Combine(folder, $"{nanos:D19}-{RandomHex(2)}.json"), obj);
+        WriteNew(Path.Join(folder, $"{nanos:D19}-{RandomHex(2)}.json"), obj);
     }
 
     public List<JsonObject> Events(string messageId)
@@ -726,11 +724,8 @@ public sealed partial class RelayBox
         if (!Directory.Exists(folder))
             return [];
         var list = new List<JsonObject>();
-        foreach (var p in Directory.EnumerateFiles(folder, "*.json").OrderBy(Path.GetFileName, StringComparer.Ordinal))
-        {
-            if (ReadJson(p) is JsonObject e)
-                list.Add(e);
-        }
+        foreach (var e in Directory.EnumerateFiles(folder, "*.json").OrderBy(Path.GetFileName, StringComparer.Ordinal).Select(p => ReadJson(p)).OfType<JsonObject>())
+            list.Add(e);
         return list;
     }
 
@@ -739,10 +734,10 @@ public sealed partial class RelayBox
 
     // --- Topic state & project topic resolution
     public JsonObject? TopicState(string topic, string name)
-        => ReadJson(Path.Combine(Root, "topics", CheckTopic(topic), $"{name}.json"));
+        => ReadJson(Path.Join(Root, "topics", CheckTopic(topic), $"{name}.json"));
 
     public void SetTopicState(string topic, string name, JsonObject data)
-        => WriteState(Path.Combine(Root, "topics", CheckTopic(topic), $"{name}.json"), data);
+        => WriteState(Path.Join(Root, "topics", CheckTopic(topic), $"{name}.json"), data);
 
     public string ProjectTopic(string? topic)
     {
@@ -752,7 +747,7 @@ public sealed partial class RelayBox
 
         static string Key(string name) => name.Replace("-", "", StringComparison.Ordinal);
 
-        var topicsDir = Path.Combine(Root, "topics");
+        var topicsDir = Path.Join(Root, "topics");
         var known = Directory.Exists(topicsDir)
             ? Directory.EnumerateDirectories(topicsDir).Select(Path.GetFileName).Where(n => n is not null && n != "selftest").Cast<string>().ToList()
             : [];
@@ -816,10 +811,10 @@ public sealed partial class RelayBox
     }
 
     public JsonObject? State(string name)
-        => ReadJson(Path.Combine(Root, "state", $"{name}.json"));
+        => ReadJson(Path.Join(Root, "state", $"{name}.json"));
 
     public void SetState(string name, JsonObject data)
-        => WriteState(Path.Combine(Root, "state", $"{name}.json"), data);
+        => WriteState(Path.Join(Root, "state", $"{name}.json"), data);
 
     // --- Ring states
     public JsonObject? RingState(string messageId)
@@ -830,15 +825,12 @@ public sealed partial class RelayBox
 
     public List<(string MessageId, JsonObject Data)> RingStates()
     {
-        var folder = Path.Combine(Root, "rings");
+        var folder = Path.Join(Root, "rings");
         if (!Directory.Exists(folder))
             return [];
         var list = new List<(string, JsonObject)>();
-        foreach (var p in Directory.EnumerateFiles(folder, "*.json").OrderBy(Path.GetFileName, StringComparer.Ordinal))
-        {
-            if (ReadJson(p) is JsonObject d)
-                list.Add((Path.GetFileNameWithoutExtension(p), d));
-        }
+        foreach (var (p, d) in Directory.EnumerateFiles(folder, "*.json").OrderBy(Path.GetFileName, StringComparer.Ordinal).Select(p => (p, ReadJson(p))).Where(item => item.Item2 is not null))
+            list.Add((Path.GetFileNameWithoutExtension(p), d!));
         return list;
     }
 
@@ -851,7 +843,7 @@ public sealed partial class RelayBox
                 $"invalid message id: '{messageId}'",
                 $"identifiant de message invalide : '{messageId}'"));
         }
-        return Path.Combine(Root, "claims", messageId, $"{attempt}.json");
+        return Path.Join(Root, "claims", messageId, $"{attempt}.json");
     }
 
     public bool Claim(string messageId, int attempt, string owner, int? pidOverride = null, JsonObject? extra = null)
@@ -921,7 +913,7 @@ public sealed partial class RelayBox
         var current = ClaimOf(messageId, attempt);
         if (current?["owner"]?.GetValue<string>() == owner)
         {
-            try { File.Delete(ClaimPath(messageId, attempt)); } catch { }
+            try { File.Delete(ClaimPath(messageId, attempt)); } catch (Exception cleanup) when (cleanup is IOException or UnauthorizedAccessException) { /* Left in place: a later release or recovery retries. */ }
         }
     }
 
@@ -948,7 +940,7 @@ public sealed partial class RelayBox
                 File.Delete(ClaimPath(messageId, attempt));
                 return true;
             }
-            catch
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
             {
                 return false;
             }
@@ -975,13 +967,12 @@ public sealed partial class RelayBox
 
     public List<(string MessageId, int Attempt, JsonObject Claim)> AllClaims()
     {
-        var folder = Path.Combine(Root, "claims");
+        var folder = Path.Join(Root, "claims");
         if (!Directory.Exists(folder))
             return [];
         var all = new List<(string, int, JsonObject)>();
-        foreach (var d in Directory.EnumerateDirectories(folder).OrderBy(Path.GetFileName, StringComparer.Ordinal))
+        foreach (var msgId in Directory.EnumerateDirectories(folder).OrderBy(Path.GetFileName, StringComparer.Ordinal).Select(d => Path.GetFileName(d)))
         {
-            var msgId = Path.GetFileName(d);
             foreach (var (n, c) in Claims(msgId))
             {
                 all.Add((msgId, n, c));
@@ -1018,10 +1009,10 @@ public sealed partial class RelayBox
                 lines.Add("");
             }
         }
-        var path = Path.Combine(Root, "salon", $"{topic}.md");
+        var path = Path.Join(Root, "salon", $"{topic}.md");
         var dir = Path.GetDirectoryName(path)!;
         Directory.CreateDirectory(dir);
-        var tmp = Path.Combine(dir, $".{Path.GetFileName(path)}.{RandomHex(4)}.tmp");
+        var tmp = Path.Join(dir, $".{Path.GetFileName(path)}.{RandomHex(4)}.tmp");
         File.WriteAllText(tmp, string.Join("\n", lines), Utf8NoBom);
         try
         {
@@ -1029,11 +1020,11 @@ public sealed partial class RelayBox
         }
         catch (UnauthorizedAccessException)
         {
-            try { File.Delete(tmp); } catch { }
+            try { File.Delete(tmp); } catch (Exception cleanup) when (cleanup is IOException or UnauthorizedAccessException) { /* Best-effort removal of the temporary file. */ }
         }
         catch (IOException)
         {
-            try { File.Delete(tmp); } catch { }
+            try { File.Delete(tmp); } catch (Exception cleanup) when (cleanup is IOException or UnauthorizedAccessException) { /* Best-effort removal of the temporary file. */ }
         }
         return path;
     }

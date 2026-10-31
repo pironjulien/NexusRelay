@@ -24,31 +24,31 @@ public sealed class Isolation : IDisposable
     ];
     private readonly Dictionary<string, string?> saved = new();
     public string Root { get; }
-    public string Home => Path.Combine(Root, "home");
-    public string Relay => Path.Combine(Root, "relay");
-    public string CodexHome => Path.Combine(Root, "codex-home");
-    public string Gemini => Path.Combine(Root, "gemini");
+    public string Home => Path.Join(Root, "home");
+    public string Relay => Path.Join(Root, "relay");
+    public string CodexHome => Path.Join(Root, "codex-home");
+    public string Gemini => Path.Join(Root, "gemini");
     public static readonly string RealProfile = Environment.GetEnvironmentVariable("USERPROFILE") ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
 
     public Isolation()
     {
-        Root = Path.Combine(Paths.Scratch, Guid.NewGuid().ToString("N"));
+        Root = Path.Join(Paths.Scratch, Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(Home);
         Set("USERPROFILE", Home); Set("HOME", Home);
         foreach (string name in Cleared) Set(name, null);
         Set("NEXUS_RELAY_HOME", Relay);
         Set("NEXUS_RELAY_GEMINI_HOME", Gemini);
-        Set("NEXUS_JOURNAL_HOME", Path.Combine(Root, "journal"));
+        Set("NEXUS_JOURNAL_HOME", Path.Join(Root, "journal"));
         Set("NEXUS_RELAY_AGENT", "claude");
         Set("NEXUS_RELAY_LANG", "fr");
         Set("CODEX_HOME", CodexHome);
-        Set("NEXUS_RELAY_KEYPAD_QUOTA", Path.Combine(Root, "keypad-quota.json"));
+        Set("NEXUS_RELAY_KEYPAD_QUOTA", Path.Join(Root, "keypad-quota.json"));
         Set("NEXUS_RELAY_CODEX_PORT", "1");
         Set("NEXUS_RELAY_AGY_PORT", "1");
         Set("NEXUS_RELAY_UPDATE_CHECK", "0");
     }
 
-    public RelayBox Box() => new(Path.Combine(Relay, "v1"));
+    public RelayBox Box() => new(Path.Join(Relay, "v1"));
 
     public void Set(string name, string? value)
     {
@@ -61,7 +61,7 @@ public sealed class Isolation : IDisposable
         foreach (var (name, value) in saved) Environment.SetEnvironmentVariable(name, value);
         for (int i = 0; i < 5; i++)
         {
-            try { if (Directory.Exists(Root)) Directory.Delete(Root, true); return; }
+            try { if (Directory.Exists(Root)) { Directory.Delete(Root, true); } return; }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Thread.Sleep(200); }
         }
     }
@@ -69,11 +69,11 @@ public sealed class Isolation : IDisposable
 
 public static class Paths
 {
-    public static string Repo([CallerFilePath] string file = "") => Path.GetFullPath(Path.Combine(Path.GetDirectoryName(file)!, "..", ".."));
+    public static string Repo([CallerFilePath] string file = "") => Path.GetFullPath(Path.Join(Path.GetDirectoryName(file)!, "..", ".."));
     /// <summary>Test files live outside OneDrive and AppData, with the build outputs.</summary>
-    public static string Scratch => Path.Combine(Isolation.RealProfile, ".nexus", "build", "nexusrelay", "test-scratch");
-    public static string Golden(string name) => Path.Combine(AppContext.BaseDirectory, "Golden", name);
-    public static string Fixture(string name) => Path.Combine(AppContext.BaseDirectory, "Fixtures", name);
+    public static string Scratch => Path.Join(Isolation.RealProfile, ".nexus", "build", "nexusrelay", "test-scratch");
+    public static string Golden(string name) => Path.Join(AppContext.BaseDirectory, "Golden", name);
+    public static string Fixture(string name) => Path.Join(AppContext.BaseDirectory, "Fixtures", name);
 }
 
 public sealed record Ran(int Code, string Out, string Err);
@@ -85,7 +85,7 @@ public static class Native
     {
         get
         {
-            string exe = Path.Combine(AppContext.BaseDirectory, "NexusRelay.exe");
+            string exe = Path.Join(AppContext.BaseDirectory, "NexusRelay.exe");
             if (!File.Exists(exe)) throw new FileNotFoundException("NexusRelay.exe not copied next to the tests", exe);
             return exe;
         }
@@ -178,7 +178,7 @@ public sealed class Daemon : IDisposable
         while (true)
         {
             try { if (Health().IsSuccessStatusCode) break; }
-            catch (HttpRequestException) { }
+            catch (HttpRequestException) { /* Not listening yet: retried until the deadline. */ }
             Assert.True(DateTime.UtcNow < deadline, "native daemon did not answer /health");
             Thread.Sleep(50);
         }
@@ -188,7 +188,7 @@ public sealed class Daemon : IDisposable
 
     public HttpResponseMessage Post(string agent, JsonObject body, string? token = Token, string accept = "application/json")
     {
-        var request = new HttpRequestMessage(HttpMethod.Post, $"http://127.0.0.1:{Port}/mcp?agent={agent}") { Content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json") };
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"http://127.0.0.1:{Port}/mcp?agent={agent}") { Content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json") };
         if (token is not null) request.Headers.Authorization = new("Bearer", token);
         request.Headers.Accept.ParseAdd(accept);
         request.Headers.Add("Mcp-Session-Id", "parity-session");

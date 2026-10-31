@@ -28,14 +28,11 @@ public static partial class SearchAndSummary
         int index = 0;
         foreach (var rune in text.EnumerateRunes())
         {
-            foreach (var c in rune.ToString().Normalize(NormalizationForm.FormD).EnumerateRunes())
+            foreach (var c in rune.ToString().Normalize(NormalizationForm.FormD).EnumerateRunes().Where(c => Rune.GetUnicodeCategory(c) != UnicodeCategory.NonSpacingMark))
             {
-                if (Rune.GetUnicodeCategory(c) != UnicodeCategory.NonSpacingMark)
-                {
-                    string lower = Rune.ToLowerInvariant(c).ToString();
-                    sb.Append(lower);
-                    for (int i = 0; i < lower.Length; i++) where.Add(index);
-                }
+                string lower = Rune.ToLowerInvariant(c).ToString();
+                sb.Append(lower);
+                for (int i = 0; i < lower.Length; i++) where.Add(index);
             }
             index += rune.Utf16SequenceLength;
         }
@@ -135,9 +132,8 @@ public static partial class SearchAndSummary
             var plain = Bare(msg.Text);
             int totalScore = 0;
             bool allMatch = true;
-            foreach (var term in wanted)
+            foreach (int c in wanted.Select(term => CountOccurrences(plain, term)))
             {
-                int c = CountOccurrences(plain, term);
                 if (c == 0)
                 {
                     allMatch = false;
@@ -168,9 +164,8 @@ public static partial class SearchAndSummary
             var item = scored[i];
             var (folded, where) = Fold(item.Message.Text);
             int first = int.MaxValue;
-            foreach (var term in wanted)
+            foreach (int idx in wanted.Select(term => folded.IndexOf(term, StringComparison.Ordinal)))
             {
-                int idx = folded.IndexOf(term, StringComparison.Ordinal);
                 if (idx >= 0 && idx < first)
                     first = idx;
             }

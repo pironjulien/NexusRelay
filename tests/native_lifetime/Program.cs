@@ -4,13 +4,13 @@ using System.Text.Json;
 using NexusRelay;
 
 // Only this disposable WinExe is launched: no Chrome process, profile or user window is used.
-internal static class Program
+internal static partial class Program
 {
     public static int Main(string[] args)
     {
         string folder = AppContext.BaseDirectory;
-        string ready = Path.Combine(folder, "parent-ready.json");
-        string child = Path.Combine(folder, "child.json");
+        string ready = Path.Join(folder, "parent-ready.json");
+        string child = Path.Join(folder, "child.json");
         try
         {
             if (args.SequenceEqual(new[] { "--test" }))
@@ -21,12 +21,12 @@ internal static class Program
             if (args.FirstOrDefault() == "--payload")
             {
                 Write(child, new { pid = Environment.ProcessId, in_job = InJob() });
-                string heartbeat = Path.Combine(folder, "heartbeat");
+                string heartbeat = Path.Join(folder, "heartbeat");
                 var timer = Stopwatch.StartNew();
-                while (!File.Exists(Path.Combine(folder, "child.stop")) && timer.Elapsed.TotalSeconds < 30)
+                while (!File.Exists(Path.Join(folder, "child.stop")) && timer.Elapsed.TotalSeconds < 30)
                 {
                     try { File.WriteAllText(heartbeat, timer.ElapsedTicks.ToString()); }
-                    catch (IOException) { } // The test reads the heartbeat concurrently: a sharing violation only skips one beat.
+                    catch (IOException) { /* The test reads the heartbeat concurrently: a sharing violation only skips one beat. */ }
                     Thread.Sleep(50);
                 }
                 return 0;
@@ -34,8 +34,8 @@ internal static class Program
             if (args.SequenceEqual(new[] { "--caller" }) || args.SequenceEqual(new[] { "--caller-direct" }))
             {
                 var timer = Stopwatch.StartNew();
-                while (!File.Exists(Path.Combine(folder, "caller.gate")) && timer.Elapsed.TotalSeconds < 10) Thread.Sleep(10);
-                if (!File.Exists(Path.Combine(folder, "caller.gate"))) return 2;
+                while (!File.Exists(Path.Join(folder, "caller.gate")) && timer.Elapsed.TotalSeconds < 10) Thread.Sleep(10);
+                if (!File.Exists(Path.Join(folder, "caller.gate"))) return 2;
                 bool inJob = InJob();
                 Func<ProcessStartInfo, bool>? direct = args[0] == "--caller-direct" ? info =>
                 {
@@ -52,6 +52,7 @@ internal static class Program
         }
         catch (Exception error)
         {
+            // Boundary: the fixture reports any failure to the test through its ready file.
             Write(ready, new { error = error.ToString() });
             Console.Error.WriteLine(error);
             return 1;
@@ -73,7 +74,7 @@ internal static class Program
     private static int RunLifetimeTest(string folder, bool broker)
     {
         string[] files = ["caller.gate", "parent-ready.json", "child.json", "heartbeat", "child.stop"];
-        foreach (string file in files) File.Delete(Path.Combine(folder, file));
+        foreach (string file in files) File.Delete(Path.Join(folder, file));
         nint job = CreateJobObjectW(0, null);
         if (job == 0) throw new System.ComponentModel.Win32Exception();
         Process? child = null; bool callerStarted = false;
@@ -85,26 +86,26 @@ internal static class Program
             if (!SetInformationJobObject(job, 9, ref info, (uint)Marshal.SizeOf<ExtendedLimits>())) throw new System.ComponentModel.Win32Exception();
             callerStarted = caller.Start();
             if (!callerStarted || !AssignProcessToJobObject(job, caller.Handle)) throw new System.ComponentModel.Win32Exception();
-            File.WriteAllText(Path.Combine(folder, "caller.gate"), "assigned");
-            Wait(() => File.Exists(Path.Combine(folder, "parent-ready.json")), 10, "Caller did not report launch");
-            using var report = JsonDocument.Parse(File.ReadAllText(Path.Combine(folder, "parent-ready.json")));
+            File.WriteAllText(Path.Join(folder, "caller.gate"), "assigned");
+            Wait(() => File.Exists(Path.Join(folder, "parent-ready.json")), 10, "Caller did not report launch");
+            using var report = JsonDocument.Parse(File.ReadAllText(Path.Join(folder, "parent-ready.json")));
             if (!report.RootElement.TryGetProperty("in_job", out var inJob) || !inJob.GetBoolean() || !report.RootElement.GetProperty("started").GetBoolean())
                 throw new InvalidOperationException("Caller/broker did not launch correctly: " + report.RootElement);
-            Wait(() => File.Exists(Path.Combine(folder, "child.json")), 10, "Broker child did not start");
-            using var proof = JsonDocument.Parse(File.ReadAllText(Path.Combine(folder, "child.json")));
+            Wait(() => File.Exists(Path.Join(folder, "child.json")), 10, "Broker child did not start");
+            using var proof = JsonDocument.Parse(File.ReadAllText(Path.Join(folder, "child.json")));
             child = Process.GetProcessById(proof.RootElement.GetProperty("pid").GetInt32());
             if (!IsProcessInJob(child.Handle, job, out bool inherited) || inherited == broker)
                 throw new InvalidOperationException("Unexpected job membership for " + (broker ? "Explorer broker" : "direct ShellExecute control"));
-            Wait(() => File.Exists(Path.Combine(folder, "heartbeat")), 3, "Child heartbeat missing");
-            string before = File.ReadAllText(Path.Combine(folder, "heartbeat"));
+            Wait(() => File.Exists(Path.Join(folder, "heartbeat")), 3, "Child heartbeat missing");
+            string before = File.ReadAllText(Path.Join(folder, "heartbeat"));
             CloseHandle(job); job = 0; // Only the disposable caller is owned by this kill-on-close job.
             if (!caller.WaitForExit(5000)) throw new InvalidOperationException("Closing the job did not stop the caller");
             if (broker)
             {
                 Thread.Sleep(1618);
-                if (child.HasExited || File.ReadAllText(Path.Combine(folder, "heartbeat")) == before)
+                if (child.HasExited || File.ReadAllText(Path.Join(folder, "heartbeat")) == before)
                     throw new InvalidOperationException("User application did not survive caller/job closure");
-                File.WriteAllText(Path.Combine(folder, "child.stop"), "normal exit");
+                File.WriteAllText(Path.Join(folder, "child.stop"), "normal exit");
                 if (!child.WaitForExit(5000) || child.ExitCode != 0) throw new InvalidOperationException("Fixture child did not exit normally");
             }
             else if (!child.WaitForExit(5000)) throw new InvalidOperationException("Direct-launch control survived unexpectedly; oracle cannot reproduce the regression");
@@ -113,7 +114,7 @@ internal static class Program
         }
         finally
         {
-            File.WriteAllText(Path.Combine(folder, "child.stop"), "cleanup");
+            File.WriteAllText(Path.Join(folder, "child.stop"), "cleanup");
             if (job != 0) CloseHandle(job);
             if (child is not null) { child.WaitForExit(5000); child.Dispose(); }
             if (callerStarted) { caller.WaitForExit(5000); Console.Error.Write(caller.StandardError.ReadToEnd()); }
@@ -133,11 +134,11 @@ internal static class Program
     [StructLayout(LayoutKind.Sequential)] private struct IoCounters { public ulong ReadOps, WriteOps, OtherOps, ReadBytes, WriteBytes, OtherBytes; }
     [StructLayout(LayoutKind.Sequential)] private struct ExtendedLimits { public BasicLimits Basic; public IoCounters Io; public nuint ProcessMemory, JobMemory, PeakProcessMemory, PeakJobMemory; }
 
-    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)] private static extern nint CreateJobObjectW(nint security, string? name);
-    [DllImport("kernel32.dll", SetLastError = true)] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool SetInformationJobObject(nint job, int informationClass, ref ExtendedLimits info, uint length);
-    [DllImport("kernel32.dll", SetLastError = true)] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool AssignProcessToJobObject(nint job, nint process);
-    [DllImport("kernel32.dll", SetLastError = true)] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool CloseHandle(nint handle);
-    [DllImport("kernel32.dll", SetLastError = true)]
+    [LibraryImport("kernel32.dll", StringMarshalling = StringMarshalling.Utf16, SetLastError = true)] private static partial nint CreateJobObjectW(nint security, string? name);
+    [LibraryImport("kernel32.dll", SetLastError = true)] [return: MarshalAs(UnmanagedType.Bool)] private static partial bool SetInformationJobObject(nint job, int informationClass, ref ExtendedLimits info, uint length);
+    [LibraryImport("kernel32.dll", SetLastError = true)] [return: MarshalAs(UnmanagedType.Bool)] private static partial bool AssignProcessToJobObject(nint job, nint process);
+    [LibraryImport("kernel32.dll", SetLastError = true)] [return: MarshalAs(UnmanagedType.Bool)] private static partial bool CloseHandle(nint handle);
+    [LibraryImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool IsProcessInJob(nint process, nint job, [MarshalAs(UnmanagedType.Bool)] out bool result);
+    private static partial bool IsProcessInJob(nint process, nint job, [MarshalAs(UnmanagedType.Bool)] out bool result);
 }

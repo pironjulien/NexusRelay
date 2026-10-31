@@ -26,7 +26,7 @@ public sealed class NativeAgentApi
         if (candidate is null)
             foreach (string dir in (Environment.GetEnvironmentVariable("PATH") ?? "").Split(System.IO.Path.PathSeparator))
             {
-                candidate = new[] { "agentapi.exe", "agentapi.bat", "agentapi.cmd" }.Select(name => System.IO.Path.Combine(dir, name)).FirstOrDefault(File.Exists);
+                candidate = new[] { "agentapi.exe", "agentapi.bat", "agentapi.cmd" }.Select(name => System.IO.Path.Join(dir, name)).FirstOrDefault(File.Exists);
                 if (candidate is not null) break;
             }
         if (candidate is null) throw new AgentApiFailure("agentapi not found: run as Antigravity's registered sidecar");
@@ -53,7 +53,7 @@ public sealed class NativeAgentApi
             Task<string> output = process.StandardOutput.ReadToEndAsync(), errors = process.StandardError.ReadToEndAsync();
             if (!process.WaitForExit(120_000))
             {
-                try { process.Kill(entireProcessTree: true); } catch (InvalidOperationException) { }
+                try { process.Kill(entireProcessTree: true); } catch (InvalidOperationException) { /* Already exited. */ }
                 throw new AgentApiFailure("agentapi timed out; delivery may have been accepted", uncertain: true);
             }
             if (!Task.WaitAll([output, errors], 10_000)) throw new AgentApiFailure("agentapi response pipe did not close", uncertain: true);
@@ -115,9 +115,8 @@ public sealed class NativeSidecar(RelayBox box, NativeAgentApi api)
             return box.ClaimOf(m.Id, Attempt(box, m)) is null && !(Attempt(box, m) == 1 && box.HasEvent(m.Id, "livré"));
         }).GroupBy(m => m.Topic);
         var results = new List<JsonObject>();
-        foreach (var topic in pending)
+        foreach (var topic in pending.Where(t => !(!t.Any(m => !m.Info) || t.Any(m => failures.TryGetValue(m.Id, out double at) && Reservations.Now() - at < 20))))
         {
-            if (!topic.Any(m => !m.Info) || topic.Any(m => failures.TryGetValue(m.Id, out double at) && Reservations.Now() - at < 20)) continue;
             results.Add(Deliver(topic.Key, topic.ToList()));
         }
         WatchErrors();
@@ -126,9 +125,16 @@ public sealed class NativeSidecar(RelayBox box, NativeAgentApi api)
     public JsonObject Deliver(string topic, List<RelayMessage> messages)
     {
         var owned = messages.Select(m => (Message: m, Attempt: Attempt(box, m))).Where(item => box.Claim(item.Message.Id, item.Attempt, "sidecar")).ToList();
-        if (!owned.Any(item => !item.Message.Info)) { foreach (var item in owned) box.Release(item.Message.Id, item.Attempt, "sidecar"); return AppTransport.Result("skipped", "Delivery already owned"); }
+        if (!owned.Any(item => !item.Message.Info))
+        {
+            foreach (var item in owned) box.Release(item.Message.Id, item.Attempt, "sidecar");
+            return AppTransport.Result("skipped", "Delivery already owned");
+        }
         if (owned.Any(item => box.Claims(item.Message.Id).Any(c => c.Attempt != item.Attempt && RelayBox.ClaimLabel(c.Claim) is "uncertain" or "submitting")))
-        { foreach (var item in owned) box.Release(item.Message.Id, item.Attempt, "sidecar"); return AppTransport.Result("skipped", "A previous delivery is uncertain"); }
+        {
+            foreach (var item in owned) box.Release(item.Message.Id, item.Attempt, "sidecar");
+            return AppTransport.Result("skipped", "A previous delivery is uncertain");
+        }
         string? conversation = box.TopicState(topic, "agy")?["conversation"]?.ToString();
         string? old = conversation;
         try
@@ -162,6 +168,7 @@ public sealed class NativeSidecar(RelayBox box, NativeAgentApi api)
         }
         catch (Exception exception)
         {
+            // Boundary: every failure after the claim is recorded on the claim, never lost.
             // Only a known API rejection is replayable. Unexpected failures after the claim remain uncertain.
             bool uncertain = exception is not AgentApiFailure failure || failure.Uncertain;
             foreach (var item in owned)
@@ -188,7 +195,7 @@ public sealed class NativeSidecar(RelayBox box, NativeAgentApi api)
     }
     public static int Run()
     {
-        using var instance = DaemonSupervisor.AcquireLock(Path.Combine(RelayPaths.RelayHome(), "sidecar-native.lock"));
+        using var instance = DaemonSupervisor.AcquireLock(Path.Join(RelayPaths.RelayHome(), "sidecar-native.lock"));
         if (instance is null) return 0;
         var sidecar = new NativeSidecar(new(), new());
         RelayPaths.MarkRestartable("sidecar");
@@ -202,15 +209,15 @@ public sealed class NativeSidecar(RelayBox box, NativeAgentApi api)
             {
                 try { new RelayBox().SetState("sidecar", new() { ["at"] = RelayBox.NowIso(), ["pid"] = Environment.ProcessId, ["runtime"] = "native" }); }
                 catch (IOException e) { Console.Error.WriteLine(e.Message); }
-                try { await Task.Delay(TimeSpan.FromSeconds(5), cancelled.Token); } catch (OperationCanceledException) { }
+                try { await Task.Delay(TimeSpan.FromSeconds(5), cancelled.Token); } catch (OperationCanceledException) { /* Stopping: the loop condition ends the heartbeat. */ }
             }
         });
         try
         {
             while (true)
             {
-                try { sidecar.Step(); } catch (Exception e) { Console.Error.WriteLine($"sidecar: {e.Message}"); }
-                if (RelayPaths.RestartWanted(Path.Combine(RelayPaths.RelayHome(), "sidecar-restart.request"), loaded)) return 0;
+                try { sidecar.Step(); } catch (Exception e) { Console.Error.WriteLine($"sidecar: {e.Message}"); } // Boundary: one failed step never stops the sidecar loop.
+                if (RelayPaths.RestartWanted(Path.Join(RelayPaths.RelayHome(), "sidecar-restart.request"), loaded)) return 0;
                 if (appHost?.HasExited == true) return 0;
                 Thread.Sleep(1000);
             }

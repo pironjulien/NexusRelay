@@ -11,7 +11,7 @@ public sealed class ForegroundToken : IDisposable
     private ForegroundToken(FileStream stream) { this.stream = stream; }
     public static ForegroundToken? Acquire(string purpose, double seconds = 3)
     {
-        string path = Path.Combine(RelayPaths.UserHome(), ".nexus", "foreground.lock"); Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        string path = Path.Join(RelayPaths.UserHome(), ".nexus", "foreground.lock"); Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         var stream = new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.ReadWrite | FileShare.Delete);
         var timer = Stopwatch.StartNew();
         while (true)
@@ -26,11 +26,16 @@ public sealed class ForegroundToken : IDisposable
             catch (IOException) { if (timer.Elapsed.TotalSeconds >= seconds || AppTransport.EmergencyStop()) { stream.Dispose(); return null; } Thread.Sleep(50); }
         }
     }
-    public void Dispose() { try { stream.Position = 0; stream.SetLength(0); stream.Flush(); stream.Unlock(1L << 32, 1); } finally { stream.Dispose(); } }
+    public void Dispose() { using (stream) { stream.Position = 0; stream.SetLength(0); stream.Flush(); stream.Unlock(1L << 32, 1); } }
 }
 
-public static class AppLifecycle
+public static partial class AppLifecycle
 {
+    // Processes found for an app, disposed together.
+    private sealed class ProcessList : List<Process>, IDisposable
+    {
+        public void Dispose() { foreach (var process in this) process.Dispose(); }
+    }
     public static bool Busy(string app)
         => Activity(app)["status"]?.ToString() != "idle";
     public static JsonObject Activity(string app)
@@ -39,7 +44,7 @@ public static class AppLifecycle
         {
             if (app == "codex")
             {
-                if (!File.Exists(Path.Combine(AppSessions.CodexHome, "state_5.sqlite"))) return AppTransport.Result("unknown", "Codex activity database unavailable");
+                if (!File.Exists(Path.Join(AppSessions.CodexHome, "state_5.sqlite"))) return AppTransport.Result("unknown", "Codex activity database unavailable");
                 foreach (var chat in AppSessions.CodexChats().Where(c => !c.Archived))
                 {
                     if (!File.Exists(chat.Path)) return AppTransport.Result("unknown", "An open Codex chat has no readable turn journal");
@@ -48,11 +53,10 @@ public static class AppLifecycle
                 }
                 return AppTransport.Result("idle", "All open Codex turns have durable completion records");
             }
-            string conversations = Path.Combine(RelayPaths.GeminiHome(), "antigravity", "conversations");
+            string conversations = Path.Join(RelayPaths.GeminiHome(), "antigravity", "conversations");
             if (!Directory.Exists(conversations)) return AppTransport.Result("unknown", "Antigravity conversation inventory unavailable");
-            foreach (string file in Directory.EnumerateFiles(conversations, "*.db"))
+            foreach (string id in Directory.EnumerateFiles(conversations, "*.db").Select(file => Path.GetFileNameWithoutExtension(file)))
             {
-                string id = Path.GetFileNameWithoutExtension(file);
                 if (!RelayPaths.IsConversationId(id) || !RelayPaths.ConversationAlive(id)) continue;
                 var turn = AppSessions.AntigravityError(id) ?? AppSessions.AntigravityTurn(id);
                 if (!turn.Finished) return AppTransport.Result(turn.At is null ? "unknown" : "working", "An Antigravity conversation has no durable completion; old timestamps do not establish idleness");
@@ -64,33 +68,37 @@ public static class AppLifecycle
     public static double HungFor(string key, bool observed, RelayBox? box = null, double? now = null)
     {
         box ??= new(); double at = now ?? Reservations.Now();
-        if (!observed) { if (box.State("hung-" + key) is not null) box.SetState("hung-" + key, new()); return 0; }
+        if (!observed)
+        {
+            if (box.State("hung-" + key) is not null) box.SetState("hung-" + key, new());
+            return 0;
+        }
         double since = box.State("hung-" + key)?["since"]?.GetValue<double>() ?? at;
         box.SetState("hung-" + key, new() { ["since"] = since }); return at - since;
     }
     public static bool InstalledExecutable(string app, string path)
     {
         string full = Path.GetFullPath(path);
-        if (app == "codex") return full.StartsWith(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "WindowsApps", "OpenAI.Codex_"), StringComparison.OrdinalIgnoreCase) && full.EndsWith(@"\app\ChatGPT.exe", StringComparison.OrdinalIgnoreCase);
-        return new[] { Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "antigravity", "Antigravity.exe"), Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Antigravity", "Antigravity.exe") }.Any(expected => full.Equals(expected, StringComparison.OrdinalIgnoreCase));
+        if (app == "codex") return full.StartsWith(Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "WindowsApps", "OpenAI.Codex_"), StringComparison.OrdinalIgnoreCase) && full.EndsWith(@"\app\ChatGPT.exe", StringComparison.OrdinalIgnoreCase);
+        return new[] { Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "antigravity", "Antigravity.exe"), Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Antigravity", "Antigravity.exe") }.Any(expected => full.Equals(expected, StringComparison.OrdinalIgnoreCase));
     }
-    private static List<Process> Processes(string app)
+    private static ProcessList Processes(string app)
     {
-        var result = new List<Process>();
+        var result = new ProcessList();
         foreach (var process in Process.GetProcessesByName(app == "codex" ? "ChatGPT" : "Antigravity"))
         {
             try { if (process.MainModule?.FileName is string path && InstalledExecutable(app, path)) { result.Add(process); continue; } }
-            catch (Exception e) when (e is System.ComponentModel.Win32Exception or InvalidOperationException) { }
+            catch (Exception e) when (e is System.ComponentModel.Win32Exception or InvalidOperationException) { /* Inaccessible or exited process: not the installed app. */ }
             process.Dispose();
         }
         return result;
     }
-    private static bool Running(string app) { var processes = Processes(app); try { return processes.Count > 0; } finally { processes.ForEach(p => p.Dispose()); } }
+    private static bool Running(string app) { using var processes = Processes(app); return processes.Count > 0; }
     public static bool HungWindow(string app)
     {
-        var processes = Processes(app); var ids = processes.Select(p => p.Id).ToHashSet(); bool hung = false;
-        try { EnumWindows((hwnd, _) => { GetWindowThreadProcessId(hwnd, out uint pid); if (ids.Contains((int)pid) && IsWindowVisible(hwnd) && IsHungAppWindow(hwnd)) hung = true; return true; }, 0); return hung; }
-        finally { processes.ForEach(p => p.Dispose()); }
+        using var processes = Processes(app); var ids = processes.Select(p => p.Id).ToHashSet(); bool hung = false;
+        EnumWindows((hwnd, _) => { GetWindowThreadProcessId(hwnd, out uint pid); if (ids.Contains((int)pid) && IsWindowVisible(hwnd) && IsHungAppWindow(hwnd)) { hung = true; } return true; }, 0);
+        return hung;
     }
     private static bool Responsive(string url) { try { using var page = new CdpPage(url); return page.Eval("1 + 1")?.ToString() == "2"; } catch (Exception e) when (e is IOException or RelayError or System.Net.WebSockets.WebSocketException or OperationCanceledException) { return false; } }
     public static string? RestartGuard(string app, bool frozen, bool present, bool busy, bool token)
@@ -121,11 +129,11 @@ public static class AppLifecycle
         bool restarted = Running(app);
         if (restarted)
         {
-            var processes = Processes(app); var identities = processes.Select(p => (Process: p, Born: p.StartTime.ToUniversalTime().Ticks, Path: p.MainModule!.FileName)).ToList();
-            try
+            using (var processes = Processes(app))
             {
+                var identities = processes.Select(p => (Process: p, Born: p.StartTime.ToUniversalTime().Ticks, Path: p.MainModule!.FileName)).ToList();
                 var ids = identities.Select(i => i.Process.Id).ToHashSet(); var windows = new List<nint>();
-                EnumWindows((hwnd, _) => { GetWindowThreadProcessId(hwnd, out uint pid); if (ids.Contains((int)pid) && IsWindowVisible(hwnd) && GetWindow(hwnd, 4) == 0) windows.Add(hwnd); return true; }, 0);
+                EnumWindows((hwnd, _) => { GetWindowThreadProcessId(hwnd, out uint pid); if (ids.Contains((int)pid) && IsWindowVisible(hwnd) && GetWindow(hwnd, 4) == 0) { windows.Add(hwnd); } return true; }, 0);
                 foreach (nint window in windows)
                 {
                     if (RestartGuard(app, frozen, AppTransport.UserPresent(app) || AppTransport.EmergencyStop(), Busy(app), true) is string changed) return AppTransport.Result("deferred", changed);
@@ -141,11 +149,10 @@ public static class AppLifecycle
                     {
                         if (RestartGuard(app, frozen, AppTransport.UserPresent(app) || AppTransport.EmergencyStop(), Busy(app), true) is string changed) return AppTransport.Result("deferred", changed);
                         try { if (!item.Process.HasExited && item.Process.StartTime.ToUniversalTime().Ticks == item.Born && item.Process.MainModule?.FileName == item.Path && InstalledExecutable(app, item.Path)) item.Process.Kill(); }
-                        catch (InvalidOperationException) { }
+                        catch (InvalidOperationException) { /* Exited meanwhile: nothing left to stop. */ }
                     }
                 }
             }
-            finally { processes.ForEach(p => p.Dispose()); }
             Thread.Sleep(2000);
         }
         if (RestartGuard(app, frozen, AppTransport.UserPresent(app) || AppTransport.EmergencyStop(), Running(app) && Busy(app), true) is string beforeLaunch) return AppTransport.Result("deferred", beforeLaunch);
@@ -170,10 +177,23 @@ public static class AppLifecycle
         while (visible.Elapsed.TotalSeconds < 15)
         {
             if (AppTransport.InputTick() != inputBefore || AppTransport.EmergencyStop()) break;
-            var processes = Processes(app); var ids = processes.Select(p => p.Id).ToHashSet(); var windows = new List<nint>();
-            try { EnumWindows((hwnd, _) => { GetWindowThreadProcessId(hwnd, out uint pid); if (ids.Contains((int)pid) && IsWindowVisible(hwnd)) windows.Add(hwnd); return true; }, 0); }
-            finally { processes.ForEach(p => p.Dispose()); }
-            if (windows.Count > 0) { nint taken = GetForegroundWindow(); foreach (nint hwnd in windows) { if (AppTransport.InputTick() != inputBefore || AppTransport.EmergencyStop()) break; ShowWindowAsync(hwnd, 7); } if (AppTransport.InputTick() == inputBefore && !AppTransport.EmergencyStop() && windows.Contains(taken) && previous != 0) SetForegroundWindow(previous); break; }
+            var windows = new List<nint>();
+            using (var processes = Processes(app))
+            {
+                var ids = processes.Select(p => p.Id).ToHashSet();
+                EnumWindows((hwnd, _) => { GetWindowThreadProcessId(hwnd, out uint pid); if (ids.Contains((int)pid) && IsWindowVisible(hwnd)) { windows.Add(hwnd); } return true; }, 0);
+            }
+            if (windows.Count > 0)
+            {
+                nint taken = GetForegroundWindow();
+                foreach (nint hwnd in windows)
+                {
+                    if (AppTransport.InputTick() != inputBefore || AppTransport.EmergencyStop()) break;
+                    ShowWindowAsync(hwnd, 7);
+                }
+                if (AppTransport.InputTick() == inputBefore && !AppTransport.EmergencyStop() && windows.Contains(taken) && previous != 0) SetForegroundWindow(previous);
+                break;
+            }
             Thread.Sleep(100);
         }
         bool ready = AppTransport.Wait(() => AppTransport.PageUrl(app) is not null, 40);
@@ -198,20 +218,21 @@ public static class AppLifecycle
         var start = new ProcessStartInfo("powershell.exe") { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
         foreach (string arg in new[] { "-NoProfile", "-NonInteractive", "-Command", "(Get-AppxPackage OpenAI.Codex | Select-Object -First 1).PackageFamilyName" }) start.ArgumentList.Add(arg);
         using var process = Process.Start(start); if (process is null) return null;
-        var result = process.StandardOutput.ReadToEndAsync(); var error = process.StandardError.ReadToEndAsync();
+        var result = process.StandardOutput.ReadToEndAsync(); _ = process.StandardError.ReadToEndAsync(); // Drained so a full stderr pipe cannot block the child.
         if (!process.WaitForExit(10_000)) { process.Kill(entireProcessTree: true); return null; }
         string family = result.GetAwaiter().GetResult().Trim(); return family.StartsWith("OpenAI.Codex_", StringComparison.Ordinal) ? family : null;
     }
     [ComImport, Guid("2E941141-7F97-4756-BA1D-9DECDE894A3D"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)] private interface IAppActivation { [PreserveSig] int ActivateApplication([MarshalAs(UnmanagedType.LPWStr)] string id, [MarshalAs(UnmanagedType.LPWStr)] string args, uint options, out uint pid); }
     [ComImport, Guid("45BA127D-10A8-46EA-8AB7-56EA9078943C")] private class AppActivation { }
     private delegate bool EnumWindow(nint hwnd, nint parameter);
+    // Kept as DllImport: LibraryImport cannot marshal the managed callback delegate.
     [DllImport("user32.dll")] private static extern bool EnumWindows(EnumWindow callback, nint parameter);
-    [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(nint hwnd, out uint pid);
-    [DllImport("user32.dll")] private static extern bool IsWindowVisible(nint hwnd);
-    [DllImport("user32.dll")] private static extern bool IsHungAppWindow(nint hwnd);
-    [DllImport("user32.dll")] private static extern nint GetForegroundWindow();
-    [DllImport("user32.dll")] private static extern bool ShowWindowAsync(nint hwnd, int command);
-    [DllImport("user32.dll")] private static extern bool SetForegroundWindow(nint hwnd);
-    [DllImport("user32.dll")] private static extern nint GetWindow(nint hwnd, uint command);
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern bool PostMessageW(nint hwnd, uint message, nint wParam, nint lParam);
+    [LibraryImport("user32.dll")] private static partial uint GetWindowThreadProcessId(nint hwnd, out uint pid);
+    [LibraryImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static partial bool IsWindowVisible(nint hwnd);
+    [LibraryImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static partial bool IsHungAppWindow(nint hwnd);
+    [LibraryImport("user32.dll")] private static partial nint GetForegroundWindow();
+    [LibraryImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static partial bool ShowWindowAsync(nint hwnd, int command);
+    [LibraryImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static partial bool SetForegroundWindow(nint hwnd);
+    [LibraryImport("user32.dll")] private static partial nint GetWindow(nint hwnd, uint command);
+    [LibraryImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static partial bool PostMessageW(nint hwnd, uint message, nint wParam, nint lParam);
 }
