@@ -569,22 +569,54 @@ public static partial class Reservations
             if (!OtherHolder(r, agent, session) || !exclusive)
                 continue;
             var theirPaths = (r["paths"] as JsonArray)?.Select(x => x?.GetValue<string>() ?? "").Where(s => s.Length > 0).ToList() ?? [];
-            foreach (var f in files)
+            var hit = files.Where(f => theirPaths.Any(theirs => Overlap(theirs, Path.GetFullPath(f)))).ToList();
+            if (hit.Count > 0 && ReleaseSettled(box, r))
+                continue;
+            foreach (var f in hit)
             {
-                var absF = Path.GetFullPath(f);
-                if (theirPaths.Any(theirs => Overlap(theirs, absF)))
+                list.Add(new JsonObject
                 {
-                    list.Add(new JsonObject
-                    {
-                        ["agent"] = Holder(r, agent),
-                        ["reason"] = r["reason"]?.GetValue<string>() ?? "",
-                        ["expires"] = r["expires"]?.GetValue<string>() ?? "",
-                        ["file"] = f,
-                    });
-                }
+                    ["agent"] = Holder(r, agent),
+                    ["reason"] = r["reason"]?.GetValue<string>() ?? "",
+                    ["expires"] = r["expires"]?.GetValue<string>() ?? "",
+                    ["file"] = f,
+                });
             }
         }
         return list;
+    }
+
+    /// <summary>An automatic reservation whose edits are over and whose files are all identical to HEAD has nothing left
+    /// to protect: committed (even where the post-commit hook is missing, e.g. a freshly cloned repository) or reverted.
+    /// Released here, when it would block someone, instead of making them wait for the holder's turn end or the expiry.</summary>
+    private static bool ReleaseSettled(RelayBox box, JsonObject seen)
+    {
+        static bool Settled(JsonObject r)
+        {
+            if (!(r["automatic"]?.GetValue<bool>() ?? false) || r["reason"]?.GetValue<string>() != AutoReason ||
+                (r["pending_tools"] as JsonArray)?.Count != 0 || (r["pending_unknown"]?.GetValue<bool>() ?? false))
+                return false;
+            var absent = (r["absent_at_start"] as JsonArray)?.Select(x => x?.GetValue<string>() ?? "").ToHashSet(StringComparer.Ordinal) ?? [];
+            var paths = (r["paths"] as JsonArray)?.Select(x => x?.GetValue<string>() ?? "").Where(s => s.Length > 0).ToList() ?? [];
+            return paths.Count > 0 && paths.All(p => Unchanged(p, absent.Contains(Norm(p))));
+        }
+        if (!Settled(seen))
+            return false;
+        var id = seen["id"]?.GetValue<string>();
+        lock (SyncLock)
+        {
+            using var _ = BetweenProcesses(box);
+            // Re-read under the lock: the holder may have started a new edit since.
+            var current = Active(box).FirstOrDefault(r => r["id"]?.GetValue<string>() == id);
+            if (current is null)
+                return true;
+            if (!Settled(current))
+                return false;
+            current["released"] = Iso(Now());
+            current["released_by"] = "settled";
+            RelayBox.WriteState(Path.Join(Folder(box), $"{id}.json"), current);
+            return true;
+        }
     }
 
     private static string? ExistingDirectory(string path)

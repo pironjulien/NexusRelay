@@ -6,6 +6,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.10.11] - 2026-10-31
+
+### Fixed
+- Edit guard: an automatic reservation whose edits are over and whose files are all identical to HEAD (committed or
+  reverted) no longer blocks another conversation; it is released on the spot. The release at commit relied on the
+  repository's post-commit hook alone, and the product repositories cloned again on 30/10 had lost it, so committed
+  files stayed reserved until the holder's turn ended (25 minutes on NexusBrowser).
+
 ## [1.10.10] - 2026-10-31
 
 ### Fixed

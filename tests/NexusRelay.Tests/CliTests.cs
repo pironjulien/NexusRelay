@@ -93,6 +93,28 @@ public sealed class CliTests : IDisposable
     }
 
     [Fact]
+    public void Edit_guard_lets_another_conversation_edit_a_file_once_committed_without_the_post_commit_hook()
+    {
+        // 31/10: a repository cloned again had lost its post-commit hook; the committed files stayed reserved for 25 min.
+        Native.Git(iso.Root, "init", "-q");
+        Native.Git(iso.Root, "config", "user.email", "fixture@example.org");
+        Native.Git(iso.Root, "config", "user.name", "Fixture");
+        string target = Path.Join(iso.Root, "McpServer.cs");
+        File.WriteAllText(target, "avant\n");
+        Native.Git(iso.Root, "add", "McpServer.cs");
+        Native.Git(iso.Root, "commit", "-q", "-m", "base");
+        JsonObject Edit(string session, string id) => new() { ["session_id"] = session, ["tool_use_id"] = id, ["tool_name"] = "Edit", ["tool_input"] = new JsonObject { ["file_path"] = target } };
+        Assert.Equal("", Native.Run(["--edit-guard", "claude"], Edit("root-a", "appel-5").ToJsonString()).Out);
+        File.WriteAllText(target, "après\n");
+        Native.Run(["--edit-guard", "claude", "--finish-tool"], Edit("root-a", "appel-5").ToJsonString());
+        Assert.Contains("deny", Native.Run(["--edit-guard", "claude"], Edit("root-b", "appel-6").ToJsonString()).Out);  // uncommitted work
+        Native.Git(iso.Root, "commit", "-q", "-am", "work");  // no hook, holder's turn still running
+        Assert.Equal("", Native.Run(["--edit-guard", "claude"], Edit("root-b", "appel-7").ToJsonString()).Out);
+        var held = Reservations.Active(iso.Box());
+        Assert.Equal(["root-b"], held.Select(r => r["session"]!.ToString()));  // the committed one ended, the new edit holds it
+    }
+
+    [Fact]
     public void Commit_guard_allows_siblings_and_rejects_other_chats()
     {
         string repository = Path.Join(iso.Root, "repo");
