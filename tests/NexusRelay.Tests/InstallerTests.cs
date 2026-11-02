@@ -290,15 +290,30 @@ public sealed class InstallerTests : IDisposable
         string oldBackup = Path.Join(state, "bin.old-20261102000000");
         Directory.CreateDirectory(oldBackup);
 
-        // Version saine dans bin.old
-        File.Copy(Native.Exe, Path.Join(oldBackup, "NexusRelay.exe"));
+        // Copie complète d'une version saine dans bin.old (exécutable, runtimeconfig, DLLs)
+        foreach (var file in Directory.EnumerateFiles(AppContext.BaseDirectory))
+        {
+            File.Copy(file, Path.Join(oldBackup, Path.GetFileName(file)));
+        }
 
-        // Stable corrompu portant un stamp valide
-        File.WriteAllText(Path.Join(stable, "NexusRelay.exe"), "invalid dummy");
-        File.WriteAllText(Path.Join(stable, "publish.complete"), "dummy-stamp");
+        // Calcul exact de nativeKey selon l'algorithme d'install.ps1:53-56
+        var sources = Directory.EnumerateFiles(Path.Join(Repo, "native"), "*.*")
+            .Where(f => new[] { ".cs", ".csproj", ".json" }.Contains(Path.GetExtension(f)))
+            .Append(Path.Join(Repo, "Directory.Build.props"))
+            .OrderBy(f => f)
+            .Select(f => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(f))))
+            .ToList();
+        var digest = System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(string.Join("", sources)));
+        string nativeKey = Convert.ToHexString(digest.AsSpan(0, 8)).ToLowerInvariant();
+
+        // Stable corrompu portant le stamp exact nativeKey : un probe non protégé lèverait
+        // ApplicationFailedException sous $ErrorActionPreference='Stop' et bloquerait la reprise.
+        File.WriteAllText(Path.Join(stable, "NexusRelay.exe"), "invalid dummy non-PE");
+        File.WriteAllText(Path.Join(stable, "publish.complete"), nativeKey);
 
         string script = Path.Join(Repo, "install.ps1");
-        var ran = Native.RunFile("pwsh.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script, "-SkipTests"],
+        // Utilisation de -PromoteOnly pour tester la bascule et la reprise de manière isolée sans toucher aux tâches planifiées
+        var ran = Native.RunFile("pwsh.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script, "-PromoteOnly"],
             env: new Dictionary<string, string?>
             {
                 ["USERPROFILE"] = iso.Home,
@@ -306,10 +321,13 @@ public sealed class InstallerTests : IDisposable
                 ["LOCALAPPDATA"] = Path.Join(iso.Root, "localappdata"),
             }, timeoutS: 60);
         Assert.True(ran.Code == 0, ran.Err + ran.Out);
+        Assert.Contains("Promotion", ran.Out);
 
-        // Après exécution : le stable a été réinstallé et validé sain
+        // Après exécution : le stable a été réparé depuis le candidat et --schemas réussit
         var check = Native.RunFile(Path.Join(stable, "NexusRelay.exe"), ["--schemas"]);
         Assert.Equal(0, check.Code);
+        // Le contrôle final ayant validé la santé, bin.old-* a été nettoyé
+        Assert.Empty(Directory.EnumerateDirectories(state, "bin.old-*"));
     }
 
     [Fact]

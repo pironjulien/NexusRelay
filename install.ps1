@@ -28,8 +28,8 @@
 #  - hôte du relais (le seul qui ouvre un échange) : réglage `host`, Claude par défaut ; avec -Register et sans réglage,
 #    NEXUS_PACK_HOST, sinon le premier agent présent parmi les IA choisies (Claude Code, Codex, Antigravity)
 # Windows PowerShell 5.1 ou PowerShell 7.
-# Usage : powershell -NoProfile -File install.ps1 [-SkipTests] [-TokenFile <chemin>] [-Register] [-PrepareOnly]
-param([switch]$SkipTests, [string]$TokenFile, [switch]$Register, [switch]$PrepareOnly)
+# Usage : powershell -NoProfile -File install.ps1 [-SkipTests] [-TokenFile <chemin>] [-Register] [-PrepareOnly] [-PromoteOnly]
+param([switch]$SkipTests, [string]$TokenFile, [switch]$Register, [switch]$PrepareOnly, [switch]$PromoteOnly)
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)  # sorties JSON et chemins accentués du moteur
 
@@ -126,11 +126,17 @@ if (-not (Test-Path -LiteralPath $stable)) {
 # un ancien arrêt entre promotion et santé a pu laisser un binaire invalide avec stamp hérité.
 $stableHealthy = $false
 if ((Test-Path -LiteralPath $stamp) -and [IO.File]::ReadAllText($stamp) -eq $nativeKey -and (Test-Path -LiteralPath $stableExe)) {
-    & $stableExe --schemas | Out-Null
-    if ($LASTEXITCODE -eq 0) {
-        $stableHealthy = $true
-    } else {
-        Write-Warning "Le moteur dans '$stable' porte le stamp mais a échoué au contrôle de santé (--schemas, code $LASTEXITCODE). Réinstallation requise."
+    try {
+        & $stableExe --schemas | Out-Null
+        if ($LASTEXITCODE -eq 0) {
+            $stableHealthy = $true
+        }
+    } catch {
+        # Exception levée si le fichier n'est pas un PE valide ou est corrompu (ApplicationFailedException)
+        $stableHealthy = $false
+    }
+    if (-not $stableHealthy) {
+        Write-Warning "Le moteur dans '$stable' porte le stamp mais a échoué au contrôle de santé (--schemas). Réinstallation requise."
     }
 }
 
@@ -216,13 +222,28 @@ if (-not $stableHealthy) {
     }
 }
 # Vérification de santé finale avant de supprimer les sauvegardes de secours
+$canCleanOld = $false
 if ((Test-Path -LiteralPath $stamp) -and [IO.File]::ReadAllText($stamp) -eq $nativeKey -and (Test-Path -LiteralPath $stableExe)) {
-    & $stableExe --schemas | Out-Null
-    if ($LASTEXITCODE -eq 0) {
-        foreach ($old in Get-ChildItem -LiteralPath $state -Directory -Filter 'bin.old-*' -ErrorAction SilentlyContinue) {
-            Remove-Item -LiteralPath $old.FullName -Recurse -Force -ErrorAction SilentlyContinue
+    try {
+        & $stableExe --schemas | Out-Null
+        if ($LASTEXITCODE -eq 0) {
+            $canCleanOld = $true
         }
+    } catch {
+        $canCleanOld = $false
     }
+}
+if ($canCleanOld) {
+    foreach ($old in Get-ChildItem -LiteralPath $state -Directory -Filter 'bin.old-*' -ErrorAction SilentlyContinue) {
+        Remove-Item -LiteralPath $old.FullName -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+if ($PromoteOnly) {
+    if (-not $canCleanOld) {
+        throw "Promotion dans '$stable' échouée ou santé finale invalide (--schemas) ; sauvegardes conservées."
+    }
+    Write-Output "Promotion dans $stable validée (--schemas)."
+    exit 0
 }
 
 $settingsPath = Join-Path $state 'settings.json'

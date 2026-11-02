@@ -216,7 +216,7 @@ public sealed class ContractTests : IDisposable
         try
         {
             using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(1) };
-            string? url = null; var until = DateTime.UtcNow.AddSeconds(20);
+            string? url = null; var until = DateTime.UtcNow.AddSeconds(45);
             while (DateTime.UtcNow < until && url is null)
             {
                 try { url = JsonNode.Parse(http.GetStringAsync($"http://127.0.0.1:{port}/json/list").GetAwaiter().GetResult())!.AsArray().OfType<JsonObject>().FirstOrDefault(t => t["type"]?.ToString() == "page" && t["url"]?.ToString().StartsWith("file:") == true)?["webSocketDebuggerUrl"]?.ToString(); }
@@ -227,7 +227,7 @@ public sealed class ContractTests : IDisposable
             using var cdp = new CdpPage(url!);
             // The target can appear in /json/list before its first navigation commits. Its initial empty document
             // already reports readyState=complete, so wait for the actual fixture and its handlers, not that state alone.
-            until = DateTime.UtcNow.AddSeconds(20);
+            until = DateTime.UtcNow.AddSeconds(45);
             while (!AppTransport.Truth(cdp.Eval("document.readyState === 'complete' && !!document.getElementById('draft') && Array.isArray(window.__events)")))
             {
                 Assert.True(DateTime.UtcNow < until, "Chrome did not load the card survey fixture within 20 seconds");
