@@ -281,6 +281,38 @@ public sealed class InstallerTests : IDisposable
     }
 
     [Fact]
+    public void Installer_recovers_when_stable_fails_health_check_despite_matching_stamp()
+    {
+        string state = Path.Join(iso.Home, ".nexus", "nexus-relay");
+        Directory.CreateDirectory(state);
+        string stable = Path.Join(state, "bin");
+        Directory.CreateDirectory(stable);
+        string oldBackup = Path.Join(state, "bin.old-20261102000000");
+        Directory.CreateDirectory(oldBackup);
+
+        // Version saine dans bin.old
+        File.Copy(Native.Exe, Path.Join(oldBackup, "NexusRelay.exe"));
+
+        // Stable corrompu portant un stamp valide
+        File.WriteAllText(Path.Join(stable, "NexusRelay.exe"), "invalid dummy");
+        File.WriteAllText(Path.Join(stable, "publish.complete"), "dummy-stamp");
+
+        string script = Path.Join(Repo, "install.ps1");
+        var ran = Native.RunFile("pwsh.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script, "-SkipTests"],
+            env: new Dictionary<string, string?>
+            {
+                ["USERPROFILE"] = iso.Home,
+                ["HOME"] = iso.Home,
+                ["LOCALAPPDATA"] = Path.Join(iso.Root, "localappdata"),
+            }, timeoutS: 60);
+        Assert.True(ran.Code == 0, ran.Err + ran.Out);
+
+        // Après exécution : le stable a été réinstallé et validé sain
+        var check = Native.RunFile(Path.Join(stable, "NexusRelay.exe"), ["--schemas"]);
+        Assert.Equal(0, check.Code);
+    }
+
+    [Fact]
     public void No_build_output_in_the_synchronized_repository()
     {
         foreach (string folder in new[] { "native", Path.Join("tests", "NexusRelay.Tests"), Path.Join("tests", "native_lifetime") })

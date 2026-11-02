@@ -101,9 +101,15 @@ $stableExe = Join-Path $stable 'NexusRelay.exe'
 $installedDir = [IO.Path]::GetDirectoryName($nativeExe)
 $stamp = Join-Path $stable 'publish.complete'
 
-# Nettoyage préventif des dossiers temporaires abandonnés lors d'une installation interrompue
-Get-ChildItem -LiteralPath $state -Directory -Filter 'bin.new-*' -ErrorAction SilentlyContinue |
-    ForEach-Object { Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction SilentlyContinue }
+# Nettoyage préventif des dossiers temporaires abandonnés lors d'installations interrompues (PID morts uniquement)
+Get-ChildItem -LiteralPath $state -Directory -Filter 'bin.new-*' -ErrorAction SilentlyContinue | ForEach-Object {
+    if ($_.Name -match '^bin\.new-(\d+)$') {
+        $otherPid = [int]$Matches[1]
+        if ($otherPid -ne $PID -and -not (Get-Process -Id $otherPid -ErrorAction SilentlyContinue)) {
+            Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
 
 # Si bin est manquant (ex: interruption après renommage en bin.old-*), tenter une reprise immédiate depuis la dernière version de secours
 if (-not (Test-Path -LiteralPath $stable)) {
@@ -116,11 +122,28 @@ if (-not (Test-Path -LiteralPath $stable)) {
     }
 }
 
-if (-not ((Test-Path -LiteralPath $stamp) -and [IO.File]::ReadAllText($stamp) -eq $nativeKey)) {
+# Contrôle de santé préalable sur stable : même si le stamp correspond à nativeKey,
+# un ancien arrêt entre promotion et santé a pu laisser un binaire invalide avec stamp hérité.
+$stableHealthy = $false
+if ((Test-Path -LiteralPath $stamp) -and [IO.File]::ReadAllText($stamp) -eq $nativeKey -and (Test-Path -LiteralPath $stableExe)) {
+    & $stableExe --schemas | Out-Null
+    if ($LASTEXITCODE -eq 0) {
+        $stableHealthy = $true
+    } else {
+        Write-Warning "Le moteur dans '$stable' porte le stamp mais a échoué au contrôle de santé (--schemas, code $LASTEXITCODE). Réinstallation requise."
+    }
+}
+
+if (-not $stableHealthy) {
     $fresh = Join-Path $state "bin.new-$PID"
     if (Test-Path -LiteralPath $fresh) { Remove-Item -LiteralPath $fresh -Recurse -Force }
     Copy-Item -LiteralPath $installedDir -Destination $fresh -Recurse
-    [IO.File]::WriteAllText((Join-Path $fresh 'publish.complete'), $nativeKey, [Text.UTF8Encoding]::new($false))
+
+    # Invalider tout stamp hérité du candidat pour ne jamais valider la promotion avant santé
+    $freshStamp = Join-Path $fresh 'publish.complete'
+    if (Test-Path -LiteralPath $freshStamp) {
+        Remove-Item -LiteralPath $freshStamp -Force -ErrorAction SilentlyContinue
+    }
 
     # Contrôle pré-vol : valider l'intégrité du candidat avant toute modification du dossier stable
     $freshExe = Join-Path $fresh 'NexusRelay.exe'
@@ -132,7 +155,9 @@ if (-not ((Test-Path -LiteralPath $stamp) -and [IO.File]::ReadAllText($stamp) -e
 
     $link = Get-Item -LiteralPath $stable -Force -ErrorAction SilentlyContinue
     $old = $null
+    $targetJunction = $null
     if ($link -and ($link.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+        $targetJunction = $link.Target
         [IO.Directory]::Delete($stable, $false)  # ancienne jonction : le lien seul
     } elseif ($link) {
         $old = Join-Path $state "bin.old-$(Get-Date -Format 'yyyyMMddHHmmss')"
@@ -161,6 +186,8 @@ if (-not ((Test-Path -LiteralPath $stamp) -and [IO.File]::ReadAllText($stamp) -e
         if ($LASTEXITCODE) {
             throw "Le moteur dans '$stable' a échoué au contrôle de santé (--schemas, code $LASTEXITCODE)."
         }
+        # Empreinte validée uniquement après le contrôle de santé réussi
+        [IO.File]::WriteAllText($stamp, $nativeKey, [Text.UTF8Encoding]::new($false))
     } catch {
         $swapError = $_
         Write-Warning "Échec lors de la bascule vers $stable : $swapError. Tentative de restauration de la version précédente..."
@@ -174,6 +201,13 @@ if (-not ((Test-Path -LiteralPath $stamp) -and [IO.File]::ReadAllText($stamp) -e
             } catch {
                 Write-Error "Échec critique de restauration automatique : $old n'a pas pu être restauré en $stable ($_)."
             }
+        } elseif ($targetJunction -and -not (Test-Path -LiteralPath $stable)) {
+            try {
+                New-Item -ItemType Junction -Path $stable -Target $targetJunction | Out-Null
+                Write-Warning "Jonction restaurée vers $targetJunction."
+            } catch {
+                Write-Error "Échec de restauration de la jonction vers $targetJunction ($_)."
+            }
         }
         if (Test-Path -LiteralPath $fresh) {
             Remove-Item -LiteralPath $fresh -Recurse -Force -ErrorAction SilentlyContinue
@@ -181,14 +215,21 @@ if (-not ((Test-Path -LiteralPath $stamp) -and [IO.File]::ReadAllText($stamp) -e
         throw $swapError
     }
 }
-foreach ($old in Get-ChildItem -LiteralPath $state -Directory -Filter 'bin.old-*' -ErrorAction SilentlyContinue) {
-    Remove-Item -LiteralPath $old.FullName -Recurse -Force -ErrorAction SilentlyContinue
+# Vérification de santé finale avant de supprimer les sauvegardes de secours
+if ((Test-Path -LiteralPath $stamp) -and [IO.File]::ReadAllText($stamp) -eq $nativeKey -and (Test-Path -LiteralPath $stableExe)) {
+    & $stableExe --schemas | Out-Null
+    if ($LASTEXITCODE -eq 0) {
+        foreach ($old in Get-ChildItem -LiteralPath $state -Directory -Filter 'bin.old-*' -ErrorAction SilentlyContinue) {
+            Remove-Item -LiteralPath $old.FullName -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
 }
 
 $settingsPath = Join-Path $state 'settings.json'
 function Read-LocalSettings { if (Test-Path -LiteralPath $settingsPath) { [IO.File]::ReadAllText($settingsPath) | ConvertFrom-RelayJson } else { [pscustomobject]@{} } }
 $utf8 = [Text.UTF8Encoding]::new($false)
 New-Item -ItemType Directory -Force (Join-Path $HOME '.nexus\relay\codex-projet') | Out-Null  # dossier du projet Codex du relais
+New-Item -ItemType Directory -Force (Join-Path $HOME '.nexus\relay\claude-projet') | Out-Null # dossier du projet Claude du relais
 
 function Save-Backup([string]$path, [string]$name) {
     $backup = Join-Path $backups "$name-$(Get-Date -Format 'yyyyMMdd-HHmmss')$([IO.Path]::GetExtension($path))"
@@ -227,8 +268,9 @@ function Get-Localized([string]$relative) {
     if ($french -and (Test-Path $fr)) { return $fr }
     return Join-Path $project $relative
 }
-# Consignes des chats du relais, lues par Codex dans ce dossier : jamais de question à l'utilisateur, qui ne les lit pas.
+# Consignes des chats du relais, lues par Codex et Claude dans leurs dossiers : jamais de question à l'utilisateur, qui ne les lit pas.
 Copy-Item -Force (Get-Localized 'codex-projet\AGENTS.md') (Join-Path $HOME '.nexus\relay\codex-projet\AGENTS.md')
+Copy-Item -Force (Get-Localized 'claude-projet\CLAUDE.md') (Join-Path $HOME '.nexus\relay\claude-projet\CLAUDE.md')
 # Jeton partagé des démons Nexus (scripts\Resolve-NexusToken.ps1, règle commune du 30/10) : fichier explicite (-TokenFile,
 # NEXUS_MCP_TOKEN_FILE, réglage token_file), sinon %USERPROFILE%\.nexus\mcp-token.txt ; réutilisé, jamais régénéré.
 # Poste réglé sans -Register : jamais créé ici (un installeur lancé avant la synchro du fichier en créerait un autre).

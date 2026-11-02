@@ -29,7 +29,8 @@ public static partial class HostRewake
         {
             int idx = Array.IndexOf(args, "--await-replies");
             string me = RelayPaths.NormalizeAgent(idx + 1 < args.Length ? args[idx + 1] : "claude");
-            if (me != RelayPaths.RelayHost())
+            var host = RelayPaths.RelayHost();
+            if (host != "all" && me != host)
                 return 0;
             var entry = JsonNode.Parse(Console.In.ReadToEnd()) as JsonObject ?? new JsonObject();
             string session = new((entry["session_id"]?.ToString() ?? "").Where(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_').Take(80).ToArray());

@@ -157,6 +157,83 @@ public sealed class ReviewTests : IDisposable
     }
 
     [Fact]
+    public void Host_rewake_under_host_all_wakes_claude_on_answers()
+    {
+        var box = iso.Box();
+        string sent = Tool("send", new() { ["to"] = "codex", ["text"] = "Attente d'accord", ["topic"] = "reveil-test" }, "claude")["id"]!.ToString();
+        Tool("reply", new() { ["id"] = sent, ["text"] = "Réponse arrivée" }, "codex");
+        string stop = Transcript(sent);
+        var env = new Dictionary<string, string?> { ["NEXUS_RELAY_HOST"] = "all" };
+
+        // 1. Premier réveil : réveille avec code 2 et "reply"
+        var res = Native.Run(["--await-replies", "claude"], stop, env: env);
+        Assert.Equal(2, res.Code);
+        Assert.Contains("reply", res.Err);
+
+        // 2. Déjà vu / réveillé une seule fois : un second appel immédiat ne resonne pas
+        var second = Native.Run(["--await-replies", "claude"], stop, env: env);
+        Assert.Equal(0, second.Code);
+
+        // 3. Info reply : ne réveille jamais
+        string infoReq = Tool("send", new() { ["to"] = "codex", ["text"] = "Pour info", ["topic"] = "reveil-test" }, "claude")["id"]!.ToString();
+        Tool("reply", new() { ["id"] = infoReq, ["text"] = "Bien reçu", ["info"] = true }, "codex");
+        string stopInfo = Transcript(infoReq);
+        Assert.Equal(0, Native.Run(["--await-replies", "claude"], stopInfo, env: env).Code);
+
+        // 4. Conversation étrangère : ne réveille pas
+        string foreignReq = Tool("send", new() { ["to"] = "codex", ["text"] = "Autre conversation", ["topic"] = "reveil-autre" }, "claude")["id"]!.ToString();
+        Tool("reply", new() { ["id"] = foreignReq, ["text"] = "Réponse autre" }, "codex");
+        Assert.Equal(0, Native.Run(["--await-replies", "claude"], stop, env: env).Code);
+    }
+
+    [Fact]
+    public void Relay_host_respects_env_then_settings_then_default()
+    {
+        string settingsDir = Path.Join(iso.Home, ".nexus", "nexus-relay");
+        Directory.CreateDirectory(settingsDir);
+        string settingsFile = Path.Join(settingsDir, "settings.json");
+
+        var originalEnv = Environment.GetEnvironmentVariable("NEXUS_RELAY_HOST");
+        try
+        {
+            // 1. Priorité env face à un réglage local contradictoire
+            File.WriteAllText(settingsFile, """{"host": "codex"}""");
+            Environment.SetEnvironmentVariable("NEXUS_RELAY_HOST", "antigravity");
+            Assert.Equal("antigravity", RelayPaths.RelayHost());
+
+            // 2. Normalisation des alias d'environnement
+            Environment.SetEnvironmentVariable("NEXUS_RELAY_HOST", "trinite");
+            Assert.Equal("all", RelayPaths.RelayHost());
+            Environment.SetEnvironmentVariable("NEXUS_RELAY_HOST", "peers");
+            Assert.Equal("all", RelayPaths.RelayHost());
+            Environment.SetEnvironmentVariable("NEXUS_RELAY_HOST", "*");
+            Assert.Equal("all", RelayPaths.RelayHost());
+
+            // 3. Env absent / vide : repli sur le réglage local
+            Environment.SetEnvironmentVariable("NEXUS_RELAY_HOST", null);
+            File.WriteAllText(settingsFile, """{"host": "codex"}""");
+            Assert.Equal("codex", RelayPaths.RelayHost());
+            File.WriteAllText(settingsFile, """{"host": "all"}""");
+            Assert.Equal("all", RelayPaths.RelayHost());
+
+            // 4. Settings invalide ou absent : repli sur le défaut claude
+            File.WriteAllText(settingsFile, """{"host": "inconnu"}""");
+            Assert.Equal("claude", RelayPaths.RelayHost());
+            File.Delete(settingsFile);
+            Assert.Equal("claude", RelayPaths.RelayHost());
+
+            // 5. Env vide avec settings absent : défaut claude
+            Environment.SetEnvironmentVariable("NEXUS_RELAY_HOST", "   ");
+            Assert.Equal("claude", RelayPaths.RelayHost());
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("NEXUS_RELAY_HOST", originalEnv);
+            if (File.Exists(settingsFile)) File.Delete(settingsFile);
+        }
+    }
+
+    [Fact]
     public void The_repository_named_in_the_text_anchors_relative_citations()
     {
         var sent = Tool("send", new() { ["to"] = "codex", ["text"] = $"Relis le dépôt {repo}, surtout src/a.cs:2.", ["topic"] = "revue-test", ["review"] = true }, "claude");

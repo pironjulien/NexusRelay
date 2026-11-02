@@ -9,7 +9,7 @@ namespace NexusRelay;
 
 public static partial class RelayPaths
 {
-    public const string Version = "1.11.3";
+    public const string Version = "1.11.4";
     public static readonly string[] Agents = ["claude", "antigravity", "codex"];
     public const string User = "user";
     public static readonly string[] Parties = ["claude", "antigravity", "codex", "user"];
@@ -110,6 +110,18 @@ public static partial class RelayPaths
     public static string RelayHost()
     {
         var raw = (Environment.GetEnvironmentVariable("NEXUS_RELAY_HOST") ?? "").Trim();
+        if (string.IsNullOrEmpty(raw))
+        {
+            try
+            {
+                var settings = RelaySettings.Load(RelaySettings.Files(null));
+                raw = (settings["host"]?.ToString() ?? "").Trim();
+            }
+            catch
+            {
+                raw = "";
+            }
+        }
         if (string.Equals(raw, "all", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(raw, "peers", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(raw, "trinite", StringComparison.OrdinalIgnoreCase) ||

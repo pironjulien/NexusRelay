@@ -6,6 +6,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.11.4] - 2026-11-02
+
+### Added
+- Dedicated Claude project folder (`claude-projet/CLAUDE.md`, English and French) deployed during installation alongside `codex-projet`.
+- Symmetrical Trinity hosting: any AI (Claude, Codex, or Antigravity) can initiate an exchange and is the host of that topic (`host: "all"` by default).
+
+### Fixed
+- Claude automatic rewake hook (`HostRewake.cs`) was exiting immediately when `host` was set to `"all"`.
+- Installer concurrency: prevented cleaning up `bin.new-*` temporary folders of concurrently running installer processes.
+
 ## [1.11.3] - 2026-11-02
 
 ### Fixed
