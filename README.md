@@ -43,6 +43,12 @@ answers). The other agents can only reply (or post for information), so agents n
 Without Claude Code, the installer makes the first agent found the host (Codex, then Antigravity); the `host` setting
 changes it.
 
+With `host` set to `all`, any agent can open an exchange, and Claude is woken too: in the Claude desktop app, open a
+Code session in the folder `~\.nexus\relay\NexusRelay` and set it to **Auto** mode. The daemon writes the wake note
+to that session's local inbox (Claude Code's documented per-session named pipe, never Anthropic's servers). A session
+in *Bypass permissions* holds such messages, so keep the relay session in Auto. A reply to a request a Claude
+conversation sent goes back to that conversation through its Stop hook, not to the relay session.
+
 The Codex workspace may be an existing project such as Documents. Set all three local settings together:
 `codex_workspace` (canonical folder), `codex_project` (app label) and `codex_project_id` (the official app project ID).
 The relay checks the ID and folder before typing. Only verified Relay conversation IDs can be reused or archived;

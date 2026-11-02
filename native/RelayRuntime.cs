@@ -36,14 +36,14 @@ public sealed class RelayRuntime : IDisposable
     { this.box = box ?? new(); this.waker = waker ?? Wake; tidyOverride = tidy; }
     public void Start()
     {
-        foreach (string name in new[] { "codex", "antigravity", "rangement" })
+        foreach (string name in Workers)
             workers.TryAdd(name, Task.Run(() => Run(name)));
         Recover();
     }
     public int Recover()
     {
         int count = 0;
-        foreach (string agent in new[] { "codex", "antigravity" }) foreach (var message in box.Unread(agent).Where(m => !(Reservations.Now() - AppSessions.Epoch(m.Created) >= 3600 || !NeedsWake(m) || box.RingState(m.Id)?["incident"] is not null)))
+        foreach (string agent in new[] { "codex", "antigravity", "claude" }) foreach (var message in box.Unread(agent).Where(m => !(Reservations.Now() - AppSessions.Epoch(m.Created) >= 3600 || !NeedsWake(m) || box.RingState(m.Id)?["incident"] is not null)))
         {
             RecoverDelivery(message);
             pending.TryAdd(message.Id, Reservations.Now() - 2); count++;
@@ -72,11 +72,13 @@ public sealed class RelayRuntime : IDisposable
         if (box.RingState(message.Id) is null && box.Events(message.Id).LastOrDefault(e => e["kind"]?.ToString() == "réveil" && e["status"]?.ToString() is "started" or "uncertain") is JsonObject last)
             box.SetRingState(message.Id, new() { ["attempt"] = 1, ["status"] = last["status"]?.DeepClone(), ["recheck_at"] = Reservations.Now() + 300 });
     }
+    private static readonly string[] Workers = ["codex", "antigravity", "claude", "rangement"];
     public static bool NeedsWake(RelayMessage message)
     {
-        if (message.To is not ("codex" or "antigravity") || message.Info || message.Sender == message.To || message.To == RelayPaths.RelayHost()) return false;
+        if (message.To is not ("codex" or "antigravity" or "claude") || message.Info || message.Sender == message.To || message.To == RelayPaths.RelayHost()) return false;
         if ((RelayPaths.RelayHost() != "all" && message.Sender != RelayPaths.RelayHost()) || !CodexSpace.AcceptsCreated(message.Created)) return false;
         if (message.ReplyTo is null) return true;
+        if (message.To == "claude") return false; // A reply goes back to the Claude conversation that asked: its Stop hook (HostRewake) wakes it.
         var waited = new RelayBox().State("waited");
         return waited?[message.ReplyTo] is not JsonValue expiry || !expiry.TryGetValue<double>(out double until) || until <= Reservations.Now();
     }
@@ -209,6 +211,7 @@ public sealed class RelayRuntime : IDisposable
     }
     private JsonObject Wake(string agent, List<RelayMessage> messages, Action beforeSubmit)
     {
+        if (agent == "claude") return ClaudeInbox.Wake(messages);
         if (agent == "codex") return AppSessions.CodexQuota() is string codexQuota ? AppTransport.Result("deferred", codexQuota) : AppAutomation.WakeCodex(box, messages, beforeSubmit);
         if (AppSessions.AntigravityQuota(box) is string quota) return AppTransport.Result("deferred", quota);
         var sidecar = SidecarHealth(box);
@@ -252,7 +255,7 @@ public sealed class RelayRuntime : IDisposable
     public JsonObject Health()
     {
         var ages = new JsonObject(); var missing = new JsonArray(); var stuck = new JsonArray();
-        foreach (string name in new[] { "codex", "antigravity", "rangement" })
+        foreach (string name in Workers)
         {
             if (!workers.TryGetValue(name, out var task) || task.IsCompleted || !beats.TryGetValue(name, out double at)) { missing.Add(name); continue; }
             double age = Reservations.Now() - at; ages[name] = Math.Round(age, 1); if (age > 420) stuck.Add(name);

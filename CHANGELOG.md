@@ -6,6 +6,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.12.0] - 2026-11-03
+
+### Added
+- Claude is woken under host `all`: a peer request to Claude is written to the local inbox of Claude's relay session (a Claude desktop Code session in `~\.nexus\relay\NexusRelay`, in Auto mode) through Claude Code's documented per-session named pipe, with the peer key the session publishes in `~\.claude\sessions`. `status()` shows whether that session is open; `track(id)` follows the wake like Codex's and Antigravity's.
+
+### Changed
+- A reply addressed to Claude still goes back to the Claude conversation that asked (its Stop hook), never to the relay session.
+
 ## [1.11.4] - 2026-11-02
 
 ### Added

@@ -148,6 +148,38 @@ public sealed class EngineTests : IDisposable
     }
 
     [Fact]
+    public void Claude_relay_session_is_woken_through_its_local_inbox_pipe()
+    {
+        iso.Set("NEXUS_RELAY_HOST", "all");
+        string sessions = Path.Join(iso.Root, "claude-sessions"), project = Path.Join(iso.Root, "claude-projet");
+        Directory.CreateDirectory(sessions); Directory.CreateDirectory(project);
+        iso.Set("NEXUS_RELAY_CLAUDE_SESSIONS", sessions); iso.Set("NEXUS_RELAY_CLAUDE_PROJECT", project);
+        var box = new RelayBox();
+        var request = box.Post("codex", "claude", "Relis ce diff", "claude-wake");
+        Assert.True(RelayRuntime.NeedsWake(request), "Under host all, a peer request to Claude wakes its relay session");
+        Assert.False(RelayRuntime.NeedsWake(box.Post("codex", "claude", "Réponse", "claude-wake", replyTo: request.Id)), "A reply belongs to the asking Claude conversation (Stop hook)");
+        Assert.Equal("deferred", ClaudeInbox.Wake([request])["status"]?.ToString());
+
+        string pipe = "cc-msg-" + Guid.NewGuid().ToString("N"), token = Guid.NewGuid().ToString("N");
+        int pid = Environment.ProcessId;
+        File.WriteAllText(Path.Join(sessions, $"{pid}.json"), new JsonObject { ["pid"] = pid, ["cwd"] = project, ["procStart"] = "1", ["messagingSocketPath"] = @"\\.\pipe\" + pipe, ["hostSessionId"] = "local_test", ["updatedAt"] = 1 }.ToJsonString());
+        File.WriteAllText(Path.Join(sessions, $"{pid}.{new string('a', 64)}.key"), new JsonObject { ["peerToken"] = token, ["procStartFt"] = "1" }.ToJsonString());
+        File.WriteAllText(Path.Join(sessions, "999999.json"), new JsonObject { ["pid"] = 999999, ["cwd"] = Path.Join(iso.Root, "elsewhere"), ["messagingSocketPath"] = @"\\.\pipe\cc-msg-" + new string('b', 32) }.ToJsonString());
+        Assert.Equal("local_test", ClaudeInbox.Find()?.HostSessionId);
+
+        using var server = new System.IO.Pipes.NamedPipeServerStream(pipe, System.IO.Pipes.PipeDirection.In);
+        var lines = Task.Run(() => { server.WaitForConnection(); using var reader = new StreamReader(server, Encoding.UTF8); return new[] { reader.ReadLine(), reader.ReadLine() }; });
+        var woken = ClaudeInbox.Wake([request]);
+        Assert.Equal("started", woken["status"]?.ToString());
+        Assert.Equal("claude-inbox", woken["via"]?.ToString());
+        Assert.True(lines.Wait(5000));
+        Assert.Equal(token, JsonNode.Parse(lines.Result[0]!)!["token"]?.ToString());
+        var frame = JsonNode.Parse(lines.Result[1]!)!;
+        Assert.Equal("user", frame["type"]?.ToString());
+        Assert.Matches("^<cross-session-message from-name=\"Nexus Relay\">\n[\\s\\S]*" + request.Id + "[\\s\\S]*\n</cross-session-message>$", frame["message"]!["content"]!.ToString());
+    }
+
+    [Fact]
     public void Workers_recover_confirm_retry_and_never_replay_uncertain_deliveries()
     {
         iso.Set("NEXUS_RELAY_HOST", "claude");
@@ -155,7 +187,7 @@ public sealed class EngineTests : IDisposable
         using var runtime = new RelayRuntime(box, (_, messages, submit) => { calls++; submit(); return new() { ["status"] = "started", ["messages"] = new JsonArray(messages.Select(m => JsonValue.Create(m.Id)).ToArray()), ["via"] = "test adapter" }; }, () => { });
         Assert.True(AppSessions.IsRelay(new("id", "", @"\\?\" + AppSessions.RelayDirectory, false, false)), "Windows extended path prefixes must preserve Relay ownership");
         Assert.False(AppSessions.IsRelay(new("id", "", AppSessions.RelayDirectory + "-other", false, false)), "Neighbor directories must remain outside Relay ownership");
-        Assert.Equal(3, (runtime.Health()["missing"] as JsonArray)?.Count);
+        Assert.Equal(4, (runtime.Health()["missing"] as JsonArray)?.Count);
         var info = box.Post("claude", "codex", "Information", "runtime-test", info: true);
         Assert.False(runtime.Ring(info), "FYI never wakes an agent");
         var request = box.Post("claude", "codex", "Read and answer", "runtime-test");

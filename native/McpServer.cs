@@ -473,7 +473,7 @@ public sealed partial class McpServer
         }
         if (message.Info)
             return RelayPaths.Tr("for information (nobody is woken)", "pour info (personne n'est réveillé)");
-        if (message.To == RelayPaths.RelayHost() || message.To == "claude")
+        if (!RelayRuntime.NeedsWake(message) && (message.To == RelayPaths.RelayHost() || message.To == "claude"))
             return RelayPaths.Tr("posted", "déposé");
 
         var ring = box.RingState(message.Id);
@@ -523,7 +523,7 @@ public sealed partial class McpServer
             ["events"] = eventsArr,
             ["replies"] = repliesArr,
             ["rings"] = box.RingState(message.Id)?.DeepClone(),
-            ["wake"] = (message.To is "codex" or "antigravity" && message.To != RelayPaths.RelayHost())
+            ["wake"] = (message.To is "codex" or "antigravity" or "claude" && message.To != RelayPaths.RelayHost())
                 ? box.State($"wake-{message.To}")?.DeepClone()
                 : null,
         };
@@ -569,11 +569,17 @@ public sealed partial class McpServer
                 $"{message.To} is not woken (host): it waits for the reply (wait_reply) or reads it in inbox",
                 $"{message.To} n'est pas sonné (hôte) : il attend la réponse (wait_reply) ou la lit dans inbox");
         }
+        if (message.To == "claude" && !RelayRuntime.NeedsWake(message))
+        {
+            return RelayPaths.Tr(
+                "Claude is not woken (reply to a Claude conversation): its Stop hook brings it back",
+                "Claude n'est pas sonné (réponse à une conversation Claude) : son crochet Stop la lui rapporte");
+        }
         if (message.To == "claude")
         {
             return RelayPaths.Tr(
-                "Claude is not woken: it will read the message in inbox",
-                "Claude n'est pas sonné : il lira le message dans inbox");
+                "claude: wake queued in its relay session (Claude app, folder .nexus\\relay\\NexusRelay); track(id) confirms the pickup",
+                "claude : réveil demandé dans sa session relais (appli Claude, dossier .nexus\\relay\\NexusRelay) ; track(id) confirme la prise en charge");
         }
         return RelayPaths.Tr(
             $"{message.To}: wake queued; track(id) confirms the actual delivery",
@@ -1426,10 +1432,14 @@ public sealed partial class McpServer
             {
                 ["unread"] = box.Unread(agent).Count,
             };
-            if (agent is "codex" or "antigravity")
+            if (agent is "codex" or "antigravity" or "claude")
                 aObj["last_wake"] = box.State($"wake-{agent}")?.DeepClone();
             agents[agent] = aObj;
         }
+        var claudeSession = ClaudeInbox.Find();
+        agents["claude"]!["relay_session"] = claudeSession is null
+            ? new JsonObject { ["open"] = false, ["folder"] = ClaudeInbox.ProjectDirectory() }
+            : new JsonObject { ["open"] = true, ["folder"] = ClaudeInbox.ProjectDirectory(), ["session"] = claudeSession.HostSessionId };
         agents["codex"]!["port"] = AppTransport.PageUrl("codex") is null ? "closed" : "open";
         agents["codex"]!["credits"] = AppSessions.CodexUsage();
         agents["codex"]!["routeur"] = CodexRouter.Inspect();
@@ -1453,7 +1463,7 @@ public sealed partial class McpServer
             ["me"] = me,
             ["host"] = host,
             ["version"] = RelayPaths.Version,
-            ["bell"] = Runtime?.Health() ?? new JsonObject { ["missing"] = new JsonArray("codex", "antigravity", "rangement"), ["reason"] = "Background workers are hosted by the shared HTTP daemon" },
+            ["bell"] = Runtime?.Health() ?? new JsonObject { ["missing"] = new JsonArray("codex", "antigravity", "claude", "rangement"), ["reason"] = "Background workers are hosted by the shared HTTP daemon" },
             ["en_cours"] = RelayActivity.Snapshot(),
             ["agents"] = agents,
             ["incidents"] = Incidents(box),
@@ -1475,7 +1485,7 @@ public sealed partial class McpServer
         if (args["to"]?.GetValue<string>() is not string target) return result;
         HostOnly(me);
         target = RelayPaths.NormalizeAgent(target);
-        if (target is not ("codex" or "antigravity")) throw new RelayError("This agent has no autonomous wake mechanism");
+        if (target is not ("codex" or "antigravity" or "claude") || target == me) throw new RelayError("This agent has no autonomous wake mechanism");
         if (Runtime is null) throw new RelayError("End-to-end wake tests require the shared HTTP daemon");
         var sent = ToolSend(new JsonObject { ["to"] = target, ["topic"] = "selftest", ["review"] = false,
             ["text"] = "NexusRelay technical wake test authorized by Julien. Read this message and reply with the single text: NexusRelay wake confirmed. No files or other actions." }, me, box);

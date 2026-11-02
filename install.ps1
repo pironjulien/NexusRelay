@@ -250,7 +250,7 @@ $settingsPath = Join-Path $state 'settings.json'
 function Read-LocalSettings { if (Test-Path -LiteralPath $settingsPath) { [IO.File]::ReadAllText($settingsPath) | ConvertFrom-RelayJson } else { [pscustomobject]@{} } }
 $utf8 = [Text.UTF8Encoding]::new($false)
 New-Item -ItemType Directory -Force (Join-Path $HOME '.nexus\relay\codex-projet') | Out-Null  # dossier du projet Codex du relais
-New-Item -ItemType Directory -Force (Join-Path $HOME '.nexus\relay\claude-projet') | Out-Null # dossier du projet Claude du relais
+New-Item -ItemType Directory -Force (Join-Path $HOME '.nexus\relay\NexusRelay') | Out-Null # dossier de la session relais de Claude (son nom est celui du projet dans Claude)
 
 function Save-Backup([string]$path, [string]$name) {
     $backup = Join-Path $backups "$name-$(Get-Date -Format 'yyyyMMdd-HHmmss')$([IO.Path]::GetExtension($path))"
@@ -291,7 +291,7 @@ function Get-Localized([string]$relative) {
 }
 # Consignes des chats du relais, lues par Codex et Claude dans leurs dossiers : jamais de question à l'utilisateur, qui ne les lit pas.
 Copy-Item -Force (Get-Localized 'codex-projet\AGENTS.md') (Join-Path $HOME '.nexus\relay\codex-projet\AGENTS.md')
-Copy-Item -Force (Get-Localized 'claude-projet\CLAUDE.md') (Join-Path $HOME '.nexus\relay\claude-projet\CLAUDE.md')
+Copy-Item -Force (Get-Localized 'claude-projet\CLAUDE.md') (Join-Path $HOME '.nexus\relay\NexusRelay\CLAUDE.md')
 # Jeton partagé des démons Nexus (scripts\Resolve-NexusToken.ps1, règle commune du 30/10) : fichier explicite (-TokenFile,
 # NEXUS_MCP_TOKEN_FILE, réglage token_file), sinon %USERPROFILE%\.nexus\mcp-token.txt ; réutilisé, jamais régénéré.
 # Poste réglé sans -Register : jamais créé ici (un installeur lancé avant la synchro du fichier en créerait un autre).
