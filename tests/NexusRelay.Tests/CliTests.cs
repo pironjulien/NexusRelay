@@ -73,7 +73,7 @@ public sealed class CliTests : IDisposable
     }
 
     [Fact]
-    public void Edit_guard_releases_a_git_ignored_file_at_the_end_of_the_turn_but_keeps_a_tracked_change()
+    public void Edit_guard_releases_ignored_and_tracked_changes_at_the_end_of_the_turn()
     {
         Native.Git(iso.Root, "init", "-q");
         File.WriteAllText(Path.Join(iso.Root, ".gitignore"), "memoire/\n");
@@ -87,9 +87,32 @@ public sealed class CliTests : IDisposable
             Native.Run(["--edit-guard", "claude", "--finish-tool"], edit.ToJsonString());
         }
         var box = iso.Box();
+        Assert.Equal(2, Reservations.Active(box).Count);  // still in the turn
         Native.Run(["--edit-guard", "claude", "--finish-session"], new JsonObject { ["session_id"] = "root-c" }.ToJsonString());
-        var held = Reservations.Active(box);
-        Assert.Equal([tracked], held.SelectMany(r => (r["paths"] as JsonArray)!.Select(p => p!.ToString())));  // waits for its commit
+        Assert.Empty(Reservations.Active(box));  // the turn is over: the uncommitted change no longer blocks anyone
+    }
+
+    [Fact]
+    public void Commit_guard_ignores_an_automatic_reservation_once_its_holder_finished_its_turn()
+    {
+        // 02/11: Antigravity's automatic reservation of a modified script outlived its turn and refused Claude's commit
+        // for an hour, until Antigravity was asked through the relay to release it.
+        string repository = Path.Join(iso.Root, "repo");
+        Directory.CreateDirectory(repository);
+        Native.Git(repository, "init", "-q");
+        string target = Path.Join(repository, "Repair.ps1");
+        var step = new JsonObject { ["conversationId"] = "agy-1", ["stepIdx"] = 7, ["toolCall"] = new JsonObject { ["args"] = new JsonObject { ["TargetFile"] = target } } };
+        Assert.Equal("", Native.Run(["--edit-guard", "antigravity"], step.ToJsonString()).Out);
+        File.WriteAllText(target, "change = 1\n");
+        Native.Run(["--edit-guard", "antigravity", "--finish-tool"], step.ToJsonString());
+        Native.Git(repository, "add", "Repair.ps1");
+        var claude = new Dictionary<string, string?> { ["NEXUS_RELAY_AGENT"] = "claude", ["CLAUDE_CODE_SESSION_ID"] = "claude-1" };
+        var during = Native.Run(["--staged"], cwd: repository, env: claude);
+        Assert.Equal(1, during.Code);  // Antigravity's turn is still running: its work stays protected
+        Assert.Contains("Repair.ps1", during.Err);
+        Native.Run(["--edit-guard", "antigravity", "--finish-session"], new JsonObject { ["conversationId"] = "agy-1" }.ToJsonString());
+        var after = Native.Run(["--staged"], cwd: repository, env: claude);
+        Assert.True(after.Code == 0, after.Err);
     }
 
     [Fact]

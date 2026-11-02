@@ -6,6 +6,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.11.1] - 2026-11-02
+
+### Fixed
+- Edit guard: an automatic reservation ends with its holder's turn (Claude's `Stop`, the end of a Codex or
+  Antigravity answer), even when the file is modified and not committed yet. It used to wait for a commit or its
+  60-minute expiry: on 02/11 a finished Antigravity turn kept a script reserved and refused Claude's commit until
+  Antigravity was asked through the relay to release it. During the turn the file stays protected as before.
+
 ## [1.11.0] - 2026-10-31
 
 ### Added

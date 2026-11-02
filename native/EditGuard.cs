@@ -94,8 +94,8 @@ public static partial class EditGuard
             if (firstHolder.StartsWith(agent + " ", StringComparison.Ordinal))
             {
                 return RelayPaths.Tr(
-                    $"Nexus Relay: {lines}. Do not edit it: another conversation of {agent} is working on it; wait for its commit (automatic release) or the expiry",
-                    $"Nexus Relay : {lines}. Ne pas le modifier : une autre conversation de {agent} y travaille ; attendre son commit (libération automatique) ou l'expiration");
+                    $"Nexus Relay: {lines}. Do not edit it: another conversation of {agent} is working on it; wait for the end of its turn (automatic release) or the expiry",
+                    $"Nexus Relay : {lines}. Ne pas le modifier : une autre conversation de {agent} y travaille ; attendre la fin de son tour (libération automatique) ou l'expiration");
             }
             return RelayPaths.Tr(
                 $"Nexus Relay: {lines}. Do not edit it: ask {firstHolder} through the relay to release it, or wait",

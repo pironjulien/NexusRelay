@@ -667,23 +667,6 @@ public static partial class Reservations
         }
     }
 
-    /// <summary>A file outside any Git work tree or ignored by it (memory notes, scratch files) has no commit to wait
-    /// for: the end of the conversation's turn is its only "done" signal.</summary>
-    private static bool NeverCommitted(string path)
-    {
-        if (path.IndexOfAny(['*', '?']) >= 0 || Directory.Exists(path))
-            return false;
-        var directory = ExistingDirectory(path);
-        if (directory is null)
-            return false;
-        if (Git(directory, "rev-parse", "--is-inside-work-tree") is null)
-            return true;
-        // check-ignore rejects literal pathspecs; status reports an ignored path (or its ignored folder) as "!! ".
-        // Relative to its folder: through a junction (Claude's memory) the absolute path is "outside repository".
-        var status = Git(directory, "status", "--porcelain=v1", "--ignored", "--", Path.GetRelativePath(directory, path));
-        return status is not null && status.StartsWith("!! ", StringComparison.Ordinal);
-    }
-
     private static bool Unchanged(string path, bool absentAtStart)
     {
         if (path.IndexOfAny(['*', '?']) >= 0 || Directory.Exists(path))
@@ -778,18 +761,19 @@ public static partial class Reservations
                     .ToList() ?? [];
 
                 bool idle = pending.Count == 0 && !(record["pending_unknown"]?.GetValue<bool>() ?? false);
-                // At the end of the turn, files no commit will ever cover leave the reservation; the others wait for it.
-                var waiting = recPaths.Where(p => !(sessionEnded && idle && NeverCommitted(p))).ToList();
-                bool clean = idle && waiting.All(p => Unchanged(p, absentSet.Contains(Norm(p))));
+                // The end of the holder's turn ends its automatic reservation, committed or not: an agent that has
+                // finished no longer works on the file (02/11: a finished Antigravity turn blocked Claude's commit for an
+                // hour). Within the turn, only files left clean (identical to HEAD, or never written) are released.
+                bool clean = idle && (sessionEnded || recPaths.All(p => Unchanged(p, absentSet.Contains(Norm(p)))));
 
                 var id = record["id"]!.GetValue<string>();
                 if (clean)
                 {
                     record["released"] = Iso(Now());
+                    if (sessionEnded)
+                        record["released_by"] = "turn-end";
                     ended.Add(id);
                 }
-                else if (waiting.Count < recPaths.Count)
-                    record["paths"] = new JsonArray(waiting.Select(p => (JsonNode?)p).ToArray());
                 RelayBox.WriteState(Path.Join(Folder(box), $"{id}.json"), record);
             }
         }
