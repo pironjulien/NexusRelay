@@ -6,6 +6,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.11.2] - 2026-11-02
+
+### Fixed
+- Codex wakes were deferred as "Codex quota 97% used" while Codex LB still had half of its pooled quota: behind a
+  local router the Codex journal only shows the upstream account that served the last turn. With a router configured,
+  the relay now reads the router's pooled usage (`/api/usage/summary`) and falls back to the journal when it does not
+  answer.
+
 ## [1.11.1] - 2026-11-02
 
 ### Fixed
