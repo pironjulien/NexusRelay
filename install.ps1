@@ -94,28 +94,96 @@ if ($PrepareOnly) {
 }
 
 # Chemin stable du moteur (hooks d'édition, garde de commit des dépôts) : copie de la version en service. Remplacée
-# sans casser une garde en cours : copie complète dans un dossier temporaire, puis échange par renommages ; un ancien
-# dossier encore utilisé par un hook est laissé de côté et retiré à l'installation suivante.
+# sans casser une garde en cours : copie complète dans un dossier temporaire, puis échange par renommages protégés avec
+# restauration automatique en cas d'échec ; un ancien dossier encore utilisé par un hook est retiré à l'installation suivante.
 $stable = Join-Path $state 'bin'
 $stableExe = Join-Path $stable 'NexusRelay.exe'
 $installedDir = [IO.Path]::GetDirectoryName($nativeExe)
 $stamp = Join-Path $stable 'publish.complete'
+
+# Nettoyage préventif des dossiers temporaires abandonnés lors d'une installation interrompue
+Get-ChildItem -LiteralPath $state -Directory -Filter 'bin.new-*' -ErrorAction SilentlyContinue |
+    ForEach-Object { Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction SilentlyContinue }
+
+# Si bin est manquant (ex: interruption après renommage en bin.old-*), tenter une reprise immédiate depuis la dernière version de secours
+if (-not (Test-Path -LiteralPath $stable)) {
+    $latestOld = Get-ChildItem -LiteralPath $state -Directory -Filter 'bin.old-*' -ErrorAction SilentlyContinue |
+        Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if ($latestOld) {
+        try {
+            Rename-Item -LiteralPath $latestOld.FullName -NewName 'bin'
+        } catch { }
+    }
+}
+
 if (-not ((Test-Path -LiteralPath $stamp) -and [IO.File]::ReadAllText($stamp) -eq $nativeKey)) {
     $fresh = Join-Path $state "bin.new-$PID"
     if (Test-Path -LiteralPath $fresh) { Remove-Item -LiteralPath $fresh -Recurse -Force }
     Copy-Item -LiteralPath $installedDir -Destination $fresh -Recurse
     [IO.File]::WriteAllText((Join-Path $fresh 'publish.complete'), $nativeKey, [Text.UTF8Encoding]::new($false))
+
+    # Contrôle pré-vol : valider l'intégrité du candidat avant toute modification du dossier stable
+    $freshExe = Join-Path $fresh 'NexusRelay.exe'
+    & $freshExe --schemas | Out-Null
+    if ($LASTEXITCODE) {
+        Remove-Item -LiteralPath $fresh -Recurse -Force -ErrorAction SilentlyContinue
+        throw "Candidat stable '$freshExe' invalide (--schemas, code $LASTEXITCODE)."
+    }
+
     $link = Get-Item -LiteralPath $stable -Force -ErrorAction SilentlyContinue
-    if ($link -and ($link.Attributes -band [IO.FileAttributes]::ReparsePoint)) { [IO.Directory]::Delete($stable, $false) }  # ancienne jonction : le lien seul
-    elseif ($link) {
+    $old = $null
+    if ($link -and ($link.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+        [IO.Directory]::Delete($stable, $false)  # ancienne jonction : le lien seul
+    } elseif ($link) {
         $old = Join-Path $state "bin.old-$(Get-Date -Format 'yyyyMMddHHmmss')"
         $moved = $false
-        foreach ($try in 1..20) { try { Rename-Item -LiteralPath $stable -NewName (Split-Path $old -Leaf); $moved = $true; break } catch { Start-Sleep -Milliseconds 250 } }
-        if (-not $moved) { throw "$stable est en cours d'utilisation : relancer l'installation." }
+        foreach ($try in 1..20) {
+            try {
+                Rename-Item -LiteralPath $stable -NewName (Split-Path $old -Leaf)
+                $moved = $true
+                break
+            } catch {
+                Start-Sleep -Milliseconds 250
+            }
+        }
+        if (-not $moved) {
+            Remove-Item -LiteralPath $fresh -Recurse -Force -ErrorAction SilentlyContinue
+            throw "$stable est en cours d'utilisation : relancer l'installation."
+        }
     }
-    Rename-Item -LiteralPath $fresh -NewName 'bin'
+
+    # Bascule protégée avec restauration automatique en cas d'échec
+    $promoted = $false
+    try {
+        Rename-Item -LiteralPath $fresh -NewName 'bin'
+        $promoted = $true
+        & $stableExe --schemas | Out-Null
+        if ($LASTEXITCODE) {
+            throw "Le moteur dans '$stable' a échoué au contrôle de santé (--schemas, code $LASTEXITCODE)."
+        }
+    } catch {
+        $swapError = $_
+        Write-Warning "Échec lors de la bascule vers $stable : $swapError. Tentative de restauration de la version précédente..."
+        if ($promoted -and (Test-Path -LiteralPath $stable)) {
+            Remove-Item -LiteralPath $stable -Recurse -Force -ErrorAction SilentlyContinue
+        }
+        if ($old -and (Test-Path -LiteralPath $old)) {
+            try {
+                Rename-Item -LiteralPath $old -NewName 'bin'
+                Write-Warning "Restauration automatique réussie depuis $old."
+            } catch {
+                Write-Error "Échec critique de restauration automatique : $old n'a pas pu être restauré en $stable ($_)."
+            }
+        }
+        if (Test-Path -LiteralPath $fresh) {
+            Remove-Item -LiteralPath $fresh -Recurse -Force -ErrorAction SilentlyContinue
+        }
+        throw $swapError
+    }
 }
-foreach ($old in Get-ChildItem -LiteralPath $state -Directory -Filter 'bin.old-*' -ErrorAction SilentlyContinue) { Remove-Item -LiteralPath $old.FullName -Recurse -Force -ErrorAction SilentlyContinue }
+foreach ($old in Get-ChildItem -LiteralPath $state -Directory -Filter 'bin.old-*' -ErrorAction SilentlyContinue) {
+    Remove-Item -LiteralPath $old.FullName -Recurse -Force -ErrorAction SilentlyContinue
+}
 
 $settingsPath = Join-Path $state 'settings.json'
 function Read-LocalSettings { if (Test-Path -LiteralPath $settingsPath) { [IO.File]::ReadAllText($settingsPath) | ConvertFrom-RelayJson } else { [pscustomobject]@{} } }

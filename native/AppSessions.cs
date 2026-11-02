@@ -160,6 +160,10 @@ public static partial class AppSessions
     }
     public static JsonObject? CodexUsage()
     {
+        // Behind a local router (Codex LB), the journal's rate limits are those of the one upstream account that served
+        // the last turn: 97 % used there while the pool still had 50 % left deferred every wake (02/11). The router's own
+        // pooled usage is the truth; the journal stays the fallback when the router does not answer.
+        if (CodexRouter.Usage() is JsonObject pooled) return pooled;
         try
         {
             var files = new[] { "sessions", "archived_sessions" }.Select(f => System.IO.Path.Join(CodexHome, f)).Where(Directory.Exists).SelectMany(f => Directory.EnumerateFiles(f, "rollout-*.jsonl", SearchOption.AllDirectories));

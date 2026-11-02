@@ -18,6 +18,29 @@ public static partial class CodexRouter
         }
         catch (Exception e) when (e is HttpRequestException or OperationCanceledException or System.Text.Json.JsonException) { return false; }
     }
+    // Pooled usage of the router (Codex LB: /api/usage/summary on the health address' host), in the journal's shape.
+    public static JsonObject? Usage()
+    {
+        if (ConfiguredUrl is not string raw || !Uri.TryCreate(raw, UriKind.Absolute, out var health) || !health.IsLoopback || health.Scheme is not ("http" or "https")) return null;
+        try
+        {
+            using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(2) };
+            return UsageFromSummary(JsonNode.Parse(client.GetStringAsync(new Uri(health, "/api/usage/summary")).GetAwaiter().GetResult()), DateTimeOffset.UtcNow);
+        }
+        catch (Exception e) when (e is HttpRequestException or OperationCanceledException or System.Text.Json.JsonException or InvalidOperationException) { return null; }
+    }
+    public static JsonObject? UsageFromSummary(JsonNode? summary, DateTimeOffset now)
+    {
+        var windows = new JsonObject();
+        foreach (var (name, key) in new[] { ("primary", "primaryWindow"), ("secondary", "secondaryWindow") })
+        {
+            if (summary?[key] is not JsonObject w || w["remainingPercent"] is not JsonValue left || !left.TryGetValue<double>(out double remaining)) continue;
+            double reset = DateTimeOffset.TryParse(w["resetAt"]?.ToString(), System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeUniversal, out var at) ? at.ToUnixTimeSeconds() : 0;
+            bool current = reset > now.ToUnixTimeSeconds();
+            windows[name] = new JsonObject { ["used_pct"] = current ? Math.Round(100 - remaining, 1) : 0, ["resets_at"] = reset, ["current"] = current, ["minutes"] = w["windowMinutes"]?.DeepClone() };
+        }
+        return windows.Count == 0 ? null : new() { ["source"] = "routeur Codex (quota cumulé)", ["observed"] = now.ToString("o"), ["windows"] = windows };
+    }
     public static List<string> SplitCommand(string command)
     {
         nint array = CommandLineToArgvW(command, out int count);

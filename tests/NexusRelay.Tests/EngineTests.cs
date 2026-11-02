@@ -253,4 +253,16 @@ public sealed class EngineTests : IDisposable
         Assert.False(AppLifecycle.InstalledExecutable("codex", Path.Join(temp, "ChatGPT.exe")));
         Assert.False(AppLifecycle.InstalledExecutable("antigravity", Path.Join(temp, "Antigravity.exe")));
     }
+
+    [Fact]
+    public void Codex_quota_behind_the_router_is_the_pooled_one()
+    {
+        var now = DateTimeOffset.Parse("2026-11-02T20:30:00Z");
+        var summary = JsonNode.Parse("""{"primaryWindow":{"remainingPercent":50.0,"resetAt":"2026-11-02T23:36:42Z","windowMinutes":300},"secondaryWindow":{"remainingPercent":2.5,"resetAt":"2026-11-01T06:41:37Z","windowMinutes":10080}}""");
+        var usage = CodexRouter.UsageFromSummary(summary, now)!;
+        Assert.Equal(50.0, usage["windows"]!["primary"]!["used_pct"]!.GetValue<double>());
+        Assert.True(usage["windows"]!["primary"]!["current"]!.GetValue<bool>());
+        Assert.False(usage["windows"]!["secondary"]!["current"]!.GetValue<bool>()); // window already reset: not counted
+        Assert.Null(CodexRouter.UsageFromSummary(JsonNode.Parse("""{"cost":{}}"""), now));
+    }
 }
