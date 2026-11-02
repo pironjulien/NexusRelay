@@ -6,6 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.12.1] - 2026-11-03
+
+### Fixed
+- Release archives now ship the Claude relay session template (`claude-projet/CLAUDE.md`, English and French): installing 1.11.4 to 1.12.0 from a release stopped on the missing file.
+
 ## [1.12.0] - 2026-11-03
 
 ### Added

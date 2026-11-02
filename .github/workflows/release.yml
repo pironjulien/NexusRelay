@@ -79,10 +79,10 @@ jobs:
           Add-Type -AssemblyName System.IO.Compression.FileSystem
           $stage = Join-Path $env:RUNNER_TEMP 'stage'
           New-Item -ItemType Directory dist, $stage | Out-Null
-          $shared = 'install.ps1', 'get.ps1', 'LICENSE', 'README.md', 'CHANGELOG.md', 'codex-projet'
+          $shared = 'install.ps1', 'get.ps1', 'LICENSE', 'README.md', 'CHANGELOG.md', 'codex-projet', 'claude-projet'
           # Only the Antigravity part of plugin/ ships with the engine (install.ps1 deploys it); Claude Code and Codex take
           # plugin/ from the NexusSystem catalog.
-          $deployed = 'plugin/antigravity', 'fr/plugin/antigravity', 'fr/codex-projet'
+          $deployed = 'plugin/antigravity', 'fr/plugin/antigravity', 'fr/codex-projet', 'fr/claude-projet'
           $scripts = 'Configure-AntigravityRelay.ps1', 'Restart-Relay.ps1', 'Resolve-RelayPath.ps1', 'install_commit_guard.ps1', 'Resolve-NexusToken.ps1', 'pre-commit', 'post-commit', 'update-native.ps1'
           foreach ($rid in 'win-x64', 'win-arm64') {
             $engine = Join-Path $stage "engine-$rid"
