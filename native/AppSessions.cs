@@ -5,7 +5,9 @@ using System.Text.Json.Nodes;
 
 namespace NexusRelay;
 
-public sealed record AppChat(string Id, string Path, string Cwd, bool Archived, bool Child);
+// Child: a subagent thread (spawn edge or subagent source), which runs inside its parent's turn.
+// Headless: a `codex exec` run outside the app, whose journal Codex may delete while the thread row stays.
+public sealed record AppChat(string Id, string Path, string Cwd, bool Archived, bool Child, bool Headless = false);
 public sealed record AppTurn(bool Finished, double? At, string? Error = null, double? Last = null);
 
 public static partial class AppSessions
@@ -22,12 +24,12 @@ public static partial class AppSessions
         {
             if (SqliteOpen(db, out handle, 1, 0) != 0) throw new RelayError("Codex app database cannot be opened read-only");
             SqliteBusy(handle, 2000);
-            const string sql = "SELECT t.id,t.rollout_path,t.cwd,t.archived,EXISTS(SELECT 1 FROM thread_spawn_edges e WHERE e.child_thread_id=t.id) FROM threads t";
+            const string sql = "SELECT t.id,t.rollout_path,t.cwd,t.archived,EXISTS(SELECT 1 FROM thread_spawn_edges e WHERE e.child_thread_id=t.id) OR CASE WHEN json_valid(t.source) THEN json_type(t.source,'$.subagent') IS NOT NULL ELSE 0 END,t.source='exec' FROM threads t";
             if (SqlitePrepare(handle, sql, -1, out statement, 0) != 0) throw new RelayError("Codex app database schema is unreadable");
             var result = new List<AppChat>();
             int code;
             while ((code = SqliteStep(statement)) == 100)
-                result.Add(new(Text(statement, 0), Text(statement, 1), Text(statement, 2), SqliteInt(statement, 3) != 0, SqliteInt(statement, 4) != 0));
+                result.Add(new(Text(statement, 0), Text(statement, 1), Text(statement, 2), SqliteInt(statement, 3) != 0, SqliteInt(statement, 4) != 0, SqliteInt(statement, 5) != 0));
             if (code != 101) throw new RelayError("Codex app database read did not finish");
             return result;
         }

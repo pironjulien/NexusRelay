@@ -1,7 +1,7 @@
 {
   "name": "nexus-relay",
   "displayName": "NexusRelay",
-  "version": "1.12.5",
+  "version": "1.12.6",
   "logo": "logo.png",
   "description": "Salon commun avec Claude et Codex (sans passer par l'utilisateur) : échanges avec les deux pairs avec host all, livraison par le sidecar officiel agentapi"
 }

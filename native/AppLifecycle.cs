@@ -45,7 +45,8 @@ public static partial class AppLifecycle
             if (app == "codex")
             {
                 if (!File.Exists(Path.Join(AppSessions.CodexHome, "state_5.sqlite"))) return AppTransport.Result("unknown", "Codex activity database unavailable");
-                foreach (var chat in AppSessions.CodexChats().Where(c => !c.Archived))
+                // Subagents run inside their parent's turn and `codex exec` runs outside the app: only open app chats count.
+                foreach (var chat in AppSessions.CodexChats().Where(c => !c.Archived && !c.Child && !c.Headless))
                 {
                     if (!File.Exists(chat.Path)) return AppTransport.Result("unknown", "An open Codex chat has no readable turn journal");
                     var turn = AppSessions.CodexTurn(chat.Path);

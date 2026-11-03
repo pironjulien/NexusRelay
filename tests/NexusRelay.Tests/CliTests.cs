@@ -29,7 +29,7 @@ public sealed class CliTests : IDisposable
 {
     private readonly Isolation iso = new();
     public void Dispose() => iso.Dispose();
-    private const string CodexSchema = "CREATE TABLE threads(id TEXT,rollout_path TEXT,cwd TEXT,archived INTEGER); CREATE TABLE thread_spawn_edges(parent_thread_id TEXT,child_thread_id TEXT);";
+    private const string CodexSchema = "CREATE TABLE threads(id TEXT,rollout_path TEXT,cwd TEXT,archived INTEGER,source TEXT DEFAULT 'vscode'); CREATE TABLE thread_spawn_edges(parent_thread_id TEXT,child_thread_id TEXT);";
 
     [Fact]
     public void Edit_guard_begin_finish_and_notice_in_utf8()
@@ -209,7 +209,7 @@ public sealed class CliTests : IDisposable
             if (chat == "quoted") text = "A user quote: " + text;
             string log = Path.Join(iso.Root, chat + ".jsonl");
             File.WriteAllText(log, new JsonObject { ["type"] = "response_item", ["payload"] = new JsonObject { ["type"] = "message", ["role"] = "user", ["content"] = new JsonArray(new JsonObject { ["type"] = "input_text", ["text"] = text }) } }.ToJsonString() + "\n");
-            sql.Append($"INSERT INTO threads VALUES({Sqlite.Q(chat)},{Sqlite.Q(log)},{Sqlite.Q(documents)},1);");
+            sql.Append($"INSERT INTO threads(id,rollout_path,cwd,archived) VALUES({Sqlite.Q(chat)},{Sqlite.Q(log)},{Sqlite.Q(documents)},1);");
             if (chat != "human") box.Event(ask.Id, "réveil", new() { ["status"] = "started", ["conversation"] = chat });
         }
         sql.Append("INSERT INTO thread_spawn_edges VALUES('relay','child');");
@@ -225,12 +225,27 @@ public sealed class CliTests : IDisposable
     private static JsonNode Activity() => Native.Json("--activity-status");
 
     [Fact]
+    public void Codex_subagent_and_exec_threads_without_journal_do_not_make_the_app_busy()
+    {
+        string log = Path.Join(iso.Root, "rollout.jsonl");
+        File.WriteAllText(log, """{"timestamp": "2000-01-01T00:00:00Z", "payload": {"type": "task_complete"}}""" + "\n");
+        string gone = Path.Join(iso.Root, "deleted.jsonl");
+        Sqlite.Run(Path.Join(iso.CodexHome, "state_5.sqlite"), CodexSchema +
+            $"INSERT INTO threads VALUES('chat',{Sqlite.Q(log)},'workspace',0,'vscode');" +
+            $"INSERT INTO threads VALUES('exec',{Sqlite.Q(gone)},'workspace',0,'exec');" +
+            $"INSERT INTO threads VALUES('subagent',{Sqlite.Q(gone)},'workspace',0,{Sqlite.Q("""{"subagent":{"thread_spawn":{"parent_thread_id":"chat","depth":1}}}""")});");
+        Assert.Equal("idle", Activity()["codex"]?["status"]?.ToString());
+        Sqlite.Run(Path.Join(iso.CodexHome, "state_5.sqlite"), $"INSERT INTO threads VALUES('lost',{Sqlite.Q(gone)},'workspace',0,'vscode');");
+        Assert.Equal("unknown", Activity()["codex"]?["status"]?.ToString());
+    }
+
+    [Fact]
     public void Codex_long_running_turn_remains_busy_until_durable_completion()
     {
         string log = Path.Join(iso.Root, "rollout.jsonl");
         File.WriteAllText(log, """{"timestamp": "2000-01-01T00:00:00Z", "payload": {"type": "task_started"}}""" + "\n");
         File.SetLastWriteTimeUtc(log, DateTime.UtcNow.AddHours(-2));
-        Sqlite.Run(Path.Join(iso.CodexHome, "state_5.sqlite"), CodexSchema + $"INSERT INTO threads VALUES('long',{Sqlite.Q(log)},'workspace',0);");
+        Sqlite.Run(Path.Join(iso.CodexHome, "state_5.sqlite"), CodexSchema + $"INSERT INTO threads(id,rollout_path,cwd,archived) VALUES('long',{Sqlite.Q(log)},'workspace',0);");
         Assert.Equal("working", Activity()["codex"]?["status"]?.ToString());
         File.AppendAllText(log, """{"timestamp": "2000-01-01T02:00:00Z", "payload": {"type": "task_complete"}}""" + "\n");
         Assert.Equal("idle", Activity()["codex"]?["status"]?.ToString());

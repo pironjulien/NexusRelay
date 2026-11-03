@@ -6,6 +6,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.12.6] - 2026-11-03
+
+### Fixed
+- Codex is no longer seen as busy forever, which deferred its map survey and app restarts: subagent threads (also
+  those without a spawn edge) and headless `codex exec` runs, whose journals Codex deletes while their rows stay, no
+  longer count as open app chats. An open app chat without a readable journal still reads as unknown.
+
 ## [1.12.5] - 2026-11-03
 
 ### Fixed
