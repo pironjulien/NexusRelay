@@ -234,6 +234,8 @@ public sealed class ContractTests : IDisposable
                 Thread.Sleep(20);
             }
             cdp.Eval("window.__scenario=" + AppTransport.Quote(scenario));
+            // Antigravity 2.28 keeps empty zero-size typeahead listboxes in the page: they are no open layer.
+            cdp.Eval("(()=>{const l=document.createElement('div');l.setAttribute('role','listbox');l.setAttribute('aria-label','Typeahead menu');l.style.cssText='display:block;position:absolute';document.body.append(l)})()");
             if (scenario == "draft") cdp.Eval("document.getElementById('draft').value='Synthetic unsent draft'");
             if (scenario == "running") cdp.Eval("(()=>{const b=document.createElement('button');b.setAttribute('aria-label','Stop execution');document.body.append(b)})()");
             var page = new ActualPage(cdp, scenario);

@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.12.5] - 2026-11-03
+
+### Fixed
+- A map survey of an idle Antigravity is no longer deferred forever: empty zero-size listboxes that Antigravity 2.28
+  keeps in its page (typeahead menus) no longer count as an open menu.
+
 ## [1.12.4] - 2026-11-03
 
 ### Fixed
