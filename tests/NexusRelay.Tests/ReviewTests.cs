@@ -216,15 +216,15 @@ public sealed class ReviewTests : IDisposable
             File.WriteAllText(settingsFile, """{"host": "all"}""");
             Assert.Equal("all", RelayPaths.RelayHost());
 
-            // 4. Settings invalide ou absent : repli sur le défaut claude
+            // 4. Settings invalide ou absent : repli sur le défaut all (1.12.2)
             File.WriteAllText(settingsFile, """{"host": "inconnu"}""");
-            Assert.Equal("claude", RelayPaths.RelayHost());
+            Assert.Equal("all", RelayPaths.RelayHost());
             File.Delete(settingsFile);
-            Assert.Equal("claude", RelayPaths.RelayHost());
+            Assert.Equal("all", RelayPaths.RelayHost());
 
-            // 5. Env vide avec settings absent : défaut claude
+            // 5. Env vide avec settings absent : défaut all
             Environment.SetEnvironmentVariable("NEXUS_RELAY_HOST", "   ");
-            Assert.Equal("claude", RelayPaths.RelayHost());
+            Assert.Equal("all", RelayPaths.RelayHost());
         }
         finally
         {

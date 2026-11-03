@@ -316,15 +316,17 @@ if ($Register -and -not $settings.host) {
         'antigravity' = Test-Path (Join-Path $HOME '.gemini')
     }
     $agentOf = @{ 'claude-code' = 'claude'; 'claude' = 'claude'; 'codex' = 'codex'; 'antigravity' = 'antigravity' }
+    # 1.12.2 : avec au moins deux IA, toutes égales (« all ») ; un hôte unique n'est jamais choisi à la place de l'utilisateur.
     $chosenHost = if ($env:NEXUS_PACK_HOST -and $agentOf.ContainsKey($env:NEXUS_PACK_HOST.Trim())) { $agentOf[$env:NEXUS_PACK_HOST.Trim()] } else {
-        @($present.Keys | Where-Object { $present[$_] -and ($null -eq $packTargets -or $packTargets -contains $_) } | ForEach-Object { $agentOf[$_] }) | Select-Object -First 1
+        $agents = @($present.Keys | Where-Object { $present[$_] -and ($null -eq $packTargets -or $packTargets -contains $_) } | ForEach-Object { $agentOf[$_] })
+        if ($agents.Count -ge 2) { 'all' } else { $agents | Select-Object -First 1 }
     }
     if ($chosenHost) {
         $local = Read-LocalSettings
         $local | Add-Member -NotePropertyName host -NotePropertyValue $chosenHost -Force
         [IO.File]::WriteAllText($settingsPath, ($local | ConvertTo-Json -Depth 10), $utf8)
         $settings | Add-Member -NotePropertyName host -NotePropertyValue $chosenHost -Force
-        Write-Output "Hôte du relais : $chosenHost (seul à ouvrir un échange ; réglage host de $settingsPath)."
+        Write-Output "Hôte du relais : $chosenHost (réglage host de $settingsPath)."
     }
 }
 if (-not $tokenFile -or -not (Test-Path $tokenFile)) {

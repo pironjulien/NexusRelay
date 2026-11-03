@@ -6,6 +6,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.12.2] - 2026-11-03
+
+### Changed
+- The three AI apps are equal by default: the engine's default host is `all`, and the installer picks `all` when it finds
+  two AI apps or more (a single AI app keeps itself as host). Before, an install without a `host` setting made the
+  first AI app found the only one allowed to open exchanges, so reinstalling from a release silently replaced a
+  three-way setup with `claude`. An explicit `host` stays as set.
+
 ## [1.12.1] - 2026-11-03
 
 ### Fixed

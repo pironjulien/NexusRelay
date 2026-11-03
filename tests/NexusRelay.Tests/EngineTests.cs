@@ -69,6 +69,7 @@ public sealed class EngineTests : IDisposable
     [Fact]
     public void Crash_recovery_dead_pids_host_takeover_and_vaults()
     {
+        iso.Set("NEXUS_RELAY_HOST", "claude");  // host-only force release, with a single host
         var box = new RelayBox();
         const int dead = 99_999_999;
         Assert.False(RelayBox.PidAlive(dead));

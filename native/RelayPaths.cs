@@ -9,11 +9,12 @@ namespace NexusRelay;
 
 public static partial class RelayPaths
 {
-    public const string Version = "1.12.1";
+    public const string Version = "1.12.2";
     public static readonly string[] Agents = ["claude", "antigravity", "codex"];
     public const string User = "user";
     public static readonly string[] Parties = ["claude", "antigravity", "codex", "user"];
-    public const string DefaultHost = "claude";
+    // 1.12.2: the three AI apps are equal by default; a single host is an explicit choice (host setting).
+    public const string DefaultHost = "all";
 
     private static readonly Dictionary<string, string> Aliases = new(StringComparer.OrdinalIgnoreCase)
     {

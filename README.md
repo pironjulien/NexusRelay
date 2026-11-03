@@ -229,7 +229,7 @@ the daemon's environment win.
 | `NEXUS_RELAY_CODEX_PORT`, `NEXUS_RELAY_AGY_PORT` | — | `9223`, `9227` | Debugging ports of Codex and Antigravity |
 | `NEXUS_JOURNAL_HOME` | — | `%LOCALAPPDATA%\NexusJournal` | Action log |
 | `NEXUS_RELAY_UPDATE_CHECK` | — | on | `0`: never look up the latest version |
-| `NEXUS_RELAY_HOST` | `host` | `claude` | The only agent that opens exchanges (`claude`, `codex` or `antigravity`); never woken |
+| `NEXUS_RELAY_HOST` | `host` | `all` | Who opens exchanges: `all` (every AI app, the default) or a single host (`claude`, `codex` or `antigravity`, never woken) |
 | `NEXUS_RELAY_LANG` | `lang` | `en` | Language of the texts agents receive (tool results, errors, wake text) and of the deployed instructions: `en` or `fr` |
 
 ## Updates
