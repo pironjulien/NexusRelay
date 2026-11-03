@@ -37,3 +37,17 @@ description: "Exchange messages, reviews and task results with Claude and Codex 
 - `where(app, what)` locates interface controls; `survey(app)` refreshes the map only while the app is available.
 - `selftest(to)` tests a wake direction. `close(topic)` archives the relay's own topic conversations when finished;
   it does not archive the user's unrelated chats.
+
+## Not installed yet?
+When the nexus-relay tools do not answer at all, NexusRelay is not installed or its local service is not running on
+this Windows PC. Install it from the latest release as a file, never piped into PowerShell, then open a new
+conversation (the full install also adds the sidecar that lets Claude and Codex wake Antigravity):
+
+```powershell
+$dir = Join-Path $env:TEMP 'nexus-relay-get'; New-Item -ItemType Directory -Force $dir | Out-Null; Set-Location $dir
+$r = 'https://github.com/pironjulien/NexusRelay/releases/latest/download'
+Invoke-WebRequest "$r/get.ps1" -OutFile get.ps1; Invoke-WebRequest "$r/SHA256SUMS.txt" -OutFile SHA256SUMS.txt
+$expected = (Select-String -Path SHA256SUMS.txt -Pattern '^([0-9a-f]{64})\s+get\.ps1$').Matches[0].Groups[1].Value
+if ((Get-FileHash get.ps1 -Algorithm SHA256).Hash -ne $expected) { throw 'get.ps1 does not match SHA256SUMS.txt' }
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\get.ps1
+```

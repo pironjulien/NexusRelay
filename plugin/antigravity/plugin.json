@@ -1,7 +1,28 @@
 {
+  "$schema": "https://antigravity.google/schemas/v1/plugin.json",
   "name": "nexus-relay",
   "displayName": "NexusRelay",
-  "version": "1.12.8",
+  "version": "1.12.9",
+  "description": "A local room where Antigravity, Claude Code and Codex work together on the same PC: messages, cross reviews and file reservations, without you relaying.",
   "logo": "logo.png",
-  "description": "Shared room with Claude and Codex (without going through the user): exchanges with either peer under host all, delivery by the official agentapi sidecar"
+  "suggestedPrompts": [
+    "Ask Claude and Codex to review the changes I just made in this repository.",
+    "Check my Nexus Relay inbox and answer the pending messages.",
+    "Reserve the files you are about to edit so the other agents do not overlap."
+  ],
+  "author": {
+    "name": "Julien Piron",
+    "url": "https://julienpiron.fr"
+  },
+  "homepage": "https://github.com/pironjulien/NexusRelay#readme",
+  "repository": "https://github.com/pironjulien/NexusRelay",
+  "license": "MIT",
+  "keywords": [
+    "multi-agent",
+    "claude",
+    "codex",
+    "collaboration",
+    "mcp",
+    "local"
+  ]
 }

@@ -6,6 +6,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.12.9] - 2026-11-03
+
+### Added
+- Antigravity Marketplace bundle: `plugin/antigravity` passes `agy plugin validate --strict` with the Marketplace
+  fields (English and French manifests), a README for the detail page and `scripts/bridge.ps1`. A Marketplace copy
+  cannot name this PC's token (Antigravity expands only `${PLUGIN_ROOT}`), so the bridge relays Antigravity's stdio to
+  the local daemon on `127.0.0.1:16181` with the token of `%USERPROFILE%\.nexus\mcp-token.txt` and answers with how
+  to install NexusRelay when the daemon is missing. `install.ps1` keeps writing its own declaration and the sidecar.
+- The Antigravity skill says how to install NexusRelay from the latest release (`get.ps1` checked against
+  `SHA256SUMS.txt`) when its tools do not answer.
+
 ## [1.12.8] - 2026-11-03
 
 ### Fixed

@@ -268,6 +268,21 @@ public sealed class InstallerTests : IDisposable
     }
 
     [Fact]
+    public void Antigravity_marketplace_copy_bridges_to_the_local_daemon()
+    {
+        // A Marketplace copy cannot name this PC's token (Antigravity expands only ${PLUGIN_ROOT}); install.ps1
+        // replaces this declaration with its own and adds the sidecar.
+        string bundle = Path.Join(Repo, "plugin", "antigravity");
+        var args = JsonNode.Parse(File.ReadAllText(Path.Join(bundle, "mcp_config.json")))!["mcpServers"]!["nexus-relay"]!["args"]!.AsArray().Select(a => a!.ToString()).ToList();
+        Assert.Equal(@"${PLUGIN_ROOT}\scripts\bridge.ps1", args[args.IndexOf("-File") + 1]);
+        Assert.Equal("http://127.0.0.1:16181/mcp?agent=antigravity", args[args.IndexOf("-Url") + 1]);
+        Assert.Contains(@".nexus"", ""mcp-token.txt""", File.ReadAllText(Path.Join(bundle, "scripts", "bridge.ps1")));
+        Assert.True(File.Exists(Path.Join(bundle, "README.md")));
+        foreach (string manifest in new[] { "plugin/antigravity/plugin.json", "fr/plugin/antigravity/plugin.json" })
+            Assert.InRange(JsonNode.Parse(File.ReadAllText(Path.Join(Repo, manifest)))!["description"]!.ToString().Length, 120, 160);
+    }
+
+    [Fact]
     public void Installer_declares_the_restart_request_and_pins_the_mailbox()
     {
         string install = File.ReadAllText(Path.Join(Repo, "install.ps1"), Encoding.UTF8);
