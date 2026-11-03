@@ -103,7 +103,7 @@ jobs:
           }
           if ((Get-ScheduledTask -TaskName 'Nexus Relay').State -ne 'Running') { throw 'scheduled task not running' }
           $host_ = (Get-Content "$HOME\.nexus\nexus-relay\settings.json" -Raw | ConvertFrom-Json).host
-          if ($host_ -ne 'claude') { throw "host: $host_ (Claude Code present: claude expected)" }
+          if ($host_ -ne 'all') { throw "host: $host_ (Claude Code and Codex present: all expected)" }
       - name: update API (GET /api/update) and status file
         shell: powershell
         run: |
