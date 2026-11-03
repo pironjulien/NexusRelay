@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.12.8] - 2026-11-03
+
+### Fixed
+- Maps of a packaged app are keyed by its package version: Codex's executable reports Chromium's file version
+  (156.0.8078.79), so a Codex update that kept the same Chromium never triggered a new survey.
+
 ## [1.12.7] - 2026-11-03
 
 ### Fixed

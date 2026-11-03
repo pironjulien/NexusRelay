@@ -222,7 +222,7 @@ public static class NativeCards
             if (url is null || executable is null) return AppTransport.Result("deferred", "App page or installation unavailable");
             using var page = new CdpPage(url);
             if (AppTransport.Truth(page.Eval(Ui["draft"]!.ToString())) || (page.Eval(Ui["layers"]!.ToString())?.GetValue<int>() ?? 0) != 0 || app=="antigravity"&&AppTransport.Truth(page.Eval(Ui["agy_running"]!.ToString()))) return AppTransport.Result("deferred", "Existing draft, open menu or running turn is preserved");
-            string version = FileVersionInfo.GetVersionInfo(executable).ProductVersion ?? File.GetLastWriteTimeUtc(executable).ToString("O");
+            string version = AppVersion(executable) ?? File.GetLastWriteTimeUtc(executable).ToString("O");
             JsonObject index; var known = new HashSet<string>();
             if (app == "codex") { string language = page.Eval("document.documentElement.lang")?.ToString() ?? "fr-FR"; index = CodexIndex(Path.Join(Path.GetDirectoryName(executable)!, "resources", "app.asar"), language); }
             else
@@ -355,13 +355,20 @@ public static class NativeCards
             var marks = LandmarkStatus(app,elements.OfType<JsonObject>(),live);
             return new JsonObject { ["app"] = app, ["version"] = version, ["surveyed_at"] = RelayBox.NowIso(), ["elements"] = elements, ["index"] = index.DeepClone(), ["landmarks"] = marks, ["live"] = live };
     }
+    // A packaged app (Codex) ships a Chromium executable whose file version is Chromium's: its package folder
+    // (WindowsApps\Name_Version_Arch__Publisher) carries the app version, which changes with every update.
+    public static string? AppVersion(string executable)
+    {
+        var package = Regex.Match(executable, @"\\WindowsApps\\[^\\_]+_(\d+(?:\.\d+){1,3})_[^\\]*__[^\\]+\\", RegexOptions.IgnoreCase, TimeSpan.FromSeconds(1));
+        return package.Success ? package.Groups[1].Value : FileVersionInfo.GetVersionInfo(executable).ProductVersion;
+    }
     public static void RefreshDue(RelayBox box, Action? heartbeat = null)
     {
         var state = box.State("native-cards-check") ?? new(); double now = Reservations.Now();
         foreach (string app in new[] { "codex", "antigravity" }.Where(a => now - (state[a]?.GetValue<double>() ?? 0) >= 1800))
         {
             string? exe = AppTransport.Executable(app); if (exe is null) continue;
-            string? version = FileVersionInfo.GetVersionInfo(exe).ProductVersion; var last = Cards(app).FirstOrDefault();
+            string? version = AppVersion(exe); var last = Cards(app).FirstOrDefault();
             if (version is not null && Fresh(last,version)) { state[app] = now; continue; }
             heartbeat?.Invoke();var result = Survey(app,heartbeat); state[app] = result["live"]?["status"]?.ToString() == "complet" && AppTransport.Truth(result["live"]?["view_restored"]) ? now : now - 1500;
         }

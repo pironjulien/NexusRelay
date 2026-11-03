@@ -65,6 +65,15 @@ public sealed class ContractTests : IDisposable
     }
 
     [Fact]
+    public void Map_version_of_a_packaged_app_is_its_package_version()
+    {
+        // Codex's ChatGPT.exe reports Chromium's file version (156.0.8078.79): the package folder gives the app's.
+        Assert.Equal("26.1027.6604.0", NativeCards.AppVersion(@"C:\Program Files\WindowsApps\OpenAI.Codex_26.1027.6604.0_x64__2p2nqsd0c76g0\app\ChatGPT.exe"));
+        string unpackaged = Environment.ProcessPath!;
+        Assert.Equal(System.Diagnostics.FileVersionInfo.GetVersionInfo(unpackaged).ProductVersion, NativeCards.AppVersion(unpackaged));
+    }
+
+    [Fact]
     public void Map_scripts_and_landmarks_match_the_proven_source()
     {
         var contracts = Native.Json("--ui-contracts");
