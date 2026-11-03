@@ -6,6 +6,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.12.3] - 2026-11-03
+
+### Fixed
+- A map surveyed with no conversation open reports conversation landmarks (Antigravity archive, options, composer,
+  send; Codex archive) as unverifiable instead of gone; Antigravity's open conversation is detected from its
+  conversation view or sidebar rows.
+
 ## [1.12.2] - 2026-11-03
 
 ### Changed

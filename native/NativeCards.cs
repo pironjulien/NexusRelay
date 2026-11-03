@@ -266,6 +266,8 @@ public static class NativeCards
             var spec = Ui["apps"]![app] as JsonObject ?? new(); var elements = new JsonArray(); var pages = new JsonArray(); var visitedMenus = new HashSet<string>();
             string viewScript = "(()=>({href:location.href,current:[...document.querySelectorAll('[aria-current=page]')].map(e=>{const data=Object.fromEntries([...e.attributes].filter(a=>['data-sidebar-destination','data-app-action-sidebar-thread-id'].includes(a.name)).map(a=>[a.name,a.value]));return Object.keys(data).length?{data}:{data,aria:(e.getAttribute('aria-label')||'').trim(),text:(e.innerText||'').trim().split('\\n')[0].trim().slice(0,80)}}),layers:"+Ui["layers"]+"}))()";
             var before = page.Eval(viewScript); bool restored = false; string outcome = "complet";
+            // Antigravity marks no open conversation with aria-current: its conversation view or sidebar rows tell instead.
+            bool chatShown = spec["chat_view"]?.ToString() is {Length:>0} chatView && AppTransport.Truth(page.Eval("!!document.querySelector(" + AppTransport.Quote(chatView) + ")"));
             void Guard() { if (blocked()) throw new RelayError("User returned or emergency stop active"); }
             JsonArray Raw(string scope = "") => page.Eval("(" + Ui["snapshot"] + ")(" + AppTransport.Quote(scope) + ")") as JsonArray ?? [];
             bool jsOpen=AppTransport.Truth(spec["js_open"]);
@@ -343,7 +345,7 @@ public static class NativeCards
                     catch (Exception e) { outcome = "interrompu : " + e.Message; } // Boundary: a failed view restore is reported in the card, never thrown.
                 }
             }
-            var live = new JsonObject { ["status"] = outcome, ["pages"] = pages, ["menus"] = visitedMenus.Count, ["view_restored"] = restored, ["chat_open"] = (before?["current"] as JsonArray ?? []).OfType<JsonObject>().Any(e=>e["data"]?["data-app-action-sidebar-thread-id"] is not null) };
+            var live = new JsonObject { ["status"] = outcome, ["pages"] = pages, ["menus"] = visitedMenus.Count, ["view_restored"] = restored, ["chat_open"] = chatShown || (before?["current"] as JsonArray ?? []).OfType<JsonObject>().Any(e=>e["data"]?["data-app-action-sidebar-thread-id"] is not null) };
             var marks = LandmarkStatus(app,elements.OfType<JsonObject>(),live);
             return new JsonObject { ["app"] = app, ["version"] = version, ["surveyed_at"] = RelayBox.NowIso(), ["elements"] = elements, ["index"] = index.DeepClone(), ["landmarks"] = marks, ["live"] = live };
     }

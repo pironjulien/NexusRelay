@@ -39,7 +39,8 @@
         "unless": [
           "Aucun chat",
           "No chats"
-        ]
+        ],
+        "needs": "chat_open"
       },
       "COMPOSER": {
         "role": "textbox"
@@ -59,7 +60,8 @@
         "unless": [
           "No conversations",
           "Aucune conversation"
-        ]
+        ],
+        "needs": "chat_open"
       },
       "MORE_OPTIONS": {
         "data": {
@@ -68,15 +70,18 @@
         "unless": [
           "No conversations",
           "Aucune conversation"
-        ]
+        ],
+        "needs": "chat_open"
       },
       "COMPOSER": {
-        "aria_re": "^(Message input|Saisie du message)"
+        "aria_re": "^(Message input|Saisie du message)",
+        "needs": "chat_open"
       },
       "SEND": {
         "data": {
           "data-testid": "send-button"
-        }
+        },
+        "needs": "chat_open"
       }
     }
   },
@@ -100,7 +105,8 @@
       "triggers": {
         "data-testid": "title-menu-bar-item"
       },
-      "js_open": true
+      "js_open": true,
+      "chat_view": "[data-testid=conversation-view], [data-testid=conversation-row-sidebar]"
     }
   }
 }

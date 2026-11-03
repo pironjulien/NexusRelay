@@ -453,7 +453,9 @@
      "CHAT_ACTIONS": {
       "unverified": "non vérifiable : aucun chat ouvert au départ du relevé"
      },
-     "ARCHIVE": null,
+     "ARCHIVE": {
+      "unverified": "non vérifiable : aucun chat ouvert au départ du relevé"
+     },
      "COMPOSER": null
     }
    }
