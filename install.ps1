@@ -292,9 +292,9 @@ function Get-Localized([string]$relative) {
 # Consignes des chats du relais, lues par Codex et Claude dans leurs dossiers : jamais de question à l'utilisateur, qui ne les lit pas.
 Copy-Item -Force (Get-Localized 'codex-projet\AGENTS.md') (Join-Path $HOME '.nexus\relay\codex-projet\AGENTS.md')
 Copy-Item -Force (Get-Localized 'claude-projet\CLAUDE.md') (Join-Path $HOME '.nexus\relay\NexusRelay\CLAUDE.md')
-# 1.12.10 : la session relais de Claude se vide après chaque sujet (clear_session, seul outil autorisé ici) : un sujet par conversation.
-New-Item -ItemType Directory -Force (Join-Path $HOME '.nexus\relay\NexusRelay\.claude') | Out-Null
-Copy-Item -Force (Join-Path $project 'claude-projet\.claude\settings.json') (Join-Path $HOME '.nexus\relay\NexusRelay\.claude\settings.json')
+# 1.12.11 : la remise à zéro de la session relais (1.12.10) arrêtait son processus et donc sa boîte : réglage retiré.
+$relayClaudeSettings = Join-Path $HOME '.nexus\relay\NexusRelay\.claude\settings.json'
+if (Test-Path $relayClaudeSettings) { Remove-Item -Force $relayClaudeSettings }
 # Jeton partagé des démons Nexus (scripts\Resolve-NexusToken.ps1, règle commune du 30/10) : fichier explicite (-TokenFile,
 # NEXUS_MCP_TOKEN_FILE, réglage token_file), sinon %USERPROFILE%\.nexus\mcp-token.txt ; réutilisé, jamais régénéré.
 # Poste réglé sans -Register : jamais créé ici (un installeur lancé avant la synchro du fichier en créerait un autre).

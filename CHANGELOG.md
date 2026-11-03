@@ -6,6 +6,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.12.11] - 2026-11-03
+
+### Fixed
+- Claude is woken again after a first topic: 1.12.10's self-clear (`clear_session`) stopped the relay session's
+  process, so its inbox disappeared and every later wake waited with "relay session is not open". The clear
+  instruction and its `.claude/settings.json` are removed (the installer deletes the deployed file); the relay session
+  keeps every topic in turn and must never be cleared.
+
 ## [1.12.10] - 2026-11-03
 
 ### Changed
