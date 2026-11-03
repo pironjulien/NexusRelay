@@ -1,7 +1,7 @@
 {
   "name": "nexus-relay",
   "displayName": "NexusRelay",
-  "version": "1.12.6",
+  "version": "1.12.7",
   "logo": "logo.png",
   "description": "Shared room with Claude and Codex (without going through the user): exchanges with either peer under host all, delivery by the official agentapi sidecar"
 }

@@ -6,6 +6,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.12.7] - 2026-11-03
+
+### Fixed
+- An interrupted map survey no longer leaves Codex or Antigravity on the page it opened (Settings): it closes its own
+  menus and returns to the starting view, as long as the view is still one the survey itself reached. A view the user
+  changed is left alone, and an emergency stop still sends no further gesture.
+
 ## [1.12.6] - 2026-11-03
 
 ### Fixed

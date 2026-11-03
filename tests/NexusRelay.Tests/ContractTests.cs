@@ -241,7 +241,7 @@ public sealed class ContractTests : IDisposable
             var page = new ActualPage(cdp, scenario);
             string[] labels = ["Accueil", "Paramètres", "Historique", "Fichier", "Lecture", "Notifications", "Aucun chat", "Choisir modèle", "Sécurité"];
             JsonObject? card = null; string? refusal = null;
-            try { card = NativeCards.RunSurvey("antigravity", "fixture-version", new JsonObject(), labels, page, () => scenario == "user-return" && (cdp.Eval("window.__events.length")?.GetValue<int>() ?? 0) > 0, ms => Thread.Sleep(Math.Min(ms, 30))); }
+            try { card = NativeCards.RunSurvey("antigravity", "fixture-version", new JsonObject(), labels, page, () => scenario is "user-return" or "halt" && (cdp.Eval("window.__events.length")?.GetValue<int>() ?? 0) > 0, ms => Thread.Sleep(Math.Min(ms, 30)), () => scenario == "halt" && (cdp.Eval("window.__events.length")?.GetValue<int>() ?? 0) > 0); }
             catch (RelayError error) { refusal = error.Message; }
             return new() { ["card"] = card, ["events"] = cdp.Eval("window.__events")?.DeepClone(), ["view"] = cdp.Eval("({hash:location.hash,menu:document.getElementById('menu').hidden})")?.DeepClone(), ["refusal"] = refusal };
         }
@@ -279,13 +279,25 @@ public sealed class ContractTests : IDisposable
     }
 
     [Fact]
-    public void Survey_stops_when_the_user_returns_and_keeps_partial_evidence()
+    public void Survey_stops_when_the_user_returns_keeps_partial_evidence_and_undoes_its_own_view()
     {
         var result = Browser("user-return");
+        var events = Events(result);
+        Assert.Equal("menu", events[0]);
+        Assert.DoesNotContain(events, e => e.StartsWith("navigate:", StringComparison.Ordinal) || e.StartsWith("FORBIDDEN", StringComparison.Ordinal));
+        Assert.True(result["card"]!["live"]!["view_restored"]!.GetValue<bool>());
+        Assert.True(JsonNode.DeepEquals(result["view"], new JsonObject { ["hash"] = "", ["menu"] = true }));
+        Assert.StartsWith("interrompu", result["card"]!["live"]!["status"]!.ToString());
+        Assert.False(NativeCards.Fresh(result["card"] as JsonObject, "fixture-version"));
+    }
+
+    [Fact]
+    public void Survey_under_emergency_stop_sends_no_further_gesture()
+    {
+        var result = Browser("halt");
         Assert.Equal(["menu"], Events(result));
         Assert.False(result["card"]!["live"]!["view_restored"]!.GetValue<bool>());
         Assert.StartsWith("interrompu", result["card"]!["live"]!["status"]!.ToString());
-        Assert.False(NativeCards.Fresh(result["card"] as JsonObject, "fixture-version"));
     }
 
     [Fact]

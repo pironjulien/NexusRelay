@@ -235,7 +235,7 @@ public static class NativeCards
                     """;
                 var labels = page.Eval(bundle) as JsonObject ?? new(); index = labels["index"] as JsonObject ?? new(); known.UnionWith((labels["known"] as JsonArray ?? []).Select(n => n?.ToString()).OfType<string>());
             }
-            var card = RunSurvey(app,version,index,known,new CardPage(page),()=>{heartbeat?.Invoke();return AppTransport.UserPresent(app)||AppTransport.EmergencyStop()||AppLifecycle.Busy(app);},milliseconds=>{heartbeat?.Invoke();Thread.Sleep(milliseconds);heartbeat?.Invoke();});
+            var card = RunSurvey(app,version,index,known,new CardPage(page),()=>{heartbeat?.Invoke();return AppTransport.UserPresent(app)||AppTransport.EmergencyStop()||AppLifecycle.Busy(app);},milliseconds=>{heartbeat?.Invoke();Thread.Sleep(milliseconds);heartbeat?.Invoke();},AppTransport.EmergencyStop);
             var saved=Save(card);var summaryMarks=new JsonObject();foreach(var pair in card["landmarks"]!.AsObject()){summaryMarks[pair.Key]=pair.Value?["path"]?.DeepClone()??pair.Value?["unverified"]?.DeepClone();}var summary=new JsonObject { ["status"]="success",["app"]=app,["version"]=version,["elements"]=card["elements"]!.AsArray().Count,["labels"]=index.Count,["live"]=card["live"]!.DeepClone(),["landmarks"]=summaryMarks };
             foreach(var entry in saved){summary[entry.Key]=entry.Value?.DeepClone();}summary["path"]=saved["card"]?.DeepClone();return summary;
         }
@@ -257,7 +257,7 @@ public static class NativeCards
         public JsonObject Call(string method,JsonObject? arguments=null)=>page.Call(method,arguments);
         public void Escape()=>page.Escape();
     }
-    public static JsonObject RunSurvey(string app,string version,JsonObject index,IEnumerable<string> labels,ICardPage page,Func<bool> blocked,Action<int>? sleep=null)
+    public static JsonObject RunSurvey(string app,string version,JsonObject index,IEnumerable<string> labels,ICardPage page,Func<bool> blocked,Action<int>? sleep=null,Func<bool>? halted=null)
     {
         CheckApp(app);if(blocked())throw new RelayError("App in use or emergency stop active; no gesture sent");
         if(AppTransport.Truth(page.Eval(Ui["draft"]!.ToString()))||(page.Eval(Ui["layers"]!.ToString())?.GetValue<int>()??0)!=0||app=="antigravity"&&AppTransport.Truth(page.Eval(Ui["agy_running"]!.ToString())))throw new RelayError("Existing draft, open layer or running turn is preserved");
@@ -265,10 +265,14 @@ public static class NativeCards
             known.UnionWith(index.Select(kv => kv.Value?.ToString()).OfType<string>()); var mask = new Known(known);
             var spec = Ui["apps"]![app] as JsonObject ?? new(); var elements = new JsonArray(); var pages = new JsonArray(); var visitedMenus = new HashSet<string>();
             string viewScript = "(()=>({href:location.href,current:[...document.querySelectorAll('[aria-current=page]')].map(e=>{const data=Object.fromEntries([...e.attributes].filter(a=>['data-sidebar-destination','data-app-action-sidebar-thread-id'].includes(a.name)).map(a=>[a.name,a.value]));return Object.keys(data).length?{data}:{data,aria:(e.getAttribute('aria-label')||'').trim(),text:(e.innerText||'').trim().split('\\n')[0].trim().slice(0,80)}}),layers:"+Ui["layers"]+"}))()";
-            var before = page.Eval(viewScript); bool restored = false; string outcome = "complet";
+            var before = page.Eval(viewScript); var View0 = before?.DeepClone(); (View0 as JsonObject)?.Remove("layers"); bool restored = false; string outcome = "complet";
             // Antigravity marks no open conversation with aria-current: its conversation view or sidebar rows tell instead.
             bool chatShown = spec["chat_view"]?.ToString() is {Length:>0} chatView && AppTransport.Truth(page.Eval("!!document.querySelector(" + AppTransport.Quote(chatView) + ")"));
-            void Guard() { if (blocked()) throw new RelayError("User returned or emergency stop active"); }
+            // After an interruption the survey still undoes its own navigation, never the user's, and nothing under an emergency stop.
+            var stop = blocked; var halt = halted ?? (() => false); var owned = new List<JsonNode?>();
+            JsonNode? View() { var view = page.Eval(viewScript)?.DeepClone(); (view as JsonObject)?.Remove("layers"); return view; }
+            bool Ours(JsonNode? view) => JsonNode.DeepEquals(view, View0) || owned.Any(v => JsonNode.DeepEquals(v, view));
+            void Guard() { if (stop()) throw new RelayError("User returned or emergency stop active"); }
             JsonArray Raw(string scope = "") => page.Eval("(" + Ui["snapshot"] + ")(" + AppTransport.Quote(scope) + ")") as JsonArray ?? [];
             bool jsOpen=AppTransport.Truth(spec["js_open"]);
             bool Press(JsonObject item) { Guard();if(Danger.IsMatch(Label(item)))return false;var expression="(()=>{const e="+Element(Locator(item))+";return e&&!new RegExp("+AppTransport.Quote(Ui["danger"]!.ToString())+",'i').test((e.getAttribute('aria-label')||e.getAttribute('title')||e.innerText||'').trim())?e:null})()";return jsOpen?AppTransport.Truth(page.Eval("(()=>{const e="+expression+";if(!e)return false;e.click();return true})()")):page.Press(expression); }
@@ -316,21 +320,23 @@ public static class NativeCards
                     var next = queue.Dequeue(); var target = next.Target; string key = target.ToJsonString() + string.Join("/", next.Path); if (!seen.Add(key)) continue; Guard();
                     if (target["via_menu"] is JsonObject via) { if (!Press(via)) continue; pause(800); target = (JsonObject)target["entry"]!.DeepClone(); }
                     if (!Allowed(target, next.Selector) || !Press(target)) { Close(); continue; }
-                    pause(1200); var path = next.Path.Append("page « " + mask.Canon(Label(target)) + " »").ToList(); pages.Add(string.Join(" > ", path)); var raw = ReadPage(path);
+                    pause(1200); owned.Add(View()); var path = next.Path.Append("page « " + mask.Canon(Label(target)) + " »").ToList(); pages.Add(string.Join(" > ", path)); var raw = ReadPage(path);
                     if (next.Path.Count == 0) { string sub = spec["subpages"]!.ToString(); foreach (var item in raw.Where(e => Allowed(e, sub))) queue.Enqueue((item, path, sub)); }
                 }
             }
             catch (Exception e) when (e is RelayError or IOException or System.Net.WebSockets.WebSocketException or OperationCanceledException or System.Text.Json.JsonException) { outcome = "interrompu : " + e.Message; }
             finally
             {
-                if (!blocked())
+                bool interrupted = blocked();
+                if (!halt() && (!interrupted || Ours(View())))
                 {
                     try
                     {
+                        if (interrupted) stop = halt;
                         Close();
                         for (int i = 0; i < pages.Count + 4 && !JsonNode.DeepEquals(page.Eval(viewScript), before); i++)
                         {
-                            Guard(); var current = page.Eval(viewScript);
+                            Guard(); if (interrupted && !Ours(View())) break; var current = page.Eval(viewScript);
                             if (current?["href"]?.ToString() != before?["href"]?.ToString()) page.Eval("(()=>{history.pushState(null,''," + AppTransport.Quote(before?["href"]?.ToString()) + ");dispatchEvent(new PopStateEvent('popstate',{state:null}));return true})()");
                             else
                             {
