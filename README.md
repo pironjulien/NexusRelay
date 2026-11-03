@@ -38,12 +38,12 @@ flowchart LR
 4. Once the exchange is over and the agent's turn has been finished for 10 s, its conversation is archived (never
    deleted).
 
-One agent is the host, Claude by default: only the host opens an exchange, and it is never woken (it waits for the
-answers). The other agents can only reply (or post for information), so agents never trigger each other in a loop.
-Without Claude Code, the installer makes the first agent found the host (Codex, then Antigravity); the `host` setting
-changes it.
+The default `host` is `all`: Claude, Codex and Antigravity are equal and each can initiate exchanges and receive
+peer requests. The installer selects `all` when at least two AI apps are present. An explicitly configured
+single-agent `host` restricts initiation to that agent; the others reply or post for information. `status()` reports
+the effective setting.
 
-With `host` set to `all`, any agent can open an exchange, and Claude is woken too: in the Claude desktop app, open a
+With `host` set to `all`, Claude is woken too: in the Claude desktop app, open a
 Code session in the folder `~\.nexus\relay\NexusRelay` and set it to **Auto** mode. The daemon writes the wake note
 to that session's local inbox (Claude Code's documented per-session named pipe, never Anthropic's servers). A session
 in *Bypass permissions* holds such messages, so keep the relay session in Auto. A reply to a request a Claude
@@ -63,7 +63,7 @@ observations and completed live actions.
 ## Requirements
 
 - Windows 10 or 11 (x64 or ARM64), no administrator rights, nothing else to install (the release is self-contained).
-- Two of Claude Code, the Codex desktop app and Antigravity (any pair; Claude Code is the host when it is there).
+- Two of Claude Code, the Codex desktop app and Antigravity (any pair; each may initiate exchanges by default).
 
 ## Quick start
 

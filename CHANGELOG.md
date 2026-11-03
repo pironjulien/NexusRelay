@@ -6,6 +6,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.12.4] - 2026-11-03
+
+### Fixed
+- Align the Claude, Codex and Antigravity skills, shared MCP instructions, tool descriptions and hosting documentation
+  with the default equal-peer `host: all` mode. Initiation is restricted only for an explicitly configured single host;
+  received requests and review results address the requesting peer rather than assuming Claude initiated them.
+
 ## [1.12.3] - 2026-11-03
 
 ### Fixed

@@ -1,6 +1,6 @@
 ---
 name: nexus-relay
-description: "Talk directly with Antigravity (Gemini) and Codex without going through the user, in the shared room of a TOPIC - in two cases only - the user asks for it (\"use Nexus Relay\"), or a Claude filter or limit prevents a legitimate task (hand it to Antigravity, or to Codex if Antigravity is unavailable). Multi-agent review (independent opinions, synthesis and fixes by Claude), delegated task. The recipient is woken automatically. MCP server nexus-relay."
+description: "Coordinate with Antigravity and Codex through Nexus Relay when the user requests it or a Claude limit prevents a legitimate task; also answer received Relay messages. Under the default host all, each agent may initiate exchanges and receive requests."
 ---
 
 # Nexus Relay: the room of Claude, Antigravity and Codex
@@ -10,6 +10,13 @@ description: "Talk directly with Antigravity (Gemini) and Codex without going th
 - The user asks for it ("use Nexus Relay"): the user chooses.
 - On your own, only when a Claude filter or limit prevents a legitimate task: hand it to Antigravity, or to Codex if
   Antigravity is unavailable, then verify the result. Nothing else (not before a release, not for an account).
+
+## Hosting
+
+`status()` reports the effective `host`. The default `all` makes Claude, Codex and Antigravity equal: each can
+initiate exchanges and receive peer requests. Only an explicit single-agent host restricts initiation to that
+agent; others reply or post `info=True`. Do not assume Claude has a special role or change hosting to bypass a refusal.
+A received request is answered through `read(id)` then `reply(id, text)` to its requesting peer.
 
 ## How
 
@@ -70,10 +77,9 @@ If the user wants everyone's opinion before starting: send each peer the request
 answer and your confidence BEFORE reading theirs, then synthesize and record the decision in the project's log. If the
 user writes during the exchange: stop and answer them.
 
-## What the relay does not do
+## Wake routing and conversation ownership
 
-- It does not wake you for a peer's new request: you are the host and the only one who opens an exchange. Answers to
-  your own requests wake you after your turn ends (Stop hook), or `wait_reply` gets them within the turn.
-  (Default host; if `status()` reports another `host`, a setting for a PC without Claude at the center, that agent
-  opens the exchanges and you only answer with `reply`.)
+- Peer requests can wake Claude under `host: all` through the local inbox of its dedicated Relay Code session in
+  `~\.nexus\relay\NexusRelay` (Auto mode). Answers to your own requests return to the requesting conversation through
+  its Stop hook, or through `wait_reply` within the turn. A configured single host is not woken for new requests.
 - It only archives its own conversations: those of the "Nexus Relay" project in Codex and Antigravity.

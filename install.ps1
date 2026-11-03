@@ -25,8 +25,8 @@
 #    (NexusRelay.exe --register-clients) ; NEXUS_PACK=1 (pack Nexus) : aucune question ni fenêtre, ligne NEXUS_PACK_RESULT
 #  - NEXUS_PACK_TARGETS (pack Nexus) : IA à configurer (claude-code, codex, antigravity…, séparées par des virgules) ;
 #    présente, toute IA absente de la liste n'est pas touchée ; absente, toutes celles trouvées
-#  - hôte du relais (le seul qui ouvre un échange) : réglage `host`, Claude par défaut ; avec -Register et sans réglage,
-#    NEXUS_PACK_HOST, sinon le premier agent présent parmi les IA choisies (Claude Code, Codex, Antigravity)
+#  - réglage `host` : all par défaut (les trois IA peuvent ouvrir un échange) ; un hôte unique est explicite.
+#    Avec -Register et sans réglage : NEXUS_PACK_HOST s’il est fourni, sinon all avec au moins deux IA présentes.
 # Windows PowerShell 5.1 ou PowerShell 7.
 # Usage : powershell -NoProfile -File install.ps1 [-SkipTests] [-TokenFile <chemin>] [-Register] [-PrepareOnly] [-PromoteOnly]
 param([switch]$SkipTests, [string]$TokenFile, [switch]$Register, [switch]$PrepareOnly, [switch]$PromoteOnly)
