@@ -6,6 +6,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.12.10] - 2026-11-03
+
+### Changed
+- One topic per Claude conversation: Claude's relay session clears itself (`clear_session` on itself) once every
+  message of a wake is answered, so the next topic starts from an empty conversation instead of piling every topic
+  into one growing context. The installer deploys `.claude/settings.json` to `~\.nexus\relay\NexusRelay`, allowing
+  only that tool; the Claude app offers no way for an outside program to open a conversation per topic (no CDP, a
+  conversation started from a peer message is refused). The README asks to pin the relay session.
+
 ## [1.12.9] - 2026-11-03
 
 ### Added

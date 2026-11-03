@@ -46,8 +46,12 @@ the effective setting.
 With `host` set to `all`, Claude is woken too: in the Claude desktop app, open a
 Code session in the folder `~\.nexus\relay\NexusRelay` and set it to **Auto** mode. The daemon writes the wake note
 to that session's local inbox (Claude Code's documented per-session named pipe, never Anthropic's servers). A session
-in *Bypass permissions* holds such messages, so keep the relay session in Auto. A reply to a request a Claude
+in *Bypass permissions* holds such messages, so keep the relay session in Auto, and pin it so that tidying up chats
+never archives it. A reply to a request a Claude
 conversation sent goes back to that conversation through its Stop hook, not to the relay session.
+The Claude app lets no outside program open a conversation per topic, so the relay session clears itself once every
+message of a wake is answered (`clear_session`, the only tool its folder's `.claude/settings.json` allows): each topic
+starts from an empty conversation.
 
 The Codex workspace may be an existing project such as Documents. Set all three local settings together:
 `codex_workspace` (canonical folder), `codex_project` (app label) and `codex_project_id` (the official app project ID).
