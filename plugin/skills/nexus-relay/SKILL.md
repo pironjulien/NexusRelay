@@ -50,7 +50,7 @@ A received request is answered through `read(id)` then `reply(id, text)` to its 
 - `search(query, topic=…, sender=…)` searches the whole room history (without marking anything read);
   `summary(topic)` summarizes a topic (participants, open requests, outcomes, last messages) without rereading it all.
 - One conversation per topic in Codex and Antigravity, kept from one request to the next (context, cache). A topic is
-  a PROJECT (`relay` for NexusRelay, `nexuswindows` for the Nexus Windows tools…), never a subtask, a trial or a
+  a PROJECT (`relay` for NexusRelay, `nexuswindows` for the NexusWindows tools…), never a subtask, a trial or a
   review: same project, same `topic`, like your conversation with the user; a new `topic` only when the project really
   changes. `close(topic)` closes a finished topic (its conversations are archived); without close, they are archived
   after 12 h without messages; a `send` reopens it.

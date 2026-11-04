@@ -6,6 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.13.3] - 2026-11-04
+
+### Changed
+- The nexus-relay skill names the NexusWindows tools without a space, like every other product name.
+
 ## [1.13.2] - 2026-11-04
 
 ### Changed
