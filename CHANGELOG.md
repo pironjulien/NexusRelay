@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.13.4] - 2026-11-04
+
+### Fixed
+- `scripts/install_commit_guard.ps1` without `-Root` installs the guard in the Nexus workstation repositories under
+  `C:\Nexus` (moved out of OneDrive) instead of the former OneDrive folders, and says to pass `-Root` when there is none.
+
 ## [1.13.3] - 2026-11-04
 
 ### Changed

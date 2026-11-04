@@ -1,4 +1,4 @@
-# Branche la garde de commit NexusRelay dans chaque dépôt Git des pôles de Documents : scripts/pre-commit (refus d'un
+# Branche la garde de commit NexusRelay dans chaque dépôt Git des pôles de C:\Nexus (ou de -Root) : scripts/pre-commit (refus d'un
 # fichier réservé par un autre agent) et scripts/post-commit (libération des réservations automatiques commitées).
 # Un hook étranger déjà présent est laissé tel quel et signalé ; relancer après la création d'un dépôt.
 # Usage : pwsh -NoProfile -File scripts/install_commit_guard.ps1 [-Root <dossier>…] [-Remove]
@@ -12,8 +12,10 @@ foreach ($name in 'pre-commit', 'post-commit') {
     $hooks[$name] = (Get-Content -Raw -Encoding utf8 (Join-Path $PSScriptRoot $name)) -replace "`r`n", "`n"
 }
 if (-not $Root) {
-    $documents = Join-Path $env:OneDrive 'Documents'
-    $Root = 'NexusAscent', 'NexusHarness', 'NexusInfra' | ForEach-Object { Join-Path $documents $_ } | Where-Object { Test-Path $_ }
+    # Par défaut, les pôles du poste Nexus sous C:\Nexus (sortis de OneDrive le 04/11/2026) ; ailleurs, -Root.
+    $nexus = Join-Path $env:SystemDrive 'Nexus'
+    $Root = 'NexusAscent', 'NexusHarness', 'NexusInfra' | ForEach-Object { Join-Path $nexus $_ } | Where-Object { Test-Path $_ }
+    if (-not $Root) { throw "Aucun dépôt sous $nexus : indiquer les dossiers avec -Root." }
 }
 $repos = foreach ($folder in $Root) {
     Get-ChildItem $folder -Directory -Recurse -Depth 3 -Filter '.git' -Force -ErrorAction SilentlyContinue |

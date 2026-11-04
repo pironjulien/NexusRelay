@@ -169,6 +169,25 @@ public sealed class CliTests : IDisposable
     }
 
     [Fact]
+    public void Commit_guard_defaults_to_the_repositories_under_the_system_drive_Nexus_folder()
+    {
+        // Without -Root the guard goes to the Nexus workstation poles (<system drive>\Nexus\NexusHarness…), not to
+        // OneDrive; with no such folder it says to pass -Root instead of silently doing nothing.
+        string drive = Path.Join(iso.Root, "drive");
+        string repository = Path.Join(drive, "Nexus", "NexusHarness", "Product");
+        Directory.CreateDirectory(repository);
+        Native.Git(repository, "init", "-q");
+        string script = Path.Join(Paths.Repo(), "scripts", "install_commit_guard.ps1");
+        string[] args = ["-NoProfile", "-NonInteractive", "-File", script];
+        var install = Native.RunFile("pwsh", args, env: new Dictionary<string, string?> { ["SystemDrive"] = drive });
+        Assert.True(install.Code == 0, install.Err + install.Out);
+        Assert.Contains("Garde de commit NexusRelay", File.ReadAllText(Path.Join(repository, ".git", "hooks", "pre-commit")));
+        var none = Native.RunFile("pwsh", args, env: new Dictionary<string, string?> { ["SystemDrive"] = Path.Join(iso.Root, "empty") });
+        Assert.NotEqual(0, none.Code);
+        Assert.Contains("-Root", none.Err + none.Out);
+    }
+
+    [Fact]
     public void Git_commit_hooks_call_the_installed_engine_through_its_stable_path()
     {
         // The hooks installed by scripts/install_commit_guard.ps1, run by Git's own sh with HOME pointing at a fixture
