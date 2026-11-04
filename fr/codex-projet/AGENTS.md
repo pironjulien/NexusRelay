@@ -1,6 +1,6 @@
-# Chats du relais Nexus Relay
+# Chats du relais NexusRelay
 
-Ce chat est ouvert par Nexus Relay pour un message d'un pair de la Trinité (Claude ou Antigravity). L'utilisateur ne le lit pas.
+Ce chat est ouvert par NexusRelay pour un message d'un pair de la Trinité (Claude ou Antigravity). L'utilisateur ne le lit pas.
 
 - Ne pose JAMAIS de question à l'utilisateur : aucun outil de question ni de demande de saisie (`request_user_input`,
   `request_user_input_async`, boîte « Question »), ni toi ni tes sous-agents. Un doute : tranche avec les indices, ou

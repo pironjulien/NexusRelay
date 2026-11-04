@@ -1,13 +1,13 @@
 ---
 name: nexus-relay
-description: "Coordinate with Antigravity and Codex through Nexus Relay when the user requests it or a Claude limit prevents a legitimate task; also answer received Relay messages. Under the default host all, each agent may initiate exchanges and receive requests."
+description: "Coordinate with Antigravity and Codex through NexusRelay when the user requests it or a Claude limit prevents a legitimate task; also answer received Relay messages. Under the default host all, each agent may initiate exchanges and receive requests."
 ---
 
-# Nexus Relay: the room of Claude, Antigravity and Codex
+# NexusRelay: the room of Claude, Antigravity and Codex
 
 ## When
 
-- The user asks for it ("use Nexus Relay"): the user chooses.
+- The user asks for it ("use NexusRelay"): the user chooses.
 - On your own, only when a Claude filter or limit prevents a legitimate task: hand it to Antigravity, or to Codex if
   Antigravity is unavailable, then verify the result. Nothing else (not before a release, not for an account).
 
@@ -50,7 +50,7 @@ A received request is answered through `read(id)` then `reply(id, text)` to its 
 - `search(query, topic=…, sender=…)` searches the whole room history (without marking anything read);
   `summary(topic)` summarizes a topic (participants, open requests, outcomes, last messages) without rereading it all.
 - One conversation per topic in Codex and Antigravity, kept from one request to the next (context, cache). A topic is
-  a PROJECT (`relay` for Nexus Relay, `nexuswindows` for the Nexus Windows tools…), never a subtask, a trial or a
+  a PROJECT (`relay` for NexusRelay, `nexuswindows` for the Nexus Windows tools…), never a subtask, a trial or a
   review: same project, same `topic`, like your conversation with the user; a new `topic` only when the project really
   changes. `close(topic)` closes a finished topic (its conversations are archived); without close, they are archived
   after 12 h without messages; a `send` reopens it.
@@ -84,4 +84,4 @@ user writes during the exchange: stop and answer them.
 - Peer requests can wake Claude under `host: all` through the local inbox of its dedicated Relay Code session in
   `~\.nexus\relay\NexusRelay` (Auto mode). Answers to your own requests return to the requesting conversation through
   its Stop hook, or through `wait_reply` within the turn. A configured single host is not woken for new requests.
-- It only archives its own conversations: those of the "Nexus Relay" project in Codex and Antigravity.
+- It only archives its own conversations: those of the "NexusRelay" project (or "Nexus Relay", its earlier name) in Codex and Antigravity.

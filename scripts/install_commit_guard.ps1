@@ -1,11 +1,11 @@
-# Branche la garde de commit Nexus Relay dans chaque dépôt Git des pôles de Documents : scripts/pre-commit (refus d'un
+# Branche la garde de commit NexusRelay dans chaque dépôt Git des pôles de Documents : scripts/pre-commit (refus d'un
 # fichier réservé par un autre agent) et scripts/post-commit (libération des réservations automatiques commitées).
 # Un hook étranger déjà présent est laissé tel quel et signalé ; relancer après la création d'un dépôt.
 # Usage : pwsh -NoProfile -File scripts/install_commit_guard.ps1 [-Root <dossier>…] [-Remove]
 param([string[]]$Root, [switch]$Remove)
 $ErrorActionPreference = 'Stop'
 
-$marker = 'Garde de commit Nexus Relay'
+$marker = 'Garde de commit Nexus ?Relay'  # regex : « Nexus Relay » des gardes posées avant 1.13.2
 # fins de ligne LF : avec core.autocrlf, la copie du dépôt peut être en CRLF, que sh lit mal (« /bin/sh\r »)
 $hooks = [ordered]@{}
 foreach ($name in 'pre-commit', 'post-commit') {

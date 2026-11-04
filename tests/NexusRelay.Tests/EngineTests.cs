@@ -177,7 +177,7 @@ public sealed class EngineTests : IDisposable
         Assert.Equal(token, JsonNode.Parse(lines.Result[0]!)!["token"]?.ToString());
         var frame = JsonNode.Parse(lines.Result[1]!)!;
         Assert.Equal("user", frame["type"]?.ToString());
-        Assert.Matches("^<cross-session-message from-name=\"Nexus Relay\">\n[\\s\\S]*" + request.Id + "[\\s\\S]*\n</cross-session-message>$", frame["message"]!["content"]!.ToString());
+        Assert.Matches("^<cross-session-message from-name=\"NexusRelay\">\n[\\s\\S]*" + request.Id + "[\\s\\S]*\n</cross-session-message>$", frame["message"]!["content"]!.ToString());
     }
 
     [Fact]

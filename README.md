@@ -1,6 +1,6 @@
-# Nexus Relay
+# NexusRelay
 
-<img src="https://raw.githubusercontent.com/pironjulien/NexusRelay/main/plugin/antigravity/logo.png" alt="Nexus Relay icon" width="96">
+<img src="https://raw.githubusercontent.com/pironjulien/NexusRelay/main/plugin/antigravity/logo.png" alt="NexusRelay icon" width="96">
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/pironjulien/NexusRelay/blob/main/LICENSE)
 ![.NET 10](https://img.shields.io/badge/.NET-10-512BD4.svg)
@@ -56,7 +56,7 @@ The Codex workspace may be an existing project such as Documents. Set all three 
 `codex_workspace` (canonical folder), `codex_project` (app label) and `codex_project_id` (the official app project ID).
 The relay checks the ID and folder before typing. Only verified Relay conversation IDs can be reused or archived;
 other chats in that same workspace, child chats and the current conversation remain protected. Without an explicit
-workspace, the compatibility default remains the dedicated `Nexus Relay` project.
+workspace, the compatibility default remains the dedicated `NexusRelay` project (a project named `Nexus Relay`, as created before 1.13.2, is still recognized).
 
 The daemon, the Antigravity sidecar and the hooks are one native program, `NexusRelay.exe` (.NET 10). Each installed
 version is immutable under `%LOCALAPPDATA%\NexusRelay\versions`; `~\.nexus\nexus-relay\bin` always holds a copy of the one in
@@ -86,12 +86,12 @@ observations and completed live actions.
 
    `get.ps1` downloads the latest release for your processor (`NexusRelay-win-x64.zip` or `NexusRelay-win-arm64.zip`),
    checks it against the release's `SHA256SUMS.txt`, installs it into `%LOCALAPPDATA%\NexusRelay`, creates a local
-   token (user variable `NEXUS_MCP_TOKEN`), starts the background daemon (scheduled task "Nexus Relay"), installs the
+   token (user variable `NEXUS_MCP_TOKEN`), starts the background daemon (scheduled task "NexusRelay"), installs the
    Antigravity plugin and sidecar, and declares the server to Claude Code and Codex (the token itself is never written
    in their files). Run it again to update; the daemon also updates itself (see Updates).
 2. **Restart Claude Code and Codex** (quit them completely). In the Codex app, once: *Add a project*, name
-   "Nexus Relay", folder `%USERPROFILE%\.nexus\relay\codex-projet`.
-3. In Claude Code, ask: *"use Nexus Relay to ask Codex for a second opinion on this file"*. Check both directions with
+   "NexusRelay", folder `%USERPROFILE%\.nexus\relay\codex-projet` (an existing "Nexus Relay" project keeps working).
+3. In Claude Code, ask: *"use NexusRelay to ask Codex for a second opinion on this file"*. Check both directions with
    `selftest(to="codex")` and `selftest(to="antigravity")`.
 
 ### Verify a release
@@ -134,7 +134,7 @@ engine over stdio for one agent (`claude` by default), sharing the room `~\.nexu
    ```
 
    The daemon runs in the background under a small supervisor (`NexusRelay.exe --daemon`), started at logon by
-   the scheduled task "Nexus Relay" that `install.ps1` creates and starts. It reads
+   the scheduled task "NexusRelay" that `install.ps1` creates and starts (it replaces the task "Nexus Relay" of versions before 1.13.2). It reads
    `~\.nexus\daemons\specs\nexus-relay.json`, restarts the daemon when it stops, and logs to
    `~\.nexus\nexus-relay\daemon.log`.
 
@@ -177,7 +177,7 @@ engine over stdio for one agent (`claude` by default), sharing the room `~\.nexu
    }
    ```
 
-   Then, once, in the Codex app: *Add a project*, name "Nexus Relay", folder `~\.nexus\relay\codex-projet` (created by
+   Then, once, in the Codex app: *Add a project*, name "NexusRelay" ("Nexus Relay" also works), folder `~\.nexus\relay\codex-projet` (created by
    `install.ps1`). The Codex app must be started with its debugging port (the relay relaunches it with
    `--remote-debugging-port=9223` when Codex is idle and you are not using it).
    </details>
@@ -186,10 +186,10 @@ engine over stdio for one agent (`claude` by default), sharing the room `~\.nexu
    <summary>Antigravity</summary>
 
    Nothing to do: `install.ps1` installs the `nexus-relay` plugin (MCP server, skill and sidecar) under
-   `~\.gemini\config\plugins` and the "Nexus Relay" project.
+   `~\.gemini\config\plugins` and the "NexusRelay" project (an earlier "Nexus Relay" project is reused as is).
    </details>
 
-Then, in Claude Code: *"use Nexus Relay to ask Codex for a review of this diff"*. Check both directions end to end
+Then, in Claude Code: *"use NexusRelay to ask Codex for a review of this diff"*. Check both directions end to end
 with `selftest(to="codex")` and `selftest(to="antigravity")`.
 
 ## Tools
@@ -254,7 +254,7 @@ install made by `get.ps1` (`%LOCALAPPDATA%\NexusRelay\app`) updates itself; a gi
 - Everything listens on 127.0.0.1 only; the daemon requires the bearer token.
 - Codex is never relaunched during a turn or while you are using it; a draft you typed is never overwritten; your
   view, mode and project are restored after each wake, success or failure.
-- Only conversations born in the relay's own "Nexus Relay" project are archived, only once the agent's turn has been
+- Only conversations born in the relay's own "NexusRelay" project (or "Nexus Relay", its earlier name) are archived, only once the agent's turn has been
   over for 10 s, never while you are in the app.
 - An uncertain delivery to Antigravity is reported as such and never replayed.
 - Antigravity open without its debugging port (for instance after its own update) is restarted with it after 5 min,
@@ -280,7 +280,7 @@ install made by `get.ps1` (`%LOCALAPPDATA%\NexusRelay\app`) updates itself; a gi
   a search index of those messages in `~\.nexus\relay\v1\index` (SQLite, rebuilt from the messages if deleted),
   interface maps of both apps in `~\.nexus\relay\v1\cartes` (element roles and visible labels, which can include
   conversation titles shown on screen), and one line per action in `%LOCALAPPDATA%\NexusJournal\relay` (never a message's text).
-- **How to remove everything**: delete the scheduled task "Nexus Relay" and stop its `NexusRelay.exe` processes, then
+- **How to remove everything**: remove the scheduled task (`powershell -NoProfile -File scripts\RelayTask.ps1 -Remove` in the installed folder removes "NexusRelay" and the older "Nexus Relay") and stop the `NexusRelay.exe` processes, then
   delete `~\.nexus\relay`, `~\.nexus\nexus-relay`, `%LOCALAPPDATA%\NexusRelay`,
   `~\.nexus\daemons\specs\nexus-relay.json`, `%LOCALAPPDATA%\NexusJournal\relay`, the `nexus-relay` plugin in
   `~\.gemini\config\plugins` and its `sidecars` entry in `~\.gemini\config\config.json`.

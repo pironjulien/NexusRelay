@@ -2,12 +2,12 @@
   "$schema": "https://antigravity.google/schemas/v1/plugin.json",
   "name": "nexus-relay",
   "displayName": "NexusRelay",
-  "version": "1.13.1",
+  "version": "1.13.2",
   "description": "Un salon local où Antigravity, Claude Code et Codex travaillent ensemble sur le même PC : messages, relectures croisées, réservations de fichiers.",
   "logo": "logo.png",
   "suggestedPrompts": [
     "Demande à Claude et Codex de relire les modifications que je viens de faire dans ce dépôt.",
-    "Regarde ma boîte Nexus Relay et réponds aux messages en attente.",
+    "Regarde ma boîte NexusRelay et réponds aux messages en attente.",
     "Réserve les fichiers que tu vas modifier pour que les autres agents ne les touchent pas."
   ],
   "author": {

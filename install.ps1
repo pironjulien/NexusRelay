@@ -1,4 +1,4 @@
-﻿# Installe Nexus Relay sur ce PC (idempotent : à relancer sans risque après une mise à jour du dépôt). Aucun Python.
+﻿# Installe NexusRelay sur ce PC (idempotent : à relancer sans risque après une mise à jour du dépôt). Aucun Python.
 #  - moteur natif (.NET 10) : compilé depuis native\ (dotnet publish, sorties de compilation dans ~\.nexus\build\nexusrelay)
 #    ou pris tel quel dans bin\ (release publique, autonome) ; installé immuable par empreinte dans
 #    %LOCALAPPDATA%\NexusRelay\versions\<empreinte> ; chemin stable ~\.nexus\nexus-relay\bin (copie de la version
@@ -15,7 +15,7 @@
 #  - Claude Code et Codex : serveur MCP, skill et hooks par le plugin nexus-relay du catalogue NexusSystem (dossier
 #    plugin\, source unique des trois IA), rien ici
 #  - Antigravity : plugin ~\.gemini\config\plugins\nexus-relay (serveur MCP par URL, skill, sidecar permanent
-#    « nexus-relay/relay ») et son activation dans ~\.gemini\config\config.json, dans le projet Antigravity « Nexus Relay »
+#    « nexus-relay/relay ») et son activation dans ~\.gemini\config\config.json, dans le projet Antigravity « NexusRelay »
 #    (créé ici, dossier ~\.nexus\relay\agy-projet)
 #  - hooks d'édition de Codex et d'Antigravity : NexusRelay.exe --register-hooks
 #  - tests hors ligne (sauf -SkipTests ; jamais sur une release publique, qui n'a pas les sources)
@@ -385,27 +385,12 @@ foreach ($old in Get-ChildItem -LiteralPath $versions -Directory -ErrorAction Si
     if ($running | Where-Object { $_.StartsWith($old.FullName + '\', [StringComparison]::OrdinalIgnoreCase) }) { continue }
     Remove-Item -LiteralPath $old.FullName -Recurse -Force -ErrorAction SilentlyContinue
 }
-# Sans superviseur des démons Nexus : tâche « Nexus Relay » à l'ouverture de session, qui lance le petit superviseur du
-# relais (NexusRelay.exe --daemon : lit la spec ci-dessus, relance le démon quand il s'arrête).
-if (-not (Get-ScheduledTask -TaskName 'Nexus MCP Daemons' -ErrorAction SilentlyContinue)) {
-    $taskName = 'Nexus Relay'
-    $action = New-ScheduledTaskAction -Execute $nativeExe -Argument '--daemon' -WorkingDirectory $state
-    $existing = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
-    if (-not $existing) {
-        $trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
-        $settingsTask = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
-            -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew -Hidden
-        Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settingsTask `
-            -Description 'Nexus Relay : démon MCP local de Claude, Codex et Antigravity (127.0.0.1:16181).' | Out-Null
-        Write-Output "Tâche planifiée « $taskName » créée (ouverture de session)."
-    } elseif (@($existing.Actions)[0].Execute -ne $nativeExe) {
-        # Superviseur d'une version précédente (Python, ou autre version native) : remplacé par celui de cette version.
-        Set-ScheduledTask -TaskName $taskName -Action $action | Out-Null
-        if ($existing.State -eq 'Running') { Stop-ScheduledTask -TaskName $taskName }
-        Write-Output "Tâche planifiée « $taskName » mise à jour."
-    }
-    if ((Get-ScheduledTask -TaskName $taskName).State -ne 'Running') { Start-ScheduledTask -TaskName $taskName }
-}
+# Sans superviseur des démons Nexus : tâche « NexusRelay » à l'ouverture de session, qui lance le petit superviseur du
+# relais (NexusRelay.exe --daemon : lit la spec ci-dessus, relance le démon quand il s'arrête). L'ancienne tâche
+# « Nexus Relay » (avant 1.13.2) est arrêtée puis retirée dans tous les cas, avant tout démarrage de la nouvelle.
+. (Join-Path $project 'scripts\RelayTask.ps1')
+$sharedSupervisor = [bool](Get-ScheduledTask -TaskName 'Nexus MCP Daemons' -ErrorAction SilentlyContinue)
+Sync-RelayTask -Executable $nativeExe -WorkingDirectory $state -SharedSupervisor:$sharedSupervisor | Write-Output
 
 # --- Antigravity : plugin nexus-relay (serveur MCP, skill, sidecar) et activation du sidecar
 $agyRoot = Join-Path $HOME '.gemini\config'
@@ -425,8 +410,8 @@ if ($null -ne $packTargets -and $packTargets -notcontains 'antigravity') {
         serverUrl = (Get-Url 'antigravity'); headers = [ordered]@{ Authorization = "Bearer $token" } } } }
     if (Write-IfChanged (Join-Path $plugin 'mcp_config.json') ($mcp | ConvertTo-Json -Depth 10)) { $copied++ }
     $sidecar = [ordered]@{
-        display_name = 'Nexus Relay'
-        description = 'Livre à Antigravity les messages de Claude (boîte ~\.nexus\relay) par agentapi, une conversation par sujet dans le projet Nexus Relay ; une livraison incertaine n''est jamais rejouée.'
+        display_name = 'NexusRelay'
+        description = 'Livre à Antigravity les messages de Claude (boîte ~\.nexus\relay) par agentapi, une conversation par sujet dans le projet NexusRelay ; une livraison incertaine n''est jamais rejouée.'
         command = $nativeExe
         args = @('--sidecar')
         env = [ordered]@{ NEXUS_RELAY_HOME = $mailbox; NEXUS_RELAY_HOST = [string]$settings.host; NEXUS_RELAY_WAKE_SINCE = [string]$settings.wake_since; NEXUS_RELAY_SOURCE_ROOT = $project }
@@ -436,17 +421,22 @@ if ($null -ne $packTargets -and $packTargets -notcontains 'antigravity') {
     Write-Output "Antigravity : plugin nexus-relay $(if ($copied) { "installé ($copied fichier(s))" } else { 'déjà à jour' }) dans $plugin."
     $agyResult = "plugin installed in $plugin"
 
-    # Projet où agentapi crée les conversations : « Nexus Relay », à part des conversations de l'utilisateur, sur un
+    # Projet où agentapi crée les conversations : « NexusRelay », à part des conversations de l'utilisateur, sur un
     # dossier vide hors de tout dossier synchronisé ; créé ici s'il manque (réglages vides : ceux d'Antigravity s'appliquent).
-    $relayProjectName = 'Nexus Relay'
+    # Un projet « Nexus Relay » d'avant 1.13.2 est repris tel quel (même identifiant, conversations gardées) : son fichier
+    # appartient à Antigravity, qui peut le réécrire pendant qu'il tourne ; il n'est donc jamais renommé ici.
+    $relayProjectName = 'NexusRelay'
+    $relayProjectNames = @($relayProjectName, 'Nexus Relay')
     $relayFolder = Join-Path $HOME '.nexus\relay\agy-projet'
     New-Item -ItemType Directory -Force $relayFolder | Out-Null
     $projectsDir = Join-Path $agyRoot 'projects'
     New-Item -ItemType Directory -Force $projectsDir | Out-Null
     $projectId = $null
+    $projectRank = $relayProjectNames.Count
     foreach ($file in Get-ChildItem $projectsDir -Filter *.json -ErrorAction SilentlyContinue) {
         $candidate = Get-Content -LiteralPath $file.FullName -Raw | ConvertFrom-RelayJson
-        if ($candidate.id -and [string]$candidate.name -eq $relayProjectName) { $projectId = [string]$candidate.id }
+        $rank = [array]::IndexOf($relayProjectNames, [string]$candidate.name)
+        if ($candidate.id -and $rank -ge 0 -and $rank -lt $projectRank) { $projectId = [string]$candidate.id; $projectRank = $rank }
     }
     if (-not $projectId) {
         $projectId = [guid]::NewGuid().ToString()
@@ -496,4 +486,4 @@ if ($Register) {
     if ($LASTEXITCODE) { throw 'Déclaration aux clients incomplète (voir ci-dessus).' }
 }
 # pack Nexus : la ligne NEXUS_PACK_RESULT reste la dernière
-if (-not ($Register -and $env:NEXUS_PACK -eq '1')) { Write-Output 'Nexus Relay installé avec succès.' }
+if (-not ($Register -and $env:NEXUS_PACK -eq '1')) { Write-Output 'NexusRelay installé avec succès.' }

@@ -984,7 +984,7 @@ public sealed partial class RelayBox
     // --- Salon Markdown rendering
     public string Render(string topic)
     {
-        var lines = new List<string> { $"# Nexus Relay · {topic}", "" };
+        var lines = new List<string> { $"# NexusRelay · {topic}", "" };
         foreach (var m in TopicMessages(topic))
         {
             var head = $"## {m.Created} · {m.Sender} → {m.To}";

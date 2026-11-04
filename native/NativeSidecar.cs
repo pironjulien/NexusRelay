@@ -151,7 +151,7 @@ public sealed class NativeSidecar(RelayBox box, NativeAgentApi api)
             }
             if (conversation is null)
             {
-                conversation = api.Create(prompt, $"Nexus Relay · {topic}");
+                conversation = api.Create(prompt, $"NexusRelay · {topic}");
                 box.SetTopicState(topic, "agy", new() { ["conversation"] = conversation, ["created"] = RelayBox.NowIso() });
                 if (old is not null && old != conversation)
                 {

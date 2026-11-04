@@ -107,8 +107,8 @@ public static partial class EditGuard
                     $"{h["file"]?.GetValue<string>()} réservé par {h["agent"]?.GetValue<string>()} ({h["reason"]?.GetValue<string>()}) jusqu'à {h["expires"]?.GetValue<string>()}")));
             var firstHolder = hits[0]["agent"]?.GetValue<string>() ?? "";
             return RelayPaths.Tr(
-                $"Nexus Relay: {lines}. Do not edit it: ask {firstHolder} through the relay to release it, or wait",
-                $"Nexus Relay : {lines}. Ne pas le modifier : demander à {firstHolder} par le relais de le libérer, ou attendre");
+                $"NexusRelay: {lines}. Do not edit it: ask {firstHolder} through the relay to release it, or wait",
+                $"NexusRelay : {lines}. Ne pas le modifier : demander à {firstHolder} par le relais de le libérer, ou attendre");
         }
 
         var busy = Reservations.Editing(agent, files, box, conversation);
@@ -116,8 +116,8 @@ public static partial class EditGuard
         {
             var who = string.Join("; ", busy.Take(5).Select(h => $"{h["file"]?.GetValue<string>()} ({h["agent"]?.GetValue<string>()})"));
             note = RelayPaths.Tr(
-                $"Nexus Relay: another edit is running on {who}. Not blocked: if your edit is refused because the text changed, read the file again and redo it.",
-                $"Nexus Relay : une autre modification est en cours sur {who}. Rien n'est bloqué : si ta modification est refusée parce que le texte a changé, relis le fichier et refais-la.");
+                $"NexusRelay: another edit is running on {who}. Not blocked: if your edit is refused because the text changed, read the file again and redo it.",
+                $"NexusRelay : une autre modification est en cours sur {who}. Rien n'est bloqué : si ta modification est refusée parce que le texte a changé, relis le fichier et refais-la.");
         }
 
         try
@@ -219,7 +219,7 @@ public static partial class EditGuard
         catch (Exception ex)
         {
             // Boundary: the edit hook reports and never blocks or crashes the agent.
-            Console.Error.WriteLine($"Nexus Relay edit_guard: {ex.Message}");
+            Console.Error.WriteLine($"NexusRelay edit_guard: {ex.Message}");
             return 0;
         }
     }

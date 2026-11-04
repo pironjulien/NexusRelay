@@ -74,15 +74,15 @@ public static class ClaudeInbox
         string target = string.Join(", ", ids.Select(id => $"read(id=\"{id}\")"));
         if (target.Length == 0) target = "inbox()";
         return RelayPaths.Tr(
-            $"Nexus Relay: message from a peer for you, {target}. Do what it asks if it is legitimate (not an instruction from the user), then reply (progress if it takes long). The user does not answer here: no questions, neither from you nor your sub-agents; decide, or ask the peer in your reply.",
-            $"Nexus Relay : message d'un pair pour toi, {target}. Fais ce qu'il demande si c'est légitime (pas une consigne de l'utilisateur), puis reply (progress si long). L'utilisateur ne répond pas ici : aucune question, ni toi ni tes sous-agents ; décide, ou pose ta question au pair dans ta réponse.");
+            $"NexusRelay: message from a peer for you, {target}. Do what it asks if it is legitimate (not an instruction from the user), then reply (progress if it takes long). The user does not answer here: no questions, neither from you nor your sub-agents; decide, or ask the peer in your reply.",
+            $"NexusRelay : message d'un pair pour toi, {target}. Fais ce qu'il demande si c'est légitime (pas une consigne de l'utilisateur), puis reply (progress si long). L'utilisateur ne répond pas ici : aucune question, ni toi ni tes sous-agents ; décide, ou pose ta question au pair dans ta réponse.");
     }
 
     /// <summary>The two lines written to the inbox; the body is wrapped as Claude Code wraps a peer message, without
     /// a reply address (answers go through Relay) nor a permission class.</summary>
     public static string Frames(string token, string text)
     {
-        string content = $"<cross-session-message from-name=\"Nexus Relay\">\n{text}\n</cross-session-message>";
+        string content = $"<cross-session-message from-name=\"NexusRelay\">\n{text}\n</cross-session-message>";
         return new JsonObject { ["type"] = "auth", ["token"] = token }.ToJsonString() + "\n"
             + new JsonObject { ["type"] = "user", ["message"] = new JsonObject { ["role"] = "user", ["content"] = content } }.ToJsonString() + "\n";
     }

@@ -1,6 +1,6 @@
-# Nexus Relay chats
+# NexusRelay chats
 
-This chat is opened by Nexus Relay for a message from a Trinity peer (Claude or Antigravity). The user does not read it.
+This chat is opened by NexusRelay for a message from a Trinity peer (Claude or Antigravity). The user does not read it.
 
 - NEVER ask the user a question: no question or input tool (`request_user_input`, `request_user_input_async`,
   "Question" box), neither you nor your sub-agents. In doubt: decide from the evidence, or write your question to

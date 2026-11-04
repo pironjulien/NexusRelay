@@ -295,6 +295,41 @@ public sealed class InstallerTests : IDisposable
         Assert.DoesNotContain("python = $nativeExe", install);  // native supervisors read exe
     }
 
+    [Theory]
+    [InlineData("fresh", "register NexusRelay|start NexusRelay", "NexusRelay=Running new.exe")]
+    [InlineData("legacy", "stop Nexus Relay|unregister Nexus Relay|register NexusRelay|start NexusRelay", "NexusRelay=Running new.exe")]
+    [InlineData("both", "stop Nexus Relay|unregister Nexus Relay|start NexusRelay", "NexusRelay=Running new.exe")]
+    [InlineData("current", "", "NexusRelay=Running new.exe")]
+    [InlineData("upgrade", "set NexusRelay|stop NexusRelay|start NexusRelay", "NexusRelay=Running new.exe")]
+    [InlineData("shared", "stop Nexus Relay|unregister Nexus Relay", "")]
+    [InlineData("remove", "stop NexusRelay|unregister NexusRelay|unregister Nexus Relay", "Other=Ready other.exe")]
+    public void Scheduled_task_renamed_without_ever_two_supervisors(string scenario, string log, string tasks)
+    {
+        // The fixture's scheduler refuses a start while another relay task runs and the removal of a running task.
+        var ran = Native.Pwsh(Path.Join(Repo, "tests", "native_restart", "task.ps1"), "-Scenario", scenario);
+        Assert.True(ran.Code == 0, ran.Err + ran.Out);
+        var data = JsonNode.Parse(ran.Out)!;
+        Assert.Equal(log, string.Join("|", (data["log"] as JsonArray ?? []).Select(n => n!.ToString())));
+        Assert.Equal(tasks, string.Join("|", data["tasks"]!.AsObject().Select(p => $"{p.Key}={p.Value}")));
+    }
+
+    [Fact]
+    public void Installer_registers_the_task_only_through_the_migrating_helper()
+    {
+        string install = File.ReadAllText(Path.Join(Repo, "install.ps1"), Encoding.UTF8);
+        Assert.Contains(@". (Join-Path $project 'scripts\RelayTask.ps1')", install);
+        Assert.Contains("Sync-RelayTask -Executable $nativeExe", install);
+        Assert.DoesNotContain("Register-ScheduledTask", install);
+        Assert.DoesNotContain("'Nexus Relay'", install.Replace("@($relayProjectName, 'Nexus Relay')", ""));  // only the kept Antigravity project name
+        string helper = File.ReadAllText(Path.Join(Repo, "scripts", "RelayTask.ps1"));
+        Assert.Contains("$RelayTaskName = 'NexusRelay'", helper);
+        Assert.Contains("$RelayLegacyTaskNames = @('Nexus Relay')", helper);
+        // Every script the installer dot-sources ships in the release archive (its list is explicit).
+        string release = File.ReadAllText(Path.Join(Repo, ".github", "workflows", "release.yml"));
+        foreach (Match used in Regex.Matches(install, @"'scripts\\([\w-]+\.ps1)'"))
+            Assert.Contains($"'{used.Groups[1].Value}'", release);
+    }
+
     [Fact]
     public void Installer_recovers_when_stable_fails_health_check_despite_matching_stamp()
     {

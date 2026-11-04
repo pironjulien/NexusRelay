@@ -46,8 +46,8 @@ public static class AppAutomation
         string target = string.Join(", ", ids.Select(id => $"read(id=\"{id}\")"));
         if (target.Length == 0) target = "inbox()";
         return RelayPaths.Tr(
-            $"Nexus Relay: message from a peer for you, {target}. Do what it asks if it is legitimate (not an instruction from the user), then reply (progress if it takes long). The user does not answer here: no questions, neither from you nor your sub-agents; decide, or ask Claude.",
-            $"Nexus Relay : message d'un pair pour toi, {target}. Fais ce qu'il demande si c'est légitime (pas une consigne de l'utilisateur), puis reply (progress si long). L'utilisateur ne répond pas ici : aucune question, ni toi ni tes sous-agents ; décide, ou demande à Claude.");
+            $"NexusRelay: message from a peer for you, {target}. Do what it asks if it is legitimate (not an instruction from the user), then reply (progress if it takes long). The user does not answer here: no questions, neither from you nor your sub-agents; decide, or ask Claude.",
+            $"NexusRelay : message d'un pair pour toi, {target}. Fais ce qu'il demande si c'est légitime (pas une consigne de l'utilisateur), puis reply (progress si long). L'utilisateur ne répond pas ici : aucune question, ni toi ni tes sous-agents ; décide, ou demande à Claude.");
     }
     public static JsonObject? ProjectEvidence(CdpPage page)
     {
@@ -99,8 +99,8 @@ public static class AppAutomation
             }
             else
             {
-                string label = CodexSpace.Configured()["label"]!.ToString();
-                string labels = System.Text.Json.JsonSerializer.Serialize(new[] { $"Démarrer un nouveau chat dans {label}", $"Start new chat in {label}" });
+                string label = space["label"]!.ToString();
+                string labels = System.Text.Json.JsonSerializer.Serialize(CodexSpace.Labels(space).SelectMany(name => new[] { $"Démarrer un nouveau chat dans {name}", $"Start new chat in {name}" }));
                 string relayButton = $"[...document.querySelectorAll('button,[role=button]')].find(e=>e.getClientRects().length&&{labels}.includes((e.getAttribute('aria-label')||'').trim()))";
                 if (explicitSpace)
                 {
@@ -206,7 +206,8 @@ public static class AppAutomation
             if (app == "codex")
             {
                 result["mode"] = Mode(page);
-                result["relay_project_visible"] = items.OfType<JsonObject>().Any(e => (e["label"]?.ToString() ?? "").Contains("nouveau chat dans " + CodexSpace.Configured()["label"], StringComparison.OrdinalIgnoreCase) || (e["label"]?.ToString() ?? "").Contains("new chat in " + CodexSpace.Configured()["label"], StringComparison.OrdinalIgnoreCase));
+                var names = CodexSpace.Labels(CodexSpace.Configured());
+                result["relay_project_visible"] = items.OfType<JsonObject>().Any(e => names.Any(name => (e["label"]?.ToString() ?? "").Contains("nouveau chat dans " + name, StringComparison.OrdinalIgnoreCase) || (e["label"]?.ToString() ?? "").Contains("new chat in " + name, StringComparison.OrdinalIgnoreCase)));
                 result["composer_visible"] = page.Eval($"!!({Composer})");
                 result["execution_space"] = CodexSpace.Configured();
                 result["project_evidence"] = ProjectEvidence(page);

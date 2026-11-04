@@ -10,13 +10,20 @@ public static class CodexSpace
         if (!string.IsNullOrEmpty(value)) return value;
         return RelayBox.ReadJson(Path.Join(RelayPaths.UserHome(), ".nexus", "nexus-relay", "settings.json"))?[key]?.ToString()?.Trim() ?? "";
     }
+    /// <summary>Names of the default Codex project, which the user adds by hand in the Codex app: "NexusRelay", and
+    /// "Nexus Relay" as created before 1.13.2 (an existing project is never renamed for the user).</summary>
+    public static readonly string[] DefaultLabels = ["NexusRelay", "Nexus Relay"];
+    /// <summary>Wake prefixes, current then before 1.13.2: an older chat still proves its ownership by its old wake.</summary>
+    public static readonly string[] WakePrefixes = ["NexusRelay: message from a peer for you, ", "NexusRelay : message d'un pair pour toi, ", "Nexus Relay: message from a peer for you, ", "Nexus Relay : message d'un pair pour toi, "];
     public static JsonObject Configured()
     {
         string workspace = Setting("NEXUS_RELAY_CODEX_WORKSPACE", "codex_workspace"), label = Setting("NEXUS_RELAY_CODEX_PROJECT", "codex_project"), id = Setting("NEXUS_RELAY_CODEX_PROJECT_ID", "codex_project_id");
         bool explicitChoice = workspace.Length + label.Length + id.Length > 0;
         if (explicitChoice && (workspace.Length == 0 || label.Length == 0 || id.Length == 0)) throw new RelayError("Codex execution space requires workspace path, project label and official project ID");
-        return new() { ["path"] = explicitChoice ? Path.GetFullPath(workspace) : Path.Join(RelayPaths.RelayHome(), "codex-projet"), ["label"] = explicitChoice ? label : "Nexus Relay", ["project_id"] = id.Length > 0 ? id : null, ["explicit"] = explicitChoice, ["ownership"] = "verified Relay conversation IDs only" };
+        return new() { ["path"] = explicitChoice ? Path.GetFullPath(workspace) : Path.Join(RelayPaths.RelayHome(), "codex-projet"), ["label"] = explicitChoice ? label : DefaultLabels[0], ["labels"] = new JsonArray((explicitChoice ? new[] { label } : DefaultLabels).Select(l => (JsonNode?)l).ToArray()), ["project_id"] = id.Length > 0 ? id : null, ["explicit"] = explicitChoice, ["ownership"] = "verified Relay conversation IDs only" };
     }
+    /// <summary>Project names accepted for the configured space (the explicit one, or both default names).</summary>
+    public static string[] Labels(JsonObject configured) => (configured["labels"] as JsonArray ?? []).Select(l => l!.ToString()).ToArray();
     public static bool AcceptsCreated(string created)
     {
         string cutoff = Setting("NEXUS_RELAY_WAKE_SINCE", "wake_since");
@@ -59,7 +66,7 @@ public static class CodexSpace
                         if (!line.Contains(message.Id, StringComparison.Ordinal)) continue;
                         proof = AppSessions.Lines(line).Where(e => e["type"]?.ToString() == "response_item" && e["payload"]?["type"]?.ToString() == "message" && e["payload"]?["role"]?.ToString() == "user")
                             .SelectMany(entry => (entry["payload"]?["content"] as JsonArray ?? []).OfType<JsonObject>().Select(content => content["text"]?.ToString() ?? ""))
-                            .Any(text => (text.StartsWith("Nexus Relay : message d'un pair pour toi, ", StringComparison.Ordinal) || text.StartsWith("Nexus Relay: message from a peer for you, ", StringComparison.Ordinal)) && text.Contains(marker, StringComparison.Ordinal));
+                            .Any(text => WakePrefixes.Any(prefix => text.StartsWith(prefix, StringComparison.Ordinal)) && text.Contains(marker, StringComparison.Ordinal));
                         if (proof) break;
                     }
                 }

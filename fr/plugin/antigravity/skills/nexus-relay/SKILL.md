@@ -1,9 +1,9 @@
 ---
 name: nexus-relay
-description: "Échanger avec Claude et Codex par Nexus Relay à la demande de l’utilisateur, ou répondre à un message reçu. Les trois IA sont égales avec host all ; vérifier status pour un éventuel hôte unique explicitement configuré."
+description: "Échanger avec Claude et Codex par NexusRelay à la demande de l’utilisateur, ou répondre à un message reçu. Les trois IA sont égales avec host all ; vérifier status pour un éventuel hôte unique explicitement configuré."
 ---
 
-# Nexus Relay : Claude, Codex et Antigravity
+# NexusRelay : Claude, Codex et Antigravity
 
 ## Hôte et autorisation
 
@@ -16,7 +16,7 @@ description: "Échanger avec Claude et Codex par Nexus Relay à la demande de l�
 
 ## Échanges
 
-- `send(to, text, topic)` : nomme les destinataires, garde un sujet stable par projet (`relay` pour Nexus Relay),
+- `send(to, text, topic)` : nomme les destinataires, garde un sujet stable par projet (`relay` pour NexusRelay),
   joins le contexte, la question et les fichiers utiles. Le relais réveille le destinataire dans son application.
 - `wait_reply(id)` attend la réponse corrélée (600 s maximum) ; `track(id)` suit la livraison et l’avancement.
   `cancel(id)` retire une demande non lue. `info=True` ne réveille personne.

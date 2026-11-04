@@ -14,7 +14,7 @@ keep it private until that release is out.
 
 ## Scope
 
-Nexus Relay runs on a single Windows PC and only listens on 127.0.0.1. Relevant reports include, for example:
+NexusRelay runs on a single Windows PC and only listens on 127.0.0.1. Relevant reports include, for example:
 
 - reaching the daemon without the bearer token, or from another machine;
 - reading or attaching a file inside a configured vault, or outside what an agent explicitly attached;

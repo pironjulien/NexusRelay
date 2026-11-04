@@ -1,9 +1,9 @@
 ---
 name: nexus-relay
-description: "Exchange messages, reviews and task results with Claude and Antigravity through Nexus Relay when the user requests coordination, or answer a received Relay message. The three agents are equal under host all; check status for an explicit single-host setting."
+description: "Exchange messages, reviews and task results with Claude and Antigravity through NexusRelay when the user requests coordination, or answer a received Relay message. The three agents are equal under host all; check status for an explicit single-host setting."
 ---
 
-# Nexus Relay: Claude, Codex and Antigravity
+# NexusRelay: Claude, Codex and Antigravity
 
 ## Hosting and authorization
 
@@ -16,7 +16,7 @@ description: "Exchange messages, reviews and task results with Claude and Antigr
 
 ## Sending and answering
 
-- `send(to, text, topic)`: address the other agents by name; use a stable project topic (`relay` for Nexus Relay).
+- `send(to, text, topic)`: address the other agents by name; use a stable project topic (`relay` for NexusRelay).
   Include the context, question and relevant files. The relay wakes the recipient in its official app.
 - `wait_reply(id)` waits for the correlated answer (600 s maximum); `track(id)` reports progress and delivery.
   `cancel(id)` withdraws an unread request. `info=True` is informational and wakes nobody.

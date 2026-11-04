@@ -175,8 +175,8 @@ public static partial class HostRewake
         var nonce = RelayBox.RandomHex(4);
         var text = new StringBuilder();
         text.AppendLine(RelayPaths.Tr(
-            $"Nexus Relay: {unread.Count} answer(s) to this conversation's requests arrived after your turn ended (marked read).",
-            $"Nexus Relay : {unread.Count} réponse(s) aux demandes de cette conversation arrivée(s) après la fin de ton tour (marquées lues)."));
+            $"NexusRelay: {unread.Count} answer(s) to this conversation's requests arrived after your turn ended (marked read).",
+            $"NexusRelay : {unread.Count} réponse(s) aux demandes de cette conversation arrivée(s) après la fin de ton tour (marquées lues)."));
         foreach (var (ask, answer) in unread)
         {
             var body = answer.Text.Length > MaxShown ? answer.Text[..MaxShown] + RelayPaths.Tr($"… (read({answer.Id}) for the rest)", $"… (read({answer.Id}) pour la suite)") : answer.Text;

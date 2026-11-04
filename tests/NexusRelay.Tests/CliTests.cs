@@ -182,9 +182,13 @@ public sealed class CliTests : IDisposable
         Native.Git(repository, "init", "-q");
         Native.Git(repository, "config", "user.email", "fixture@example.org");
         Native.Git(repository, "config", "user.name", "Fixture");
+        // A guard installed before 1.13.2 carries the old marker ("Nexus Relay"): still ours, so it is replaced.
+        string legacyHook = Path.Join(repository, ".git", "hooks", "pre-commit");
+        File.WriteAllText(legacyHook, "#!/bin/sh\n# Garde de commit Nexus Relay (ancienne)\nexit 1\n");
         var install = Native.Pwsh(Path.Join(Paths.Repo(), "scripts", "install_commit_guard.ps1"), "-Root", repository);
         Assert.True(install.Code == 0, install.Err + install.Out);
         Assert.Contains("pre-commit", install.Out);
+        Assert.Contains("Garde de commit NexusRelay", File.ReadAllText(legacyHook));
         string target = Path.Join(repository, "réservé.txt");
         File.WriteAllText(target, "x");
         var box = iso.Box();
@@ -208,10 +212,11 @@ public sealed class CliTests : IDisposable
         iso.Set("CODEX_SESSION_ID", "parent");
         var box = iso.Box();
         var sql = new StringBuilder(CodexSchema);
-        foreach (string chat in new[] { "relay", "human", "quoted", "child", "parent" })
+        foreach (string chat in new[] { "relay", "renamed", "human", "quoted", "child", "parent" })
         {
             var ask = box.Post("claude", "codex", "fixture", "ownership");
-            string text = $"Nexus Relay : message d'un pair pour toi, read(id=\"{ask.Id}\").";
+            // "relay": a wake written before 1.13.2 ("Nexus Relay"); "renamed": the current one ("NexusRelay").
+            string text = chat == "renamed" ? AppAutomation.WakeText([ask.Id]) : $"Nexus Relay : message d'un pair pour toi, read(id=\"{ask.Id}\").";
             if (chat == "quoted") text = "A user quote: " + text;
             string log = Path.Join(iso.Root, chat + ".jsonl");
             File.WriteAllText(log, new JsonObject { ["type"] = "response_item", ["payload"] = new JsonObject { ["type"] = "message", ["role"] = "user", ["content"] = new JsonArray(new JsonObject { ["type"] = "input_text", ["text"] = text }) } }.ToJsonString() + "\n");
@@ -221,11 +226,23 @@ public sealed class CliTests : IDisposable
         sql.Append("INSERT INTO thread_spawn_edges VALUES('relay','child');");
         Sqlite.Run(Path.Join(iso.CodexHome, "state_5.sqlite"), sql.ToString());
         var result = Native.Json("--register-known-relay-chats");
-        Assert.Equal(["relay"], (result["registered"] as JsonArray)!.Select(n => n!.ToString()));
+        Assert.Equal(["relay", "renamed"], (result["registered"] as JsonArray)!.Select(n => n!.ToString()));
         var registry = box.State("codex-owned")!;
-        Assert.Equal(["relay"], registry["threads"]!.AsObject().Select(p => p.Key));
+        Assert.Equal(["relay", "renamed"], registry["threads"]!.AsObject().Select(p => p.Key));
         Assert.Equal("verified-relay-history", registry["threads"]!["relay"]!["origin"]?.ToString());
         Assert.Equal(0, Native.Json("--register-known-relay-chats")["count"]!.GetValue<int>());
+    }
+
+    [Fact]
+    public void Default_codex_project_keeps_the_name_the_user_gave_it()
+    {
+        // The user adds the Codex project by hand: the current name and the one used before 1.13.2 both work.
+        var space = CodexSpace.Configured();
+        Assert.Equal("NexusRelay", space["label"]?.ToString());
+        Assert.Equal(["NexusRelay", "Nexus Relay"], CodexSpace.Labels(space));
+        string wake = AppAutomation.WakeText(["fixture"]);
+        Assert.StartsWith("NexusRelay", wake, StringComparison.Ordinal);
+        Assert.Contains(CodexSpace.WakePrefixes, prefix => wake.StartsWith(prefix, StringComparison.Ordinal));
     }
 
     private static JsonNode Activity() => Native.Json("--activity-status");

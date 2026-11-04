@@ -6,6 +6,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.13.2] - 2026-11-04
+
+### Changed
+- The remaining user-visible labels are written NexusRelay: the Antigravity sidecar name, the scheduled task, wake
+  and hook messages, the sender name of Claude's inbox, conversation titles, instructions, skills and README.
+- The scheduled task "Nexus Relay" becomes "NexusRelay". The installer stops and removes the old task before it
+  registers and starts the new one, so two supervisors never run; it also removes the old task when the shared
+  "Nexus MCP Daemons" supervisor is present. `scripts\RelayTask.ps1 -Remove` removes both names (uninstall).
+- New Antigravity projects are named NexusRelay; an existing "Nexus Relay" project is reused as is.
+
+### Fixed
+- Names kept for compatibility: the Codex project the user adds by hand is found as "NexusRelay" or "Nexus Relay";
+  older Codex chats still prove their ownership with the wake text written before this version; commit guards
+  installed with the old marker are still recognized and updated.
+
 ## [1.13.1] - 2026-11-04
 
 ### Changed

@@ -101,7 +101,8 @@ jobs:
             if ($text -notmatch 'nexus-relay') { throw "${file}: no nexus-relay entry" }
             if ($text.Contains($token)) { throw "${file}: token written in clear" }
           }
-          if ((Get-ScheduledTask -TaskName 'Nexus Relay').State -ne 'Running') { throw 'scheduled task not running' }
+          if ((Get-ScheduledTask -TaskName 'NexusRelay').State -ne 'Running') { throw 'scheduled task not running' }
+          if (Get-ScheduledTask -TaskName 'Nexus Relay' -ErrorAction SilentlyContinue) { throw 'legacy scheduled task left' }
           $host_ = (Get-Content "$HOME\.nexus\nexus-relay\settings.json" -Raw | ConvertFrom-Json).host
           if ($host_ -ne 'all') { throw "host: $host_ (Claude Code and Codex present: all expected)" }
       - name: update API (GET /api/update) and status file

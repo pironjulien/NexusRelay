@@ -5,7 +5,7 @@
 # Downloads NexusRelay-win-x64.zip or NexusRelay-win-arm64.zip (this PC's architecture) from the latest GitHub release,
 # checks it against the release's SHA256SUMS.txt, mirrors it into %LOCALAPPDATA%\NexusRelay\app (the same folder on
 # every update), then runs install.ps1 -Register: self-contained native engine (no .NET to install), token, background
-# daemon (scheduled task "Nexus Relay"), Antigravity plugin and sidecar, MCP server declared to Claude Code and Codex.
+# daemon (scheduled task "NexusRelay"), Antigravity plugin and sidecar, MCP server declared to Claude Code and Codex.
 # Run it again to update. Each release file also has a Sigstore build provenance attestation:
 #   gh attestation verify NexusRelay-win-x64.zip --repo pironjulien/NexusRelay
 # NEXUS_RELAY_SOURCE (a local folder: a checkout, built with the .NET 10 SDK, or an extracted release) installs that
@@ -86,6 +86,6 @@ if ($env:NEXUS_PACK -ne '1') {
     Write-Output ''
     Write-Output 'Last steps:'
     Write-Output '  1. Restart Claude Code and Codex (quit them completely) so they see NEXUS_MCP_TOKEN.'
-    Write-Output '  2. Codex app, once: Add a project, name "Nexus Relay", folder %USERPROFILE%\.nexus\relay\codex-projet.'
-    Write-Output '  3. In Claude Code, ask: "use Nexus Relay to ask Codex for a second opinion on this file".'
+    Write-Output '  2. Codex app, once: Add a project, name "NexusRelay", folder %USERPROFILE%\.nexus\relay\codex-projet.'
+    Write-Output '  3. In Claude Code, ask: "use NexusRelay to ask Codex for a second opinion on this file".'
 }
