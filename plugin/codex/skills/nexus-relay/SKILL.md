@@ -31,7 +31,9 @@ description: "Exchange messages, reviews and task results with Claude and Antigr
 
 ## Shared files and tools
 
-- Before edits a peer might overlap, `reserve(paths, reason)` with absolute paths; `release()` when finished.
+- Single edits need no reservation: an edit whose expected text changed meanwhile is refused (read the file again and
+  redo it). For long multi-file work a peer might overlap, `reserve(paths, reason)` with absolute paths; `release()`
+  when finished.
   `reservations()` lists holders. Do not reserve files merely to review them.
 - `inbox()` lists unread messages; `search` and `summary(topic)` retrieve context; `status()` checks the services.
 - `where(app, what)` locates interface controls; `survey(app)` refreshes the map only while the app is available.

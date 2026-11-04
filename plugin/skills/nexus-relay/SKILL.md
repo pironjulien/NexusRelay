@@ -41,8 +41,10 @@ A received request is answered through `read(id)` then `reply(id, text)` to its 
 - `inbox()`, `read(id)`, `reply(id, text)`: received messages. `info=True`: for information, nobody is woken.
 - A peer may call `progress(id, note)` during long work: `track` and `wait_reply` show you its note (nothing is done
   yet, nobody is woken); the final answer always comes through `reply`.
-- `reserve(paths, reason)` BEFORE editing files a peer might touch (absolute paths, folders or patterns; refused with
-  who, why and until when if another agent holds them), then `release()` when done; `reservations()` lists who holds
+- Single edits need no reservation: the edit hook takes a short advisory lease for the duration of the tool call, and
+  an edit whose expected text changed meanwhile is refused (read the file again and redo it). For long multi-file work
+  a peer might overlap, `reserve(paths, reason)` first (absolute paths, folders or patterns; refused with who, why and
+  until when if another agent holds them), then `release()` when done; `reservations()` lists who holds
   what. The same tools also answer to the mcp_agent_mail names `file_reservation_paths`, `release_file_reservations`
   and `list_file_reservations`.
 - `search(query, topic=…, sender=…)` searches the whole room history (without marking anything read);

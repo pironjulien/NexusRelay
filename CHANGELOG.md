@@ -6,6 +6,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.13.0] - 2026-11-04
+
+### Changed
+- Automatic edit reservations are now short advisory leases (compare-and-swap concurrency). The edit hook no longer
+  refuses an edit because another agent or conversation edited the same file earlier: the lease is held only while
+  the edit tool runs, released when it returns (success or failure) whatever the Git state of the file, or at the end
+  of the turn, with a 10-minute safety expiry instead of one hour. Lost updates stay impossible: Claude's `Edit`,
+  Codex's `apply_patch` and Antigravity's replace all refuse a change whose expected text moved. While another edit
+  tool runs on the same file, Claude gets a note naming it. On 2026-11-04 a single Edit of a file outside Git had
+  locked it for the other Claude conversations for the rest of the turn (never "clean", so never released), and 29
+  automatic reservations were active at once.
+- Explicit `reserve()` / `release()` are kept for long multi-file work: an explicit exclusive reservation still
+  refuses another holder's edit and commit, and is never refused by a running automatic lease. The commit guard
+  ignores automatic leases. Skills and server instructions say single edits need no reservation.
+
+### Removed
+- The Git "clean file" checks that kept automatic reservations after the tool (dirty, untracked, ignored or non-Git
+  files stayed reserved until the end of the turn).
+
 ## [1.12.12] - 2026-11-04
 
 ### Changed

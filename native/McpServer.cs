@@ -58,8 +58,8 @@ public sealed partial class McpServer
         "several; cancel(id) withdraws a request not taken yet. inbox() lists your unread messages, read(id) reads " +
         "one; track(id) follows a " +
         "message (posted, wakes, read, in progress, answered, late); status() shows all three; search(query) searches " +
-        "the whole history, summary(topic) summarizes a topic. Before editing files: reserve(paths, reason), then " +
-        "release(); reservations() lists who holds what. A reply closes the request with its outcome (state: done, " +
+        "the whole history, summary(topic) summarizes a topic. Single edits need no reservation (edit tools refuse a stale change); " +
+        "for long multi-file work: reserve(paths, reason), then release(); reservations() lists who holds what. A reply closes the request with its outcome (state: done, " +
         "refused, failed); progress(id, note) says you are working on it without waking anyone; send(due_min=...) " +
         "sets a deadline. One conversation per topic in Codex and Antigravity, kept while the topic lives; " +
         "close(topic) closes it (conversations archived), otherwise archived after 12 h without messages; a new send " +

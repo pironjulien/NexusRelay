@@ -7,7 +7,6 @@ namespace NexusRelay;
 
 public static partial class EditGuard
 {
-    public const int AutoTtlMin = 60;
     private static readonly string[] AgyPathArgs = ["Path", "TargetFile"];
 
     [GeneratedRegex(@"^\*\*\* (?:(?:Add|Update|Delete) File|Move to): (.+?)\s*$", RegexOptions.Multiline | RegexOptions.Compiled)]
@@ -72,13 +71,30 @@ public static partial class EditGuard
         return !string.IsNullOrEmpty(val) ? val : null;
     }
 
+    /// <summary>Safety expiry of an automatic lease whose completion event never comes (crash, missing hook). The lease
+    /// normally ends with the tool call (PostToolUse); it is advisory and never refuses anyone.</summary>
+    public const int AutoTtlMin = 10;
+
+    /// <summary>Refusal reason when another holder explicitly reserved one of the files (exclusive), else null. Otherwise
+    /// takes a short advisory lease for the duration of the tool call; <paramref name="note"/> names other agents or
+    /// conversations whose edit tool is running on the same file right now.</summary>
     public static string? Decide(
         string agent,
         IReadOnlyList<string> files,
         RelayBox? box = null,
         string? conversation = null,
         string? tool = null)
+        => Decide(agent, files, out _, box, conversation, tool);
+
+    public static string? Decide(
+        string agent,
+        IReadOnlyList<string> files,
+        out string? note,
+        RelayBox? box = null,
+        string? conversation = null,
+        string? tool = null)
     {
+        note = null;
         if (files.Count == 0)
             return null;
         box ??= new RelayBox();
@@ -89,17 +105,19 @@ public static partial class EditGuard
                 RelayPaths.Tr(
                     $"{h["file"]?.GetValue<string>()} reserved by {h["agent"]?.GetValue<string>()} ({h["reason"]?.GetValue<string>()}) until {h["expires"]?.GetValue<string>()}",
                     $"{h["file"]?.GetValue<string>()} réservé par {h["agent"]?.GetValue<string>()} ({h["reason"]?.GetValue<string>()}) jusqu'à {h["expires"]?.GetValue<string>()}")));
-
             var firstHolder = hits[0]["agent"]?.GetValue<string>() ?? "";
-            if (firstHolder.StartsWith(agent + " ", StringComparison.Ordinal))
-            {
-                return RelayPaths.Tr(
-                    $"Nexus Relay: {lines}. Do not edit it: another conversation of {agent} is working on it; wait for the end of its turn (automatic release) or the expiry",
-                    $"Nexus Relay : {lines}. Ne pas le modifier : une autre conversation de {agent} y travaille ; attendre la fin de son tour (libération automatique) ou l'expiration");
-            }
             return RelayPaths.Tr(
                 $"Nexus Relay: {lines}. Do not edit it: ask {firstHolder} through the relay to release it, or wait",
                 $"Nexus Relay : {lines}. Ne pas le modifier : demander à {firstHolder} par le relais de le libérer, ou attendre");
+        }
+
+        var busy = Reservations.Editing(agent, files, box, conversation);
+        if (busy.Count > 0)
+        {
+            var who = string.Join("; ", busy.Take(5).Select(h => $"{h["file"]?.GetValue<string>()} ({h["agent"]?.GetValue<string>()})"));
+            note = RelayPaths.Tr(
+                $"Nexus Relay: another edit is running on {who}. Not blocked: if your edit is refused because the text changed, read the file again and redo it.",
+                $"Nexus Relay : une autre modification est en cours sur {who}. Rien n'est bloqué : si ta modification est refusée parce que le texte a changé, relis le fichier et refais-la.");
         }
 
         try
@@ -110,16 +128,24 @@ public static partial class EditGuard
                 files.Take(Reservations.MaxPaths).ToList(),
                 Reservations.AutoReason,
                 AutoTtlMin,
+                exclusive: false,
                 session: conversation,
                 automatic: true,
                 tool: tool);
         }
         catch (RelayError ex)
         {
-            return ex.Message;
+            // Bookkeeping only: a lease that cannot be written never blocks the edit.
+            Console.Error.WriteLine(ex.Message);
         }
         return null;
     }
+
+    /// <summary>Non-blocking context for the agent (Claude reads additionalContext; the other hosts get it on stderr).</summary>
+    public static JsonObject? Note(string agent, string note)
+        => agent == "claude"
+            ? new JsonObject { ["hookSpecificOutput"] = new JsonObject { ["hookEventName"] = "PreToolUse", ["additionalContext"] = note } }
+            : null;
 
     public static JsonObject Answer(string agent, string reason)
     {
@@ -141,7 +167,6 @@ public static partial class EditGuard
             }
         };
     }
-
     public static int RunCli(IReadOnlyList<string> args)
     {
         try
@@ -174,12 +199,20 @@ public static partial class EditGuard
             var reason = Decide(
                 agent,
                 Targets(agent, eventObj),
+                out var note,
                 conversation: Session(eventObj),
                 tool: Invocation(agent, eventObj));
 
             if (!string.IsNullOrEmpty(reason))
             {
                 Console.Out.Write(Answer(agent, reason).ToJsonString());
+            }
+            else if (!string.IsNullOrEmpty(note))
+            {
+                if (Note(agent, note) is { } context)
+                    Console.Out.Write(context.ToJsonString());
+                else
+                    Console.Error.WriteLine(note);
             }
             return 0;
         }

@@ -294,23 +294,23 @@ install made by `get.ps1` (`%LOCALAPPDATA%\NexusRelay\app`) updates itself; a gi
 
 ## Development
 
-Automatic edit reservations end after a completed/no-op tool call, or at the end of its owner's turn, only when
-Git proves the files are clean. Dirty, staged, untracked or ignored files stay reserved. A manual reservation and
-another conversation's work are never released by these finalizers. Parallel edit calls stay protected until all
-their completion events arrive. An unwritten creation can be released; unknown/non-Git paths are kept conservatively.
+Concurrent edits rely on compare-and-swap: Claude's `Edit` needs the exact old text, Codex's `apply_patch` and
+Antigravity's replace need matching context, so an edit based on a stale read is refused instead of overwriting a
+peer's change. On top of that, the edit hook takes an automatic **lease**: advisory (never a refusal), held only while
+the tool call runs and released when it returns (success or failure), whatever the Git state of the file, or at the
+end of the turn; 10-minute safety expiry if no completion event comes. While another agent's edit tool runs on the same
+file, Claude receives a note naming it. Only an explicit exclusive `reserve()` (long multi-file work) refuses another
+holder's edit or commit.
 
 This requires the lifecycle hooks to be active: `PreToolUse` runs `NexusRelay.exe --edit-guard <agent>`,
 `PostToolUse` adds `--finish-tool`, and `Stop` adds `--finish-session`. Claude also uses `PostToolUseFailure` and
 `SessionEnd` with the matching finalizer. Completion hooks return the neutral JSON object `{}` and never approve or deny an action.
 Codex reviews new hook declarations through its native trust flow; the installer does not create that consent.
-Stop only rechecks calls already completed: some hosts share the parent's session id with live subagents, so an
-in-flight call is never cleared by its parent's Stop. If an invocation id or completion event is unavailable, the
-reservation requires its owner's explicit release or TTL expiry. Old reservations without lifecycle metadata and abrupt exits are
-not purged on a guess.
+Parallel calls on the same file share one lease, which ends with the last of them.
 
 Commit guard: `scripts/install_commit_guard.ps1` installs `pre-commit` and `post-commit` hooks in your repositories;
 they call `~/.nexus/nexus-relay/bin/NexusRelay.exe --staged` (refuses a commit touching a file another agent reserved)
-and `--release-committed` (releases the automatic reservations of the committed files).
+and `--release-committed` (ends the committer's automatic leases left on the committed files).
 
 ```powershell
 pwsh -NoProfile -File test.ps1   # dotnet test (xUnit v3) — offline, never touches the real apps

@@ -315,7 +315,8 @@ public static partial class Reservations
         foreach (var held in Active(box))
         {
             bool heldExclusive = held["exclusive"]?.GetValue<bool>() ?? true;
-            if (!OtherHolder(held, agent, session) || !(exclusive || heldExclusive))
+            // An automatic lease is advisory: it never refuses an explicit reservation (the edit tools compare before writing).
+            if (IsAutomatic(held) || !OtherHolder(held, agent, session) || !(exclusive || heldExclusive))
                 continue;
             var theirPaths = (held["paths"] as JsonArray)?.Select(x => x?.GetValue<string>() ?? "").Where(s => s.Length > 0).ToList() ?? [];
             foreach (var mine in paths)
@@ -436,18 +437,6 @@ public static partial class Reservations
         if (automatic)
         {
             record["automatic"] = true;
-            if (same?["absent_at_start"] is JsonArray existingAbsent)
-            {
-                record["absent_at_start"] = existingAbsent.DeepClone();
-            }
-            else
-            {
-                var absentArr = new JsonArray();
-                foreach (var w in wanted.Where(w => !File.Exists(w) && !Directory.Exists(w)))
-                    absentArr.Add(Norm(w));
-                record["absent_at_start"] = absentArr;
-            }
-
             var pendingTools = new SortedSet<string>(StringComparer.Ordinal);
             if (same?["pending_tools"] is JsonArray existingPending)
             {
@@ -558,7 +547,19 @@ public static partial class Reservations
         return done;
     }
 
+    public static bool IsAutomatic(JsonObject record)
+        => (record["automatic"]?.GetValue<bool>() ?? false) && record["reason"]?.GetValue<string>() == AutoReason;
+
+    /// <summary>Another holder's explicit exclusive reservations covering these files: those refuse the edit or commit.</summary>
     public static List<JsonObject> Blocking(string agent, IReadOnlyList<string> files, RelayBox? box = null, string? session = null)
+        => Holding(agent, files, box, session, automatic: false);
+
+    /// <summary>Another holder's automatic leases covering these files: an edit tool of theirs is running right now.
+    /// Advisory only, never a refusal: every agent's edit tool compares the expected text before writing.</summary>
+    public static List<JsonObject> Editing(string agent, IReadOnlyList<string> files, RelayBox? box = null, string? session = null)
+        => Holding(agent, files, box, session, automatic: true);
+
+    private static List<JsonObject> Holding(string agent, IReadOnlyList<string> files, RelayBox? box, string? session, bool automatic)
     {
         box ??= new RelayBox();
         agent = RelayPaths.NormalizeParty(agent);
@@ -566,12 +567,10 @@ public static partial class Reservations
         foreach (var r in Active(box))
         {
             bool exclusive = r["exclusive"]?.GetValue<bool>() ?? true;
-            if (!OtherHolder(r, agent, session) || !exclusive)
+            if (!OtherHolder(r, agent, session) || IsAutomatic(r) != automatic || (!automatic && !exclusive))
                 continue;
             var theirPaths = (r["paths"] as JsonArray)?.Select(x => x?.GetValue<string>() ?? "").Where(s => s.Length > 0).ToList() ?? [];
             var hit = files.Where(f => theirPaths.Any(theirs => Overlap(theirs, Path.GetFullPath(f)))).ToList();
-            if (hit.Count > 0 && ReleaseSettled(box, r))
-                continue;
             foreach (var f in hit)
             {
                 list.Add(new JsonObject
@@ -584,52 +583,6 @@ public static partial class Reservations
             }
         }
         return list;
-    }
-
-    /// <summary>An automatic reservation whose edits are over and whose files are all identical to HEAD has nothing left
-    /// to protect: committed (even where the post-commit hook is missing, e.g. a freshly cloned repository) or reverted.
-    /// Released here, when it would block someone, instead of making them wait for the holder's turn end or the expiry.</summary>
-    private static bool ReleaseSettled(RelayBox box, JsonObject seen)
-    {
-        static bool Settled(JsonObject r)
-        {
-            if (!(r["automatic"]?.GetValue<bool>() ?? false) || r["reason"]?.GetValue<string>() != AutoReason ||
-                (r["pending_tools"] as JsonArray)?.Count != 0 || (r["pending_unknown"]?.GetValue<bool>() ?? false))
-                return false;
-            var absent = (r["absent_at_start"] as JsonArray)?.Select(x => x?.GetValue<string>() ?? "").ToHashSet(StringComparer.Ordinal) ?? [];
-            var paths = (r["paths"] as JsonArray)?.Select(x => x?.GetValue<string>() ?? "").Where(s => s.Length > 0).ToList() ?? [];
-            return paths.Count > 0 && paths.All(p => Unchanged(p, absent.Contains(Norm(p))));
-        }
-        if (!Settled(seen))
-            return false;
-        var id = seen["id"]?.GetValue<string>();
-        lock (SyncLock)
-        {
-            using var _ = BetweenProcesses(box);
-            // Re-read under the lock: the holder may have started a new edit since.
-            var current = Active(box).FirstOrDefault(r => r["id"]?.GetValue<string>() == id);
-            if (current is null)
-                return true;
-            if (!Settled(current))
-                return false;
-            current["released"] = Iso(Now());
-            current["released_by"] = "settled";
-            RelayBox.WriteState(Path.Join(Folder(box), $"{id}.json"), current);
-            return true;
-        }
-    }
-
-    private static string? ExistingDirectory(string path)
-    {
-        var directory = Path.GetDirectoryName(path);
-        while (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
-        {
-            var parent = Path.GetDirectoryName(directory);
-            if (parent == directory)
-                return null;
-            directory = parent;
-        }
-        return string.IsNullOrEmpty(directory) ? null : directory;
     }
 
     internal static string? Git(string directory, params string[] args)
@@ -667,51 +620,9 @@ public static partial class Reservations
         }
     }
 
-    private static bool Unchanged(string path, bool absentAtStart)
-    {
-        if (path.IndexOfAny(['*', '?']) >= 0 || Directory.Exists(path))
-            return false;
-        try
-        {
-            if (File.Exists(path) && (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)
-                return false;
-        }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException)
-        {
-            return false;
-        }
-
-        var directory = ExistingDirectory(path);
-        if (directory is null)
-            return false;
-
-        string? RunGit(params string[] args) => Git(directory, args);
-
-        var tracked = RunGit("ls-files", "--stage", "-v", "-z", "--", path);
-        if (tracked is null)
-            return false;
-        bool unwritten = string.IsNullOrEmpty(tracked) && absentAtStart && !File.Exists(path) && !Directory.Exists(path);
-        bool ordinary = tracked.StartsWith("H ", StringComparison.Ordinal) && tracked.Split('\0').Length == 2;
-        if (!unwritten && !ordinary)
-            return false;
-
-        var status = RunGit("status", "--porcelain=v1", "--untracked-files=all", "--ignored", "--", path);
-        if (status is null || !string.IsNullOrEmpty(status))
-            return false;
-        if (unwritten)
-            return true;
-
-        var tabIdx = tracked.IndexOf('\t');
-        if (tabIdx < 0)
-            return false;
-        var fields = tracked[..tabIdx].Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        if (fields.Length != 4 || (fields[1] != "100644" && fields[1] != "100755") || fields[3] != "0")
-            return false;
-
-        var hash = RunGit("hash-object", $"--path={path}", "--", path);
-        return hash is not null && hash.Trim() == fields[2];
-    }
-
+    /// <summary>Ends a conversation's automatic leases: the one of a finished tool call (PostToolUse, success or failure,
+    /// whatever the Git state of the file), or all of them at the end of its turn or session. A lease only says
+    /// "an edit tool is running now"; once the tool has returned, nothing is left to signal.</summary>
     public static List<string> FinishEdits(
         string agent,
         string? session,
@@ -731,19 +642,13 @@ public static partial class Reservations
             using var _ = BetweenProcesses(box);
             foreach (var record in Active(box))
             {
-                if (record["agent"]?.GetValue<string>() != agent ||
-                    record["session"]?.GetValue<string>() != session ||
-                    !(record["automatic"]?.GetValue<bool>() ?? false) ||
-                    record["reason"]?.GetValue<string>() != AutoReason)
-                {
+                if (record["agent"]?.GetValue<string>() != agent || record["session"]?.GetValue<string>() != session || !IsAutomatic(record))
                     continue;
-                }
 
                 var pending = (record["pending_tools"] as JsonArray)?
                     .Select(x => x?.GetValue<string>() ?? "")
                     .Where(s => s.Length > 0)
                     .ToHashSet(StringComparer.Ordinal) ?? new HashSet<string>(StringComparer.Ordinal);
-
                 if (!sessionEnded && (tool is null || !pending.Remove(tool)))
                     continue;
 
@@ -752,26 +657,12 @@ public static partial class Reservations
                     pendingArr.Add(pt);
                 record["pending_tools"] = pendingArr;
 
-                var absentSet = (record["absent_at_start"] as JsonArray)?
-                    .Select(x => x?.GetValue<string>() ?? "")
-                    .ToHashSet(StringComparer.Ordinal) ?? new HashSet<string>(StringComparer.Ordinal);
-                var recPaths = (record["paths"] as JsonArray)?
-                    .Select(x => x?.GetValue<string>() ?? "")
-                    .Where(s => s.Length > 0)
-                    .ToList() ?? [];
-
-                bool idle = pending.Count == 0 && !(record["pending_unknown"]?.GetValue<bool>() ?? false);
-                // The end of the holder's turn ends its automatic reservation, committed or not: an agent that has
-                // finished no longer works on the file (02/11: a finished Antigravity turn blocked Claude's commit for an
-                // hour). Within the turn, only files left clean (identical to HEAD, or never written) are released.
-                bool clean = idle && (sessionEnded || recPaths.All(p => Unchanged(p, absentSet.Contains(Norm(p)))));
-
                 var id = record["id"]!.GetValue<string>();
-                if (clean)
+                // Parallel calls on the same file share one lease: it ends with the last of them.
+                if (sessionEnded || (pending.Count == 0 && !(record["pending_unknown"]?.GetValue<bool>() ?? false)))
                 {
                     record["released"] = Iso(Now());
-                    if (sessionEnded)
-                        record["released_by"] = "turn-end";
+                    record["released_by"] = sessionEnded ? "turn-end" : "tool-end";
                     ended.Add(id);
                 }
                 RelayBox.WriteState(Path.Join(Folder(box), $"{id}.json"), record);
@@ -780,18 +671,19 @@ public static partial class Reservations
         return ended;
     }
 
+    /// <summary>After a commit (post-commit hook), ends this conversation's automatic leases left on the committed files
+    /// by a tool whose completion event never came.</summary>
     public static List<string> ReleaseCommitted(string agent, IReadOnlyList<string> paths, string? session, RelayBox? box = null)
     {
         if (string.IsNullOrWhiteSpace(session)) return [];
         box ??= new RelayBox();
+        agent = RelayPaths.NormalizeParty(agent);
         var committed = paths.Select(Norm).ToHashSet(StringComparer.Ordinal);
         lock (SyncLock)
         {
             using var owned = BetweenProcesses(box);
-            var finished = Active(box).Where(r => r["agent"]?.ToString() == agent && r["session"]?.ToString() == session &&
-                (r["automatic"]?.GetValue<bool>() ?? false) && r["reason"]?.ToString() == AutoReason &&
-                (r["pending_tools"] as JsonArray)?.Count == 0 && !(r["pending_unknown"]?.GetValue<bool>() ?? false) &&
-                (r["paths"] as JsonArray ?? []).All(p => p is not null && committed.Contains(Norm(p.ToString())) && Unchanged(p.ToString(), true))).Select(r => r["id"]!.GetValue<string>()).ToList();
+            var finished = Active(box).Where(r => r["agent"]?.ToString() == agent && r["session"]?.ToString() == session && IsAutomatic(r) &&
+                (r["paths"] as JsonArray ?? []).All(p => p is not null && committed.Contains(Norm(p.ToString())))).Select(r => r["id"]!.GetValue<string>()).ToList();
             return finished.SelectMany(id => ReleaseLocked(box, agent, id)).ToList();
         }
     }

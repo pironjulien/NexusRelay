@@ -57,46 +57,75 @@ public sealed class CliTests : IDisposable
     }
 
     [Fact]
-    public void Edit_guard_releases_a_file_outside_git_at_the_end_of_the_turn()
+    public void Two_conversations_edit_different_lines_of_a_file_outside_git_one_after_the_other()
     {
-        string target = Path.Join(iso.Root, "notes", "mémoire.md");
+        // 04/11: one Edit of NexusSecure\MANIFEST.md (outside Git, so never "clean") locked it for the other Claude
+        // conversations for the rest of the turn, with a one-hour expiry. The lease now ends with the tool call.
+        string target = Path.Join(iso.Root, "notes", "MANIFEST.md");
         Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-        File.WriteAllText(target, "avant");
-        var edit = new JsonObject { ["session_id"] = "root-b", ["tool_use_id"] = "appel-2", ["tool_name"] = "Edit", ["tool_input"] = new JsonObject { ["file_path"] = target } };
-        Assert.Equal("", Native.Run(["--edit-guard", "claude"], edit.ToJsonString()).Out);
-        File.WriteAllText(target, "après");
-        Native.Run(["--edit-guard", "claude", "--finish-tool"], edit.ToJsonString());
+        File.WriteAllText(target, "ligne 1\nligne 2\n");
+        JsonObject Edit(string session, string id) => new() { ["session_id"] = session, ["tool_use_id"] = id, ["tool_name"] = "Edit", ["tool_input"] = new JsonObject { ["file_path"] = target } };
         var box = iso.Box();
-        Assert.Single(Reservations.Active(box));  // still in the turn: other conversations keep waiting
-        Native.Run(["--edit-guard", "claude", "--finish-session"], new JsonObject { ["session_id"] = "root-b" }.ToJsonString());
-        Assert.Empty(Reservations.Active(box));  // no commit will ever come: the turn's end releases it
+
+        Assert.Equal("", Native.Run(["--edit-guard", "claude"], Edit("root-a", "appel-1").ToJsonString()).Out);
+        File.WriteAllText(target, "ligne 1 (a)\nligne 2\n");
+        Assert.Equal("{}", Native.Run(["--edit-guard", "claude", "--finish-tool"], Edit("root-a", "appel-1").ToJsonString()).Out.Trim());
+        Assert.Empty(Reservations.Active(box));  // released at the end of the tool, although the file is not in Git
+
+        Assert.Equal("", Native.Run(["--edit-guard", "claude"], Edit("root-b", "appel-2").ToJsonString()).Out);
+        File.WriteAllText(target, "ligne 1 (a)\nligne 2 (b)\n");
+        Native.Run(["--edit-guard", "claude", "--finish-tool"], Edit("root-b", "appel-2").ToJsonString());
+        Assert.Empty(Reservations.Active(box));
+        Assert.Equal("ligne 1 (a)\nligne 2 (b)\n", File.ReadAllText(target));
     }
 
     [Fact]
-    public void Edit_guard_releases_ignored_and_tracked_changes_at_the_end_of_the_turn()
+    public void Edit_guard_only_warns_while_another_edit_tool_runs_and_refuses_explicit_reservations()
+    {
+        string target = Path.Join(iso.Root, "partagé.md");
+        File.WriteAllText(target, "x");
+        JsonObject Edit(string session, string id) => new() { ["session_id"] = session, ["tool_use_id"] = id, ["tool_name"] = "Edit", ["tool_input"] = new JsonObject { ["file_path"] = target } };
+        var box = iso.Box();
+
+        Assert.Equal("", Native.Run(["--edit-guard", "codex"], new JsonObject { ["session_id"] = "codex-1", ["tool_use_id"] = "patch-1", ["tool_name"] = "apply_patch", ["tool_input"] = new JsonObject { ["command"] = $"*** Update File: {target}" } }.ToJsonString()).Out);
+        var during = JsonNode.Parse(Native.Run(["--edit-guard", "claude"], Edit("root-a", "appel-1").ToJsonString()).Out)!;
+        Assert.Null(during["hookSpecificOutput"]?["permissionDecision"]);  // advisory: Codex's patch is running, not refused
+        Assert.Contains("codex", during["hookSpecificOutput"]!["additionalContext"]!.ToString());
+        Assert.Equal(2, Reservations.Active(box).Count);
+        Assert.All(Reservations.Active(box), r => Assert.False(r["exclusive"]!.GetValue<bool>()));
+
+        // An explicit reserve() is never refused by a running automatic lease, and is the only thing that blocks.
+        string held = Reservations.Reserve(box, "antigravity", [target], "refonte multi-fichiers")["id"]!.ToString();
+        Assert.Contains("deny", Native.Run(["--edit-guard", "claude"], Edit("root-b", "appel-2").ToJsonString()).Out);
+        Reservations.Release(box, "antigravity", held);
+        Assert.DoesNotContain("deny", Native.Run(["--edit-guard", "claude"], Edit("root-b", "appel-3").ToJsonString()).Out);
+    }
+
+    [Fact]
+    public void Edit_guard_lease_ends_with_the_last_parallel_call_or_the_turn()
     {
         Native.Git(iso.Root, "init", "-q");
-        File.WriteAllText(Path.Join(iso.Root, ".gitignore"), "memoire/\n");
-        string ignored = Path.Join(iso.Root, "memoire", "MEMORY.md"), tracked = Path.Join(iso.Root, "suivi.md");
-        Directory.CreateDirectory(Path.GetDirectoryName(ignored)!);
-        foreach (var (file, id) in new[] { (ignored, "appel-3"), (tracked, "appel-4") })
-        {
-            var edit = new JsonObject { ["session_id"] = "root-c", ["tool_use_id"] = id, ["tool_name"] = "Write", ["tool_input"] = new JsonObject { ["file_path"] = file } };
-            Assert.Equal("", Native.Run(["--edit-guard", "claude"], edit.ToJsonString()).Out);
-            File.WriteAllText(file, "contenu");
-            Native.Run(["--edit-guard", "claude", "--finish-tool"], edit.ToJsonString());
-        }
+        string target = Path.Join(iso.Root, "suivi.md");
+        JsonObject Edit(string id) => new() { ["session_id"] = "root-c", ["tool_use_id"] = id, ["tool_name"] = "Write", ["tool_input"] = new JsonObject { ["file_path"] = target } };
+        Native.Run(["--edit-guard", "claude"], Edit("appel-3").ToJsonString());
+        Native.Run(["--edit-guard", "claude"], Edit("appel-4").ToJsonString());
+        File.WriteAllText(target, "contenu");
         var box = iso.Box();
-        Assert.Equal(2, Reservations.Active(box).Count);  // still in the turn
+        Native.Run(["--edit-guard", "claude", "--finish-tool"], Edit("appel-3").ToJsonString());
+        Assert.Single(Reservations.Active(box));  // appel-4 still running
+        Native.Run(["--edit-guard", "claude", "--finish-tool"], Edit("appel-4").ToJsonString());
+        Assert.Empty(Reservations.Active(box));  // dirty and untracked: released all the same
+
+        Native.Run(["--edit-guard", "claude"], Edit("appel-5").ToJsonString());  // its completion event never comes
         Native.Run(["--edit-guard", "claude", "--finish-session"], new JsonObject { ["session_id"] = "root-c" }.ToJsonString());
-        Assert.Empty(Reservations.Active(box));  // the turn is over: the uncommitted change no longer blocks anyone
+        Assert.Empty(Reservations.Active(box));
     }
 
     [Fact]
-    public void Commit_guard_ignores_an_automatic_reservation_once_its_holder_finished_its_turn()
+    public void Commit_guard_ignores_automatic_leases_and_honours_explicit_reservations()
     {
         // 02/11: Antigravity's automatic reservation of a modified script outlived its turn and refused Claude's commit
-        // for an hour, until Antigravity was asked through the relay to release it.
+        // for an hour. Automatic leases are advisory: only an explicit reserve() refuses a commit.
         string repository = Path.Join(iso.Root, "repo");
         Directory.CreateDirectory(repository);
         Native.Git(repository, "init", "-q");
@@ -104,39 +133,16 @@ public sealed class CliTests : IDisposable
         var step = new JsonObject { ["conversationId"] = "agy-1", ["stepIdx"] = 7, ["toolCall"] = new JsonObject { ["args"] = new JsonObject { ["TargetFile"] = target } } };
         Assert.Equal("", Native.Run(["--edit-guard", "antigravity"], step.ToJsonString()).Out);
         File.WriteAllText(target, "change = 1\n");
-        Native.Run(["--edit-guard", "antigravity", "--finish-tool"], step.ToJsonString());
         Native.Git(repository, "add", "Repair.ps1");
         var claude = new Dictionary<string, string?> { ["NEXUS_RELAY_AGENT"] = "claude", ["CLAUDE_CODE_SESSION_ID"] = "claude-1" };
         var during = Native.Run(["--staged"], cwd: repository, env: claude);
-        Assert.Equal(1, during.Code);  // Antigravity's turn is still running: its work stays protected
-        Assert.Contains("Repair.ps1", during.Err);
-        Native.Run(["--edit-guard", "antigravity", "--finish-session"], new JsonObject { ["conversationId"] = "agy-1" }.ToJsonString());
-        var after = Native.Run(["--staged"], cwd: repository, env: claude);
-        Assert.True(after.Code == 0, after.Err);
+        Assert.True(during.Code == 0, during.Err);
+        var box = iso.Box();
+        Reservations.Reserve(box, "antigravity", [target], "script en cours de refonte", session: "agy-1");
+        var refused = Native.Run(["--staged"], cwd: repository, env: claude);
+        Assert.Equal(1, refused.Code);
+        Assert.Contains("Repair.ps1", refused.Err);
     }
-
-    [Fact]
-    public void Edit_guard_lets_another_conversation_edit_a_file_once_committed_without_the_post_commit_hook()
-    {
-        // 31/10: a repository cloned again had lost its post-commit hook; the committed files stayed reserved for 25 min.
-        Native.Git(iso.Root, "init", "-q");
-        Native.Git(iso.Root, "config", "user.email", "fixture@example.org");
-        Native.Git(iso.Root, "config", "user.name", "Fixture");
-        string target = Path.Join(iso.Root, "McpServer.cs");
-        File.WriteAllText(target, "avant\n");
-        Native.Git(iso.Root, "add", "McpServer.cs");
-        Native.Git(iso.Root, "commit", "-q", "-m", "base");
-        JsonObject Edit(string session, string id) => new() { ["session_id"] = session, ["tool_use_id"] = id, ["tool_name"] = "Edit", ["tool_input"] = new JsonObject { ["file_path"] = target } };
-        Assert.Equal("", Native.Run(["--edit-guard", "claude"], Edit("root-a", "appel-5").ToJsonString()).Out);
-        File.WriteAllText(target, "après\n");
-        Native.Run(["--edit-guard", "claude", "--finish-tool"], Edit("root-a", "appel-5").ToJsonString());
-        Assert.Contains("deny", Native.Run(["--edit-guard", "claude"], Edit("root-b", "appel-6").ToJsonString()).Out);  // uncommitted work
-        Native.Git(iso.Root, "commit", "-q", "-am", "work");  // no hook, holder's turn still running
-        Assert.Equal("", Native.Run(["--edit-guard", "claude"], Edit("root-b", "appel-7").ToJsonString()).Out);
-        var held = Reservations.Active(iso.Box());
-        Assert.Equal(["root-b"], held.Select(r => r["session"]!.ToString()));  // the committed one ended, the new edit holds it
-    }
-
     [Fact]
     public void Commit_guard_allows_siblings_and_rejects_other_chats()
     {

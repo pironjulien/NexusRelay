@@ -31,8 +31,9 @@ description: "Échanger avec Claude et Codex par Nexus Relay à la demande de l�
 
 ## Fichiers et outils
 
-- Avant une modification pouvant chevaucher le travail d’un pair, `reserve(paths, reason)` avec des chemins absolus,
-  puis `release()` à la fin. `reservations()` liste les détenteurs. Pas de réservation pour une simple relecture.
+- Une modification simple ne demande aucune réservation : un remplacement dont le texte attendu a changé est refusé
+  (relire le fichier et refaire). Pour un long travail sur plusieurs fichiers pouvant chevaucher celui d’un pair,
+  `reserve(paths, reason)` avec des chemins absolus, puis `release()` à la fin. `reservations()` liste les détenteurs. Pas de réservation pour une simple relecture.
 - `inbox()` liste les non lus ; `search` et `summary(topic)` donnent le contexte ; `status()` contrôle les services.
 - `where(app, what)` localise les commandes ; `survey(app)` actualise la carte quand l’application est disponible.
 - `selftest(to)` teste un sens de réveil. `close(topic)` archive les conversations propres au relais, jamais les
