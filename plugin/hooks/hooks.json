@@ -1,5 +1,5 @@
 {
-  "description": "Nexus Relay: before each file edit, refused only if another holder explicitly reserved the file (exclusive), else a short advisory lease is taken for the tool call (a note names any other edit running on the file); after the tool, the lease is released, whatever the Git state; at the end of the turn or the session, all of them. At the end of a turn, the answers to the requests the conversation still has open are awaited in the background and wake it (asyncRewake). Unread messages for Claude (the host is never woken) are noted to the conversation, once each. NexusRelay.exe from the stable path its installer keeps.",
+  "description": "NexusRelay: before each file edit, refused only if another holder explicitly reserved the file (exclusive), else a short advisory lease is taken for the tool call (a note names any other edit running on the file); after the tool, the lease is released, whatever the Git state; at the end of the turn or the session, all of them. At the end of a turn, the answers to the requests the conversation still has open are awaited in the background and wake it (asyncRewake). Unread messages for Claude (the host is never woken) are noted to the conversation, once each. NexusRelay.exe from the stable path its installer keeps.",
   "hooks": {
     "PreToolUse": [
       {

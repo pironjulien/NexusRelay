@@ -6,6 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.13.1] - 2026-11-04
+
+### Changed
+- Display name written NexusRelay, without a space, like the repository and the NexusSystem catalog.
+
 ## [1.13.0] - 2026-11-04
 
 ### Changed
