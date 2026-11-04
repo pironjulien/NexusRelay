@@ -319,7 +319,7 @@ install made by `get.ps1` (`%LOCALAPPDATA%\NexusRelay\app`) updates itself; a gi
 - Attachments: absolute paths, regular files with a single name only (no hard links, no network shares), never inside
   a configured vault, 10 MB each and 25 MB per message at most.
 
-## Privacy & security
+## Privacy
 
 > [!NOTE]
 > The relay's own transport is local, but what a connected AI reads through the relay (messages, attached files and
