@@ -948,7 +948,7 @@ public sealed partial class RelayBox
         return false;
     }
 
-    public List<(int Attempt, JsonObject Claim)> Claims(string messageId)
+    public List<(int Attempt, JsonObject Claim)> Claims(string messageId, Func<string, int, bool>? skip = null)
     {
         var folder = Path.Combine(Root, "claims", messageId);
         if (!Directory.Exists(folder))
@@ -957,7 +957,7 @@ public sealed partial class RelayBox
         foreach (var p in Directory.EnumerateFiles(folder, "*.json"))
         {
             var stem = Path.GetFileNameWithoutExtension(p);
-            if (int.TryParse(stem, NumberStyles.None, CultureInfo.InvariantCulture, out int n))
+            if (int.TryParse(stem, NumberStyles.None, CultureInfo.InvariantCulture, out int n) && skip?.Invoke(messageId, n) != true)
             {
                 found.Add((n, ReadJson(p) ?? new JsonObject { ["phase"] = "claimed" }));
             }
@@ -965,7 +965,8 @@ public sealed partial class RelayBox
         return found.OrderBy(x => x.Item1).ToList();
     }
 
-    public List<(string MessageId, int Attempt, JsonObject Claim)> AllClaims()
+    // skip(messageId, attempt) leaves a claim out before its file is read (a watcher's finished claims).
+    public List<(string MessageId, int Attempt, JsonObject Claim)> AllClaims(Func<string, int, bool>? skip = null)
     {
         var folder = Path.Join(Root, "claims");
         if (!Directory.Exists(folder))
@@ -973,7 +974,7 @@ public sealed partial class RelayBox
         var all = new List<(string, int, JsonObject)>();
         foreach (var msgId in Directory.EnumerateDirectories(folder).OrderBy(Path.GetFileName, StringComparer.Ordinal).Select(d => Path.GetFileName(d)))
         {
-            foreach (var (n, c) in Claims(msgId))
+            foreach (var (n, c) in Claims(msgId, skip))
             {
                 all.Add((msgId, n, c));
             }

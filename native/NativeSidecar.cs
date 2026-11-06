@@ -85,6 +85,7 @@ public sealed class NativeSidecar(RelayBox box, NativeAgentApi api)
 {
     private readonly Dictionary<string, double> failures = new();
     private bool recovered;
+    private double loopBeat;
     public static string Prompt(IReadOnlyList<RelayMessage> messages)
     {
         string asks = AppAutomation.WakeText(messages.Where(m => !m.Info).Select(m => m.Id));
@@ -101,7 +102,12 @@ public sealed class NativeSidecar(RelayBox box, NativeAgentApi api)
                 { box.SetClaim(id, attempt, "sidecar", "uncertain", new() { ["reason"] = "Previous sidecar stopped during submission" }); box.Event(id, "livraison incertaine", new() { ["via"] = "sidecar", ["attempt"] = attempt }); }
             recovered = true;
         }
-        box.SetState("sidecar-loop", new() { ["at"] = RelayBox.NowIso(), ["pid"] = Environment.ProcessId, ["runtime"] = "native" });
+        // Health accepts a loop up to 300 s old: a durable write every 30 s is enough.
+        if (Reservations.Now() - loopBeat >= 30)
+        {
+            box.SetState("sidecar-loop", new() { ["at"] = RelayBox.NowIso(), ["pid"] = Environment.ProcessId, ["runtime"] = "native" });
+            loopBeat = Reservations.Now();
+        }
         if (AppTransport.EmergencyStop()) return [];
         if (AppSessions.AntigravityQuota(box) is string reason) { box.SetState("sidecar-paused", new() { ["at"] = RelayBox.NowIso(), ["reason"] = reason }); return []; }
         var pending = box.Unread("antigravity").Where(m =>
@@ -180,17 +186,43 @@ public sealed class NativeSidecar(RelayBox box, NativeAgentApi api)
             return AppTransport.Result(uncertain ? "uncertain" : "failed", exception.Message);
         }
     }
+    // Deliveries whose watch is over (answered, stopped on error, too old): never read again.
+    // The loop runs every second, so re-reading the whole delivery history kept a core busy.
+    private readonly HashSet<(string Id, int Attempt)> watched = new();
     private void WatchErrors()
     {
-        foreach (var (id, _, claim) in box.AllClaims())
+        foreach (var (id, attempt, claim) in box.AllClaims((id, attempt) => watched.Contains((id, attempt))))
         {
-            if (claim["owner"]?.ToString() != "sidecar" || RelayBox.ClaimLabel(claim) != "delivered" || claim["conversation"]?.ToString() is not string conversation || box.HasEvent(id, "arrêt sur erreur") || box.Replies(id).Any(m => m.Sender == "antigravity")) continue;
+            if (RelayBox.ClaimLabel(claim) != "delivered") continue;
+            // A delivered claim is final: another owner's never becomes the sidecar's.
+            if (claim["owner"]?.ToString() != "sidecar" || claim["conversation"]?.ToString() is not string conversation) { watched.Add((id, attempt)); continue; }
+            double since = AppSessions.Epoch(claim["submitted"]?.ToString()) ?? 0;
+            if (Reservations.Now() - since > 6 * 3600 || box.HasEvent(id, "arrêt sur erreur") || box.Replies(id).Any(m => m.Sender == "antigravity")) { watched.Add((id, attempt)); continue; }
             var message = box.Get(id);
             if (message is null || !CodexSpace.AcceptsCreated(message.Created) || RelayPaths.RelayHost() != "all" && message.Sender != RelayPaths.RelayHost()) continue;
             var turn = AppSessions.AntigravityError(conversation) ?? AppSessions.AntigravityTurn(conversation);
-            double since = AppSessions.Epoch(claim["submitted"]?.ToString()) ?? 0;
-            if (Reservations.Now() - since > 6 * 3600) continue;
-            if (turn.Error is not null && (turn.At is null || turn.At >= since - 5)) box.Event(id, "arrêt sur erreur", new() { ["conversation"] = conversation, ["reason"] = turn.Error, ["via"] = "sidecar" });
+            if (turn.Error is not null && (turn.At is null || turn.At >= since - 5)) { box.Event(id, "arrêt sur erreur", new() { ["conversation"] = conversation, ["reason"] = turn.Error, ["via"] = "sidecar" }); watched.Add((id, attempt)); }
+        }
+    }
+    public static readonly TimeSpan IdleStep = TimeSpan.FromSeconds(5);
+    // Messages are written as a temporary file then renamed: both raise the event, a missed one waits for the timeout.
+    public static FileSystemWatcher? MessagesWatcher(string root, EventWaitHandle changed)
+    {
+        try
+        {
+            string folder = Path.Join(root, "messages");
+            Directory.CreateDirectory(folder);
+            var watcher = new FileSystemWatcher(folder) { NotifyFilter = NotifyFilters.FileName, InternalBufferSize = 64 * 1024 };
+            watcher.Created += (_, _) => changed.Set();
+            watcher.Renamed += (_, _) => changed.Set();
+            watcher.Error += (_, _) => changed.Set();
+            watcher.EnableRaisingEvents = true;
+            return watcher;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            Console.Error.WriteLine($"sidecar: messages watcher unavailable, polling every second ({e.Message})");
+            return null;
         }
     }
     public static int Run()
@@ -212,6 +244,9 @@ public sealed class NativeSidecar(RelayBox box, NativeAgentApi api)
                 try { await Task.Delay(TimeSpan.FromSeconds(5), cancelled.Token); } catch (OperationCanceledException) { /* Stopping: the loop condition ends the heartbeat. */ }
             }
         });
+        // A new message wakes the loop at once; the timeout still runs retries, error watch and restart checks.
+        using var changed = new AutoResetEvent(false);
+        using var watcher = MessagesWatcher(new RelayBox().Root, changed);
         try
         {
             while (true)
@@ -219,7 +254,7 @@ public sealed class NativeSidecar(RelayBox box, NativeAgentApi api)
                 try { sidecar.Step(); } catch (Exception e) { Console.Error.WriteLine($"sidecar: {e.Message}"); } // Boundary: one failed step never stops the sidecar loop.
                 if (RelayPaths.RestartWanted(Path.Join(RelayPaths.RelayHome(), "sidecar-restart.request"), loaded)) return 0;
                 if (appHost?.HasExited == true) return 0;
-                Thread.Sleep(1000);
+                changed.WaitOne(watcher is null ? IdleStep / 5 : IdleStep);
             }
         }
         finally { cancelled.Cancel(); beat.GetAwaiter().GetResult(); }

@@ -383,6 +383,21 @@ public sealed class CliTests : IDisposable
     }
 
     [Fact]
+    public void Sidecar_wakes_on_new_message_and_skips_finished_claims_unread()
+    {
+        var box = iso.Box();
+        using var changed = new AutoResetEvent(false);
+        using var watcher = NativeSidecar.MessagesWatcher(box.Root, changed);
+        Assert.NotNull(watcher);
+        Assert.False(changed.WaitOne(200), "No message, no wake");
+        var message = box.Post("claude", "antigravity", "Wake fixture", "native-wake");
+        Assert.True(changed.WaitOne(2000), "A posted message wakes the sidecar loop at once");
+        Assert.True(box.Claim(message.Id, 1, "sidecar"));
+        Assert.Single(box.AllClaims());
+        Assert.Empty(box.AllClaims((id, attempt) => id == message.Id && attempt == 1));
+    }
+
+    [Fact]
     public void Sidecar_delivers_by_official_adapter_and_reuses_topic()
     {
         var box = iso.Box();

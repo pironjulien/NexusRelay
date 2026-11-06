@@ -6,6 +6,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.13.6] - 2026-11-06
+
+### Fixed
+- The Antigravity sidecar no longer keeps a CPU core busy while idle (about a third of a core, growing with the
+  relay's history): its error watch re-read every past delivery (events, replies, topic messages) every second
+  before checking their age. Finished deliveries (answered, stopped on error, older than 6 h) are now remembered
+  and their claim files are no longer read; the loop health state is written every 30 s instead of every second.
+  Measured on a copy of a real mailbox: 16.6 % of a core before, 0.6 % after.
+
+### Changed
+- The sidecar waits on a watcher of the messages folder instead of polling every second: a new message is
+  delivered at once (about 50 ms instead of up to 1 s), and a 5 s step still runs retries, the error watch and
+  restart checks.
+
 ## [1.13.5] - 2026-11-06
 
 ### Fixed
