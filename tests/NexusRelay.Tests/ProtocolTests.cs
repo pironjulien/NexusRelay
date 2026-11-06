@@ -138,9 +138,15 @@ public sealed class ProtocolTests : IDisposable
         var box = iso.Box();
         var first = box.Post("claude", "codex", "fixture", "parity-a");
         var second = box.Post("claude", "antigravity", "fixture", "parity-b");
+        // Warm the daemon's wait path first: a cold first call (JIT, app availability probe) cost seconds on a busy
+        // CI runner and failed a fixed 1.8 s bound that had nothing to do with the deadline.
+        var warm = box.Post("claude", "codex", "fixture", "parity-warm");
+        daemon.Rpc(WaitCall([warm.Id], requestId: 88), accept: "text/event-stream");
+        // One shared deadline: the group ends near T; a deadline per id would take at least 2 x T.
+        const int timeout = 4;
         var clock = Stopwatch.StartNew();
-        var events = (JsonArray)daemon.Rpc(WaitCall([first.Id, second.Id]), accept: "text/event-stream")!;
-        Assert.True(clock.Elapsed.TotalSeconds < 1.8, clock.Elapsed.ToString());
+        var events = (JsonArray)daemon.Rpc(WaitCall([first.Id, second.Id], timeout: timeout), accept: "text/event-stream")!;
+        Assert.True(clock.Elapsed.TotalSeconds >= timeout - 0.5 && clock.Elapsed.TotalSeconds < 2 * timeout - 1, clock.Elapsed.ToString());
         var progress = events.Where(e => e?["method"]?.ToString() == "notifications/progress").ToList();
         Assert.NotEmpty(progress);
         Assert.Equal("parity-progress", progress[0]!["params"]!["progressToken"]?.ToString());
