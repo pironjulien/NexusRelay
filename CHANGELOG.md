@@ -6,6 +6,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.13.5] - 2026-11-06
+
+### Fixed
+- A Codex chat whose last turn is longer than the 16 MB read window (images inlined as base64 by `view_image`) no
+  longer stays "still working" forever: the capped window is judged like any other, so a final `task_complete` or
+  `turn_aborted` ends the turn and the topic is woken again (it was deferred on every wake, even after a Codex
+  restart, and never archived). The `since` check of the stall watchdog is kept.
+- Antigravity's turn state reads the transcript's last step whole, whatever its size, instead of an 8 MB tail that
+  cut a bigger step and left the turn unfinished.
+
 ## [1.13.4] - 2026-11-04
 
 ### Fixed

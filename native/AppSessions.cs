@@ -63,21 +63,46 @@ public static partial class AppSessions
         }
     }
     public static double? Epoch(string? iso) => DateTimeOffset.TryParse(iso, out var dt) ? dt.ToUnixTimeMilliseconds() / 1000.0 : null;
+    public const int CodexTailCap = 16 * 1024 * 1024;
+    /// <summary>The last complete line of a JSONL file, however long, or null when the file does not end with a newline (still being written).</summary>
+    public static string? LastLine(string path)
+    {
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        long end = stream.Length;
+        if (end == 0) return null;
+        stream.Seek(end - 1, SeekOrigin.Begin);
+        if (stream.ReadByte() != '\n') return null;
+        long start = 0, position = end - 1; var buffer = new byte[65536];
+        while (position > 0 && start == 0)
+        {
+            int count = (int)Math.Min(buffer.Length, position); position -= count;
+            stream.Seek(position, SeekOrigin.Begin); stream.ReadExactly(buffer, 0, count);
+            int newline = buffer.AsSpan(0, count).LastIndexOf((byte)'\n');
+            if (newline >= 0) start = position + newline + 1;
+        }
+        var line = new byte[end - 1 - start];
+        stream.Seek(start, SeekOrigin.Begin); stream.ReadExactly(line);
+        return Encoding.UTF8.GetString(line);
+    }
     public static AppTurn CodexTurn(string path, double? since = null)
     {
         try
         {
             // Grow the tail if a long running turn has no start marker in the first window.
-            int span = 262144;
+            // At the cap the window is still judged: a last turn bigger than the cap (inlined view_image base64, 06/11) stayed
+            // "working" forever and deferred every wake of its topic. Without a start marker in the window, the window lies
+            // inside one turn; when all of it is newer than `since`, that turn is the one started after `since`.
+            int span = 262144; bool capped = false;
             List<JsonObject> lines;
             while (true)
             {
                 lines = Lines(Tail(path, span)).ToList();
                 if (new FileInfo(path).Length <= span || lines.Any(e => e["payload"]?["type"]?.ToString() == "task_started" && (since is null || Epoch(e["timestamp"]?.ToString()) < since))) break;
-                if (span >= 16 * 1024 * 1024) return new(false, null);
+                if (span >= CodexTailCap) { capped = true; break; }
                 span *= 4;
             }
-            bool started = false; double? last = null; var result = new AppTurn(false, null);
+            bool started = capped && since is not null && lines.Select(e => Epoch(e["timestamp"]?.ToString())).FirstOrDefault(at => at is not null) >= since;
+            double? last = null; var result = new AppTurn(false, null);
             foreach (var entry in lines)
             {
                 string? kind = entry["payload"]?["type"]?.ToString();
@@ -100,9 +125,8 @@ public static partial class AppSessions
         if (AntigravityError(conversation) is AppTurn error) return error;
         try
         {
-            string tail = Tail(RelayPaths.TranscriptPath(conversation), 8 * 1024 * 1024);
-            if (!tail.EndsWith('\n')) return new(false, null);
-            if (Lines(tail).LastOrDefault() is not JsonObject step) return new(false, null);
+            // Only the last step matters: read it whole, whatever its size (an 8 MB tail cut a bigger step and stalled the turn).
+            if (LastLine(RelayPaths.TranscriptPath(conversation)) is not string line || Lines(line).FirstOrDefault() is not JsonObject step) return new(false, null);
             string? kind = step["type"]?.ToString();
             bool answered = kind == "PLANNER_RESPONSE" && step["status"]?.ToString() == "DONE" && (step["tool_calls"] is not JsonArray tools || tools.Count == 0);
             return new(answered || kind == "ERROR_MESSAGE", Epoch(step["created_at"]?.ToString()), kind == "ERROR_MESSAGE" ? step["error"]?.ToString() ?? step["text"]?.ToString() : null);
