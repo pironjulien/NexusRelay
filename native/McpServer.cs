@@ -1439,7 +1439,12 @@ public sealed partial class McpServer
         }
         var claudeSession = ClaudeInbox.Find();
         agents["claude"]!["relay_session"] = claudeSession is null
-            ? new JsonObject { ["open"] = false, ["folder"] = ClaudeInbox.ProjectDirectory() }
+            ? new JsonObject
+            {
+                ["open"] = false, ["folder"] = ClaudeInbox.ProjectDirectory(),
+                // The Claude app stops an idle session's process after its turn; Remote Control keeps it, and its inbox, alive.
+                ["hint"] = "Open the pinned \"Nexus Relay\" Code session in this folder (Auto mode) and turn Remote Control on for it, so the Claude app keeps its process, and its inbox, running between turns.",
+            }
             : new JsonObject { ["open"] = true, ["folder"] = ClaudeInbox.ProjectDirectory(), ["session"] = claudeSession.HostSessionId };
         agents["codex"]!["port"] = AppTransport.PageUrl("codex") is null ? "closed" : "open";
         agents["codex"]!["credits"] = AppSessions.CodexUsage();

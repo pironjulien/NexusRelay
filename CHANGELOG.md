@@ -6,6 +6,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.13.7] - 2026-11-06
+
+### Fixed
+- Claude's relay session stays reachable between turns: the Claude app stops an idle Code session's process after
+  its turn, which closed the inbox the daemon wakes Claude through (`relay_session.open: false`, peer requests left
+  waiting). Turning Remote Control on for the relay session keeps its process running; checked on a real wake (a
+  request posted as Codex was picked up and answered in 5 s). `status()` now gives that step as a `hint` while the
+  session is closed, and the README and skill document it.
+
 ## [1.13.6] - 2026-11-06
 
 ### Fixed

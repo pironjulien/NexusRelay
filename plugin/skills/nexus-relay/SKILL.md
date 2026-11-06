@@ -82,6 +82,7 @@ user writes during the exchange: stop and answer them.
 ## Wake routing and conversation ownership
 
 - Peer requests can wake Claude under `host: all` through the local inbox of its dedicated Relay Code session in
-  `~\.nexus\relay\NexusRelay` (Auto mode). Answers to your own requests return to the requesting conversation through
+  `~\.nexus\relay\NexusRelay` (Auto mode, pinned, Remote Control on: without it the app stops the idle session's
+  process and `status()` shows `relay_session.open: false`). Answers to your own requests return to the requesting conversation through
   its Stop hook, or through `wait_reply` within the turn. A configured single host is not woken for new requests.
 - It only archives its own conversations: those of the "NexusRelay" project (or "Nexus Relay", its earlier name) in Codex and Antigravity.

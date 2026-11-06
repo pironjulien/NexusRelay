@@ -141,7 +141,9 @@ the effective setting.
 > the folder `~\.nexus\relay\NexusRelay` and set it to **Auto** mode. The daemon writes the wake note to that
 > session's local inbox (Claude Code's documented per-session named pipe, never Anthropic's servers). A session in
 > *Bypass permissions* holds such messages, so keep the relay session in Auto, and pin it so that tidying up chats
-> never archives it. Never clear it: clearing stops its process, and with it the inbox the daemon wakes it through.
+> never archives it. Turn **Remote Control** on for it: the app otherwise stops an idle session's process after its
+> turn, and with it the inbox (`status()` then shows `relay_session.open: false`). Never clear it: clearing stops its
+> process, and with it the inbox the daemon wakes it through.
 
 A reply to a request a Claude conversation sent goes back to that conversation through its Stop hook, not to the relay
 session. The Claude app lets no outside program open a conversation per topic, so this one session receives every
