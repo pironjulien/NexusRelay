@@ -6,6 +6,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.13.11] - 2026-11-07
+
+### Fixed
+- An update no longer fails while a Claude conversation waits for relay answers. 1.13.10 copied `engine.lock` into
+  the stable folder `~\.nexus\nexus-relay\bin`; the `Stop` hook (`--await-replies`, up to 55 minutes) ran from that
+  folder and held it, so the next update could not rename `bin` aside and stopped before the engine pointer, the task
+  and the clients. The lock now protects only the versioned copies (`%LOCALAPPDATA%\NexusRelay\versions`): it is no
+  longer copied into `bin`, and an engine started from `bin` never holds one. The waiting hook now runs the versioned
+  copy named in `engine.txt`, as the Antigravity bridge does, so no long-running process uses `bin`. A process still
+  running from `bin` (a hook of an earlier version) no longer blocks an update: Windows refuses to rename a folder
+  with mapped files, so its content is moved aside file by file and the new files take their place; the old lock is
+  removed once released.
+- Tests: an update succeeds while a 1.13.10-like waiter runs from `bin` and holds its lock; the lock check of the
+  cleanup is tested where Windows would accept the rename (lock held through a hard link); the unreadable-engine case
+  uses a real running engine its owner cannot query (empty DACL); an engine run from `bin` holds nothing there; the
+  `Stop` hook command runs the versioned copy through Git's bash.
+
 ## [1.13.10] - 2026-11-07
 
 ### Fixed
@@ -764,7 +781,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - English tool descriptions with titles and MCP annotations; `reply` accepts `done`/`refused`/`failed` and
   `agree`/`disagree`.
 
-[Unreleased]: https://github.com/pironjulien/NexusRelay/compare/v1.13.8...HEAD
+[Unreleased]: https://github.com/pironjulien/NexusRelay/compare/v1.13.11...HEAD
+[1.13.11]: https://github.com/pironjulien/NexusRelay/compare/v1.13.10...v1.13.11
+[1.13.10]: https://github.com/pironjulien/NexusRelay/compare/v1.13.9...v1.13.10
+[1.13.9]: https://github.com/pironjulien/NexusRelay/compare/v1.13.8...v1.13.9
 [1.13.8]: https://github.com/pironjulien/NexusRelay/compare/v1.13.7...v1.13.8
 [1.13.7]: https://github.com/pironjulien/NexusRelay/compare/v1.13.6...v1.13.7
 [1.13.6]: https://github.com/pironjulien/NexusRelay/compare/v1.13.5...v1.13.6

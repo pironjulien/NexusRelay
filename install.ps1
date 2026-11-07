@@ -86,8 +86,9 @@ if (Test-Path -LiteralPath $nativeCsproj) {
         [IO.File]::WriteAllText((Join-Path $nativeOut 'publish.complete'), $nativeKey, [Text.UTF8Encoding]::new($false))
     }
 } else { throw "Moteur natif absent : ni native\NexusRelay.csproj ni bin\NexusRelay.exe dans $project." }
-# Verrou d'usage (native\EngineLock.cs) : chaque moteur tient ouvert l'engine.lock de son dossier pendant toute sa vie,
-# ce qui protège ce dossier du ménage des anciennes versions. Créé aussi dans une version installée avant 1.13.10.
+# Verrou d'usage (native\EngineLock.cs) : chaque moteur lancé d'une copie versionnée tient ouvert l'engine.lock de son
+# dossier pendant toute sa vie, ce qui protège ce dossier du ménage des anciennes versions. Créé aussi dans une version
+# installée avant 1.13.10 ; jamais dans bin (retiré de la copie plus bas).
 $engineLock = Join-Path $nativeOut 'engine.lock'
 if (-not (Test-Path -LiteralPath $engineLock)) { [IO.File]::WriteAllText($engineLock, '', [Text.UTF8Encoding]::new($false)) }
 # Codex empaqueté redirige les nouveaux fichiers d'AppData dans son cache MSIX : les hôtes externes ont besoin du
@@ -158,6 +159,10 @@ if (-not $stableHealthy) {
     if (Test-Path -LiteralPath $freshStamp) {
         Remove-Item -LiteralPath $freshStamp -Force -ErrorAction SilentlyContinue
     }
+    # Le verrou d'usage ne protège que les copies versionnées : bin est remplacé à chaque mise à jour, rien ne doit y
+    # tenir un fichier (1.13.10 l'y copiait, et un hook Stop en attente bloquait la mise à jour suivante).
+    $freshLock = Join-Path $fresh 'engine.lock'
+    if (Test-Path -LiteralPath $freshLock) { Remove-Item -LiteralPath $freshLock -Force }
 
     # Contrôle pré-vol : valider l'intégrité du candidat avant toute modification du dossier stable
     $freshExe = Join-Path $fresh 'NexusRelay.exe'
@@ -170,6 +175,8 @@ if (-not $stableHealthy) {
     $link = Get-Item -LiteralPath $stable -Force -ErrorAction SilentlyContinue
     $old = $null
     $targetJunction = $null
+    $inPlace = $false
+    $left = @()
     if ($link -and ($link.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
         $targetJunction = $link.Target
         [IO.Directory]::Delete($stable, $false)  # ancienne jonction : le lien seul
@@ -186,15 +193,31 @@ if (-not $stableHealthy) {
             }
         }
         if (-not $moved) {
-            Remove-Item -LiteralPath $fresh -Recurse -Force -ErrorAction SilentlyContinue
-            throw "$stable est en cours d'utilisation : relancer l'installation."
+            # Un processus lancé depuis bin (hook d'un moteur antérieur à 1.13.11, qui tournait d'ici jusqu'à 55 min et
+            # tenait bin\engine.lock) : Windows ne renomme jamais un dossier où un fichier est ouvert ou projeté, mais
+            # déplace chaque fichier d'un programme en marche. Le contenu part donc de côté fichier par fichier ; un
+            # fichier encore tenu reste (l'ancien engine.lock seulement), les fichiers neufs prennent la place des autres.
+            $left = @(Move-RelayFolderContent -From $stable -To $old)
+            if (@($left | Where-Object { Test-Path -LiteralPath (Join-Path $fresh $_) }).Count) {
+                $null = Move-RelayFolderContent -From $old -To $stable
+                Remove-Item -LiteralPath $old -Recurse -Force -ErrorAction SilentlyContinue
+                Remove-Item -LiteralPath $fresh -Recurse -Force -ErrorAction SilentlyContinue
+                throw "$stable est en cours d'utilisation ($($left -join ', ')) : relancer l'installation."
+            }
+            $inPlace = $true
         }
     }
 
     # Bascule protégée avec restauration automatique en cas d'échec
     $promoted = $false
     try {
-        Rename-Item -LiteralPath $fresh -NewName 'bin'
+        if ($inPlace) {
+            $stuck = @(Move-RelayFolderContent -From $fresh -To $stable)
+            if ($stuck.Count) { throw "Fichiers du candidat non placés dans $stable : $($stuck -join ', ')." }
+            Remove-Item -LiteralPath $fresh -Recurse -Force
+        } else {
+            Rename-Item -LiteralPath $fresh -NewName 'bin'
+        }
         $promoted = $true
         & $stableExe --schemas | Out-Null
         if ($LASTEXITCODE) {
@@ -205,10 +228,18 @@ if (-not $stableHealthy) {
     } catch {
         $swapError = $_
         Write-Warning "Échec lors de la bascule vers $stable : $swapError. Tentative de restauration de la version précédente..."
-        if ($promoted -and (Test-Path -LiteralPath $stable)) {
+        if ($inPlace) {
+            # Échange fichier par fichier : retirer ce qui a été placé (pas les fichiers restés tenus), puis tout ramener.
+            foreach ($item in @(Get-ChildItem -LiteralPath $stable -Force)) {
+                if ($left -notcontains $item.Name) { Remove-Item -LiteralPath $item.FullName -Recurse -Force -ErrorAction SilentlyContinue }
+            }
+            $back = @(Move-RelayFolderContent -From $old -To $stable)
+            if ($back.Count) { Write-Warning "Échec critique de restauration automatique : $($back -join ', ') resté(s) dans $old." }
+            else { Remove-Item -LiteralPath $old -Recurse -Force -ErrorAction SilentlyContinue; Write-Warning "Restauration automatique réussie dans $stable." }
+        } elseif ($promoted -and (Test-Path -LiteralPath $stable)) {
             Remove-Item -LiteralPath $stable -Recurse -Force -ErrorAction SilentlyContinue
         }
-        if ($old -and (Test-Path -LiteralPath $old)) {
+        if (-not $inPlace -and $old -and (Test-Path -LiteralPath $old)) {
             try {
                 Rename-Item -LiteralPath $old -NewName 'bin'
                 Write-Warning "Restauration automatique réussie depuis $old."
@@ -242,6 +273,9 @@ if ((Test-Path -LiteralPath $stamp) -and [IO.File]::ReadAllText($stamp) -eq $nat
     }
 }
 if ($canCleanOld) {
+    # engine.lock hérité de 1.13.10 dans bin : retiré dès qu'aucun ancien hook ne le tient plus.
+    $legacyLock = Join-Path $stable 'engine.lock'
+    if (Test-Path -LiteralPath $legacyLock) { try { [IO.File]::Delete($legacyLock) } catch { } }
     # Comme les anciennes versions : un bin.old-* d'où tourne encore un moteur (verrou tenu, image lue) reste entier.
     $engineImages = Get-RelayEngineImages
     foreach ($old in Get-ChildItem -LiteralPath $state -Directory -Filter 'bin.old-*' -ErrorAction SilentlyContinue) {

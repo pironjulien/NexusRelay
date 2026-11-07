@@ -1,5 +1,5 @@
 {
-  "description": "NexusRelay: before each file edit, refused only if another holder explicitly reserved the file (exclusive), else a short advisory lease is taken for the tool call (a note names any other edit running on the file); after the tool, the lease is released, whatever the Git state; at the end of the turn or the session, all of them. At the end of a turn, the answers to the requests the conversation still has open are awaited in the background and wake it (asyncRewake). Unread messages for Claude (the host is never woken) are noted to the conversation, once each. NexusRelay.exe from the stable path its installer keeps.",
+  "description": "NexusRelay: before each file edit, refused only if another holder explicitly reserved the file (exclusive), else a short advisory lease is taken for the tool call (a note names any other edit running on the file); after the tool, the lease is released, whatever the Git state; at the end of the turn or the session, all of them. At the end of a turn, the answers to the requests the conversation still has open are awaited in the background and wake it (asyncRewake). Unread messages for Claude (the host is never woken) are noted to the conversation, once each. Short hooks run NexusRelay.exe from the stable path its installer keeps; the long background wait runs the immutable versioned copy named in ~/.nexus/nexus-relay/engine.txt (as the Antigravity bridge does), so no long-running process ever holds the stable folder an update replaces.",
   "hooks": {
     "PreToolUse": [
       {
@@ -51,7 +51,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"$HOME/.nexus/nexus-relay/bin/NexusRelay.exe\" --await-replies claude",
+            "command": "e=; IFS='|' read -r v e 2>/dev/null < \"$HOME/.nexus/nexus-relay/engine.txt\"; e=${e%$'\\r'}; e=${e//\\\\//}; case $e in ''|[A-Za-z]:*|/*) ;; *) e=$HOME/$e;; esac; [ -f \"$e\" ] || e=$HOME/.nexus/nexus-relay/bin/NexusRelay.exe; exec \"$e\" --await-replies claude",
             "asyncRewake": true,
             "timeout": 3600
           }

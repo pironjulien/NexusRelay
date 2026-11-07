@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
@@ -6,7 +7,7 @@ using System.Text.RegularExpressions;
 namespace NexusRelay.Tests;
 
 /// <summary>Workstation settings, installer helpers (PowerShell) and repository conventions.</summary>
-public sealed class InstallerTests : IDisposable
+public sealed partial class InstallerTests : IDisposable
 {
     private readonly Isolation iso = new();
     public void Dispose() => iso.Dispose();
@@ -443,18 +444,25 @@ public sealed class InstallerTests : IDisposable
     [Fact]
     public void Cleanup_keeps_a_folder_whose_engine_lock_is_held()
     {
-        // Windows renames the folder of a running program that keeps no file open in it (a single-file executable is
-        // only mapped): the rename alone cannot tell. The lock every engine holds (EngineLock) keeps the folder.
+        // The lock check must decide on its own, in the case where Windows accepts to rename the folder aside. A handle
+        // opened in the folder makes Windows refuse the rename and would hide a missing check, so the lock is held
+        // through a hard link outside the folder: the same file (an exclusive open is refused), no open name inside.
         string versions = Path.Join(iso.Root, "versions"), held = Path.Join(versions, "0000000000000001"), keep = Path.Join(versions, "0000000000000002");
         foreach (string folder in new[] { held, keep })
         {
             Directory.CreateDirectory(folder);
             File.WriteAllText(Path.Join(folder, "NexusRelay.exe"), "engine");
-            File.WriteAllText(Path.Join(folder, "engine.lock"), "");
         }
+        File.WriteAllText(Path.Join(keep, "engine.lock"), "");
+        string outside = Path.Join(iso.Root, "held-elsewhere.lock");
+        File.WriteAllText(outside, "");
+        Assert.True(CreateHardLinkW(Path.Join(held, "engine.lock"), outside, IntPtr.Zero), $"hard link: {Marshal.GetLastPInvokeError()}");
         string script = Cleanup($"Remove-StaleRelayVersions -Versions '{versions}' -Keep '0000000000000002' -Images ([pscustomobject]@{{ Paths = @(); Unknown = $false }})");
-        using (var engine = new FileStream(Path.Join(held, "engine.lock"), FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+        using (var engine = new FileStream(outside, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
         {
+            // Precondition: Windows would rename this folder, and its lock is held.
+            Directory.Move(held, held + ".probe"); Directory.Move(held + ".probe", held);
+            Assert.Throws<IOException>(() => new FileStream(Path.Join(held, "engine.lock"), FileMode.Open, FileAccess.ReadWrite, FileShare.None).Dispose());
             var ran = Native.RunFile("pwsh.exe", ["-NoProfile", "-NonInteractive", "-Command", script], timeoutS: 60);
             Assert.True(ran.Code == 0, ran.Err + ran.Out);
             Assert.True(File.Exists(Path.Join(held, "NexusRelay.exe")));
@@ -500,6 +508,179 @@ public sealed class InstallerTests : IDisposable
         {
             if (!engine.HasExited) { engine.Kill(true); engine.WaitForExit(10_000); }
         }
+    }
+
+    [LibraryImport("kernel32.dll", EntryPoint = "CreateHardLinkW", StringMarshalling = StringMarshalling.Utf16, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool CreateHardLinkW(string link, string existing, IntPtr security);
+
+    [LibraryImport("advapi32.dll", SetLastError = true)]
+    private static partial uint SetSecurityInfo(IntPtr handle, int objectType, uint information, IntPtr owner, IntPtr group, IntPtr dacl, IntPtr sacl);
+
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    private static partial IntPtr OpenProcess(uint access, [MarshalAs(UnmanagedType.Bool)] bool inherit, int id);
+
+    [LibraryImport("kernel32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool CloseHandle(IntPtr handle);
+
+    /// <summary>Sets a process object's DACL: empty (nobody may open it, its owner included) or, with null, NULL (open).</summary>
+    private static unsafe void SetProcessDacl(Process process, byte[]? dacl)
+    {
+        fixed (byte* acl = dacl)
+            Assert.Equal(0u, SetSecurityInfo(process.Handle, 6 /* SE_KERNEL_OBJECT */, 4 /* DACL_SECURITY_INFORMATION */, IntPtr.Zero, IntPtr.Zero, (IntPtr)acl, IntPtr.Zero));
+    }
+
+    private static byte[] EmptyDacl()
+    {
+        var acl = new System.Security.AccessControl.RawAcl(System.Security.AccessControl.RawAcl.AclRevision, 0);
+        byte[] binary = new byte[acl.BinaryLength];
+        acl.GetBinaryForm(binary, 0);
+        return binary;
+    }
+
+    private static void CopyEngine(string folder)
+    {
+        Directory.CreateDirectory(folder);
+        foreach (string file in Directory.EnumerateFiles(AppContext.BaseDirectory)) File.Copy(file, Path.Join(folder, Path.GetFileName(file)), true);
+    }
+
+    [Fact]
+    public void Cleanup_removes_nothing_while_a_real_running_engine_cannot_be_queried()
+    {
+        // A real NexusRelay.exe that QueryFullProcessImageNameW cannot open (empty DACL on its process object: even its
+        // owner may not query it, as for an engine of another user): no folder is removed while it runs.
+        string versions = Path.Join(iso.Root, "versions"), old = Path.Join(versions, "0000000000000001");
+        Directory.CreateDirectory(old);
+        File.WriteAllText(Path.Join(old, "NexusRelay.exe"), "engine");
+        string elsewhere = Path.Join(iso.Root, "unreadable");
+        CopyEngine(elsewhere);
+        using var engine = Process.Start(Native.Start(Path.Join(elsewhere, "NexusRelay.exe"), ["--mcp", "--agent", "claude", "--protocol-fixture"]))!;
+        try
+        {
+            engine.StandardInput.WriteLine(Native.Rpc("initialize").ToJsonString()); engine.StandardInput.Flush();
+            Assert.True(engine.StandardOutput.ReadLineAsync(TestContext.Current.CancellationToken).AsTask().Wait(30_000, TestContext.Current.CancellationToken), "engine did not answer");
+            SetProcessDacl(engine, EmptyDacl());
+            IntPtr probe = OpenProcess(0x1000, false, engine.Id);  // PROCESS_QUERY_LIMITED_INFORMATION
+            if (probe != IntPtr.Zero) CloseHandle(probe);
+            Assert.True(probe == IntPtr.Zero, "precondition: the engine must not be queryable");
+
+            var images = Native.RunFile("pwsh.exe", ["-NoProfile", "-NonInteractive", "-Command", Cleanup("(Get-RelayEngineImages).Unknown")], timeoutS: 60);
+            Assert.True(images.Code == 0, images.Err + images.Out);
+            Assert.Equal("True", images.Out.Trim());
+            var ran = Native.RunFile("pwsh.exe", ["-NoProfile", "-NonInteractive", "-Command", Cleanup($"Remove-StaleRelayVersions -Versions '{versions}' -Keep 'none'")], timeoutS: 60);
+            Assert.True(ran.Code == 0, ran.Err + ran.Out);
+            Assert.True(File.Exists(Path.Join(old, "NexusRelay.exe")));
+        }
+        finally
+        {
+            if (!engine.HasExited) { SetProcessDacl(engine, null); engine.Kill(true); engine.WaitForExit(10_000); }
+        }
+    }
+
+    [Fact]
+    public void An_engine_run_from_the_stable_copy_holds_no_lock_there()
+    {
+        // ~\.nexus\nexus-relay\bin is replaced at every update: an engine started from it (here a bin from 1.13.10, which
+        // still carries an engine.lock) must leave every file in it free.
+        string bin = Path.Join(iso.Home, ".nexus", "nexus-relay", "bin");
+        CopyEngine(bin);
+        File.WriteAllText(Path.Join(bin, "engine.lock"), "");
+        using var engine = Process.Start(Native.Start(Path.Join(bin, "NexusRelay.exe"), ["--mcp", "--agent", "claude", "--protocol-fixture"]))!;
+        try
+        {
+            engine.StandardInput.WriteLine(Native.Rpc("initialize").ToJsonString()); engine.StandardInput.Flush();
+            Assert.True(engine.StandardOutput.ReadLineAsync(TestContext.Current.CancellationToken).AsTask().Wait(30_000, TestContext.Current.CancellationToken), "engine did not answer");
+            new FileStream(Path.Join(bin, "engine.lock"), FileMode.Open, FileAccess.ReadWrite, FileShare.None).Dispose();
+        }
+        finally
+        {
+            if (!engine.HasExited) { engine.Kill(true); engine.WaitForExit(10_000); }
+        }
+    }
+
+    [Fact]
+    public void Update_replaces_the_stable_copy_while_a_process_started_from_it_waits()
+    {
+        // 1.13.10: a Stop hook (--await-replies, up to 55 min) ran from bin and held bin\engine.lock; the next update
+        // failed to rename bin aside and stopped before the pointer, the task and the clients. Here a 1.13.10-like
+        // waiter runs from bin (its images mapped there) and holds bin\engine.lock: the update must still succeed.
+        string state = Path.Join(iso.Home, ".nexus", "nexus-relay"), bin = Path.Join(state, "bin");
+        CopyEngine(bin);
+        File.WriteAllText(Path.Join(bin, "engine.lock"), "");
+        File.WriteAllText(Path.Join(bin, "publish.complete"), "0000000000000000");  // an older version
+        var env = new Dictionary<string, string?> { ["USERPROFILE"] = iso.Home, ["HOME"] = iso.Home, ["LOCALAPPDATA"] = Path.Join(iso.Root, "localappdata") };
+        string[] promote = ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", Path.Join(Repo, "install.ps1"), "-PromoteOnly"];
+        using var waiter = Process.Start(Native.Start(Path.Join(bin, "NexusRelay.exe"), ["--mcp", "--agent", "claude", "--protocol-fixture"]))!;
+        var heldLock = new FileStream(Path.Join(bin, "engine.lock"), FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        try
+        {
+            waiter.StandardInput.WriteLine(Native.Rpc("initialize").ToJsonString()); waiter.StandardInput.Flush();
+            Assert.True(waiter.StandardOutput.ReadLineAsync(TestContext.Current.CancellationToken).AsTask().Wait(30_000, TestContext.Current.CancellationToken), "engine did not answer");
+            Assert.ThrowsAny<IOException>(() => Directory.Move(bin, bin + ".probe"));  // precondition: Windows refuses the rename
+
+            var ran = Native.RunFile("pwsh.exe", promote, env: env, timeoutS: 300);
+            Assert.True(ran.Code == 0, ran.Err + ran.Out);
+            Assert.Equal(NativeKey(), File.ReadAllText(Path.Join(bin, "publish.complete")));
+            Assert.Equal(0, Native.RunFile(Path.Join(bin, "NexusRelay.exe"), ["--schemas"]).Code);
+            waiter.StandardInput.WriteLine(Native.Call("status").ToJsonString()); waiter.StandardInput.Flush();
+            var status = waiter.StandardOutput.ReadLineAsync(TestContext.Current.CancellationToken).AsTask();
+            Assert.True(status.Wait(30_000, TestContext.Current.CancellationToken), "the waiting engine stopped answering");
+            Assert.DoesNotContain("\"isError\":true", status.Result);  // its files, moved aside, stay whole
+        }
+        finally
+        {
+            heldLock.Dispose();
+            if (!waiter.HasExited) { waiter.Kill(true); waiter.WaitForExit(10_000); }
+        }
+        // Once the waiter is gone: the next run removes the old lock from bin and the copy set aside.
+        var after = Native.RunFile("pwsh.exe", promote, env: env, timeoutS: 300);
+        Assert.True(after.Code == 0, after.Err + after.Out);
+        Assert.False(File.Exists(Path.Join(bin, "engine.lock")));
+        Assert.Empty(Directory.EnumerateDirectories(state, "bin.old-*"));
+    }
+
+    [Fact]
+    public void Stop_hook_waits_from_the_versioned_copy_named_in_engine_txt()
+    {
+        // The asyncRewake Stop hook waits up to 55 min: it runs the immutable versioned copy named in engine.txt (as the
+        // Antigravity bridge), never bin, so nothing long-running holds the folder an update replaces. Run by Git's bash,
+        // as Claude Code runs hook commands on Windows; with no bin, only the versioned copy can answer.
+        var hooks = JsonNode.Parse(File.ReadAllText(Path.Join(Repo, "plugin", "hooks", "hooks.json")))!;
+        string command = hooks["hooks"]!["Stop"]!.AsArray().SelectMany(g => g!["hooks"]!.AsArray())
+            .Single(h => h!["asyncRewake"]?.GetValue<bool>() == true)!["command"]!.ToString();
+        Assert.Contains("--await-replies claude", command, StringComparison.Ordinal);
+        string bash = Environment.GetEnvironmentVariable("PATH")!.Split(';', StringSplitOptions.RemoveEmptyEntries)
+            .Select(d => Path.GetFullPath(Path.Join(d, "..", "bin", "bash.exe"))).Append(@"C:\Program Files\Git\bin\bash.exe")
+            .First(p => File.Exists(p) && File.Exists(Path.Join(Path.GetDirectoryName(p)!, "..", "cmd", "git.exe")));
+        string state = Path.Join(iso.Home, ".nexus", "nexus-relay"), bin = Path.Join(state, "bin");
+        CopyEngine(Path.Join(iso.Home, "AppData", "Local", "NexusRelay", "versions", "0000000000000001"));
+        Directory.CreateDirectory(state);
+        var env = new Dictionary<string, string?> { ["HOME"] = iso.Home, ["USERPROFILE"] = iso.Home };
+        Ran Hook() => Native.RunFile(bash, ["-c", command], input: "{}", env: env, timeoutS: 60);
+
+        File.WriteAllText(Path.Join(state, "engine.txt"), $"{RelayPaths.Version}|AppData\\Local\\NexusRelay\\versions\\0000000000000001\\NexusRelay.exe\r\n");
+        var versioned = Hook();
+        Assert.True(versioned.Code == 0, versioned.Err + versioned.Out);
+        Assert.False(Directory.Exists(bin));
+
+        File.Delete(Path.Join(state, "engine.txt"));  // no pointer (engine before 1.13.8): the stable copy
+        Assert.NotEqual(0, Hook().Code);  // nothing to run yet: the hook does run an engine
+        CopyEngine(bin);
+        var stable = Hook();
+        Assert.True(stable.Code == 0, stable.Err + stable.Out);
+    }
+
+    private static string NativeKey()
+    {
+        var sources = Directory.EnumerateFiles(Path.Join(Repo, "native"), "*.*")
+            .Where(f => new[] { ".cs", ".csproj", ".json" }.Contains(Path.GetExtension(f)))
+            .Append(Path.Join(Repo, "Directory.Build.props"))
+            .OrderBy(f => f)
+            .Select(f => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(f))))
+            .ToList();
+        var digest = System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(string.Join("", sources)));
+        return Convert.ToHexString(digest.AsSpan(0, 8)).ToLowerInvariant();
     }
 
     [Fact]

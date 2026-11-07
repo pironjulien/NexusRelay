@@ -2,13 +2,13 @@
 # once no process uses them. A running .NET engine loads its DLLs from its folder on demand (NexusFree 1.3.3): deleting
 # the files it has not loaded yet leaves it answering every call with an empty error.
 # Three checks, any of which keeps a folder whole until a later install:
-# - its engine.lock (written by install.ps1 in each version) is held: every engine opens the one beside it for its whole
-#   life without delete sharing (native\EngineLock.cs), whatever spelling of the path started it (junction, MSIX
-#   redirection, elevated view);
+# - its engine.lock (written by install.ps1 in each versioned folder, never in bin) is held: every engine run from a
+#   versioned folder opens the one beside it for its whole life without delete sharing (native\EngineLock.cs), whatever
+#   spelling of the path started it (junction, MSIX redirection, elevated view);
 # - a running NexusRelay.exe has its image in it, read by QueryFullProcessImageNameW (also an elevated process of the
 #   same user); when one running NexusRelay.exe cannot be read at all, no folder is removed;
-# - Windows refuses to rename the folder aside (a file in it is open). This is only an extra signal: Windows does
-#   rename the folder of a running program that keeps no file in it open (a single-file executable, mapped only).
+# - Windows refuses to rename the folder aside (a file in it is open or mapped). This is only an extra signal: a lock
+#   held through another name of the file (hard link) or a program that maps nothing there lets the rename through.
 # Only a folder renamed aside, which no pointer names any more, is deleted.
 
 if (-not ('NexusRelayProcessImage' -as [type])) {
@@ -61,6 +61,23 @@ function Remove-RelayFolderIfUnused {
     }
     Remove-Item -LiteralPath $aside -Recurse -Force -ErrorAction SilentlyContinue  # anything left goes next time
     return -not (Test-Path -LiteralPath $aside)
+}
+
+# Moves each entry of $From into $To (created if needed), a subfolder entry by entry when it cannot move whole. Windows
+# never renames a folder holding an open or mapped file, but does move the files of a running program one by one; a file
+# opened without delete sharing stays. Outputs the relative paths left in $From.
+function Move-RelayFolderContent {
+    param([Parameter(Mandatory=$true)][string]$From, [Parameter(Mandatory=$true)][string]$To)
+    New-Item -ItemType Directory -Force $To | Out-Null
+    foreach ($item in @(Get-ChildItem -LiteralPath $From -Force)) {
+        $target = Join-Path $To $item.Name
+        try {
+            if ($item.PSIsContainer) { [IO.Directory]::Move($item.FullName, $target) } else { [IO.File]::Move($item.FullName, $target) }
+        } catch {
+            if ($item.PSIsContainer) { Move-RelayFolderContent -From $item.FullName -To $target | ForEach-Object { Join-Path $item.Name $_ } }
+            else { $item.Name }
+        }
+    }
 }
 
 function Remove-StaleRelayVersions {
