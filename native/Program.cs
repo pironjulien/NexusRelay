@@ -11,6 +11,7 @@ public static class Program
     public static async Task<int> Main(string[] args)
     {
         Console.OutputEncoding = new UTF8Encoding(false);
+        EngineLock.Hold();
 
         if (args.Length >= 1 && args[0] == StdioBridge.Flag) return await StdioBridge.RunCliAsync(args);
         if (args.Length == 1 && args[0] == StdioBridge.PointerFlag)

@@ -6,6 +6,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.13.10] - 2026-11-07
+
+### Fixed
+- The cleanup of old engine folders no longer relies on Windows refusing to rename the folder of a running program:
+  Windows does rename it when the program keeps no file open in it (a single-file engine is only mapped).
+  Each engine now holds the `engine.lock` the installer writes in its version folder for its whole life (path
+  independent: junction, MSIX redirection, elevated view); a running `NexusRelay.exe` is located by
+  `QueryFullProcessImageNameW`, which also reads an elevated process; when one cannot be read at all, no folder is
+  removed. The rename aside stays as an extra check. The same rules now protect the `bin.old-*` copies of the stable
+  folder, which were deleted outright. Tests: a held lock keeps a folder Windows would rename, an unreadable engine
+  keeps everything, a running engine holds its lock and is found by its image path.
+
 ## [1.13.9] - 2026-11-07
 
 ### Fixed

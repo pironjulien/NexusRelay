@@ -69,6 +69,7 @@ if (Test-Path -LiteralPath $nativeCsproj) {
         # obj et bin intermédiaires : ~\.nexus\build\nexusrelay (Directory.Build.props), jamais dans OneDrive.
         & dotnet.exe publish $nativeCsproj -c Release -o $nativeOut --nologo -v q
         if ($LASTEXITCODE) { throw 'dotnet publish (moteur natif) a échoué.' }
+        [IO.File]::WriteAllText((Join-Path $nativeOut 'engine.lock'), '', [Text.UTF8Encoding]::new($false))
         [IO.File]::WriteAllText((Join-Path $nativeOut 'publish.complete'), $nativeKey, [Text.UTF8Encoding]::new($false))
     }
 } elseif (Test-Path -LiteralPath (Join-Path $prebuilt 'NexusRelay.exe')) {
@@ -80,10 +81,15 @@ if (Test-Path -LiteralPath $nativeCsproj) {
         if (Test-Path -LiteralPath $partial) { Remove-Item -LiteralPath $partial -Recurse -Force }
         New-Item -ItemType Directory -Force $partial | Out-Null
         Copy-Item -Path (Join-Path $prebuilt '*') -Destination $partial -Recurse -Force
+        [IO.File]::WriteAllText((Join-Path $partial 'engine.lock'), '', [Text.UTF8Encoding]::new($false))
         Rename-Item -LiteralPath $partial -NewName $nativeKey
         [IO.File]::WriteAllText((Join-Path $nativeOut 'publish.complete'), $nativeKey, [Text.UTF8Encoding]::new($false))
     }
 } else { throw "Moteur natif absent : ni native\NexusRelay.csproj ni bin\NexusRelay.exe dans $project." }
+# Verrou d'usage (native\EngineLock.cs) : chaque moteur tient ouvert l'engine.lock de son dossier pendant toute sa vie,
+# ce qui protège ce dossier du ménage des anciennes versions. Créé aussi dans une version installée avant 1.13.10.
+$engineLock = Join-Path $nativeOut 'engine.lock'
+if (-not (Test-Path -LiteralPath $engineLock)) { [IO.File]::WriteAllText($engineLock, '', [Text.UTF8Encoding]::new($false)) }
 # Codex empaqueté redirige les nouveaux fichiers d'AppData dans son cache MSIX : les hôtes externes ont besoin du
 # chemin réellement ouvert, pas du chemin logique vu seulement par l'installeur.
 $nativeExe = Resolve-RelayPath -Path (Join-Path $nativeOut 'NexusRelay.exe')
@@ -236,8 +242,10 @@ if ((Test-Path -LiteralPath $stamp) -and [IO.File]::ReadAllText($stamp) -eq $nat
     }
 }
 if ($canCleanOld) {
+    # Comme les anciennes versions : un bin.old-* d'où tourne encore un moteur (verrou tenu, image lue) reste entier.
+    $engineImages = Get-RelayEngineImages
     foreach ($old in Get-ChildItem -LiteralPath $state -Directory -Filter 'bin.old-*' -ErrorAction SilentlyContinue) {
-        Remove-Item -LiteralPath $old.FullName -Recurse -Force -ErrorAction SilentlyContinue
+        $null = Remove-RelayFolderIfUnused -Folder $old.FullName -Images $engineImages
     }
 }
 if ($PromoteOnly) {
@@ -383,8 +391,9 @@ $null = Request-RelayRestart -RequestPath (Join-Path $mailbox 'sidecar-restart.r
 # ~\.nexus\nexus-relay\engine.txt (version|chemin de la copie versionnée, jamais bin, que la promotion renomme).
 & $nativeExe --engine-pointer | Out-Null
 if ($LASTEXITCODE) { throw 'Pointeur du moteur pour Antigravity (engine.txt) : échec (NexusRelay.exe --engine-pointer).' }
-# Anciennes versions : retirées seulement quand aucun processus ne les utilise (renommage refusé par Windows tant qu'un
-# moteur y tient des fichiers) ; la courante est gardée, une version en service part à une installation suivante.
+# Anciennes versions : retirées seulement quand aucun moteur ne les utilise (verrou d'usage tenu, image du processus lue
+# par QueryFullProcessImageNameW, et rien retiré si un moteur en marche ne peut pas être lu) ; la courante est gardée,
+# une version en service part à une installation suivante.
 Remove-StaleRelayVersions -Versions $versions -Keep $nativeKey
 # Sans superviseur des démons Nexus : tâche « NexusRelay » à l'ouverture de session, qui lance le petit superviseur du
 # relais (NexusRelay.exe --daemon : lit la spec ci-dessus, relance le démon quand il s'arrête). L'ancienne tâche

@@ -401,6 +401,7 @@ public sealed class InstallerTests : IDisposable
         {
             Directory.CreateDirectory(folder);
             foreach (string file in Directory.EnumerateFiles(AppContext.BaseDirectory)) File.Copy(file, Path.Join(folder, Path.GetFileName(file)));
+            File.WriteAllText(Path.Join(folder, "engine.lock"), "");  // as install.ps1 writes it in each version
         }
         int files = Directory.EnumerateFiles(inUse).Count();
         string alias = Path.Join(iso.Root, "alias");
@@ -433,6 +434,71 @@ public sealed class InstallerTests : IDisposable
         {
             if (!engine.HasExited) { engine.Kill(true); engine.WaitForExit(10_000); }
             Directory.Delete(alias);  // the junction only, never its target
+        }
+    }
+
+    private static string Cleanup(string body) =>
+        $". '{Path.Join(Repo, "scripts", "Remove-RelayVersions.ps1")}'; {body}";
+
+    [Fact]
+    public void Cleanup_keeps_a_folder_whose_engine_lock_is_held()
+    {
+        // Windows renames the folder of a running program that keeps no file open in it (a single-file executable is
+        // only mapped): the rename alone cannot tell. The lock every engine holds (EngineLock) keeps the folder.
+        string versions = Path.Join(iso.Root, "versions"), held = Path.Join(versions, "0000000000000001"), keep = Path.Join(versions, "0000000000000002");
+        foreach (string folder in new[] { held, keep })
+        {
+            Directory.CreateDirectory(folder);
+            File.WriteAllText(Path.Join(folder, "NexusRelay.exe"), "engine");
+            File.WriteAllText(Path.Join(folder, "engine.lock"), "");
+        }
+        string script = Cleanup($"Remove-StaleRelayVersions -Versions '{versions}' -Keep '0000000000000002' -Images ([pscustomobject]@{{ Paths = @(); Unknown = $false }})");
+        using (var engine = new FileStream(Path.Join(held, "engine.lock"), FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+        {
+            var ran = Native.RunFile("pwsh.exe", ["-NoProfile", "-NonInteractive", "-Command", script], timeoutS: 60);
+            Assert.True(ran.Code == 0, ran.Err + ran.Out);
+            Assert.True(File.Exists(Path.Join(held, "NexusRelay.exe")));
+            Assert.Equal([held, keep], Directory.EnumerateDirectories(versions).Order(StringComparer.OrdinalIgnoreCase));
+        }
+        var after = Native.RunFile("pwsh.exe", ["-NoProfile", "-NonInteractive", "-Command", script], timeoutS: 60);
+        Assert.True(after.Code == 0, after.Err + after.Out);
+        Assert.Equal([keep], Directory.EnumerateDirectories(versions));  // released: removed at the next install
+    }
+
+    [Fact]
+    public void Cleanup_removes_nothing_while_a_running_engine_cannot_be_read()
+    {
+        string versions = Path.Join(iso.Root, "versions"), old = Path.Join(versions, "0000000000000001");
+        Directory.CreateDirectory(old);
+        File.WriteAllText(Path.Join(old, "NexusRelay.exe"), "engine");
+        var ran = Native.RunFile("pwsh.exe", ["-NoProfile", "-NonInteractive", "-Command",
+            Cleanup($"Remove-StaleRelayVersions -Versions '{versions}' -Keep 'none' -Images ([pscustomobject]@{{ Paths = @(); Unknown = $true }})")], timeoutS: 60);
+        Assert.True(ran.Code == 0, ran.Err + ran.Out);
+        Assert.True(File.Exists(Path.Join(old, "NexusRelay.exe")));
+    }
+
+    [Fact]
+    public void Engine_images_are_read_by_QueryFullProcessImageName_and_an_engine_holds_its_lock()
+    {
+        string folder = Path.Join(iso.Root, "versions", "0000000000000001");
+        Directory.CreateDirectory(folder);
+        foreach (string file in Directory.EnumerateFiles(AppContext.BaseDirectory)) File.Copy(file, Path.Join(folder, Path.GetFileName(file)));
+        File.WriteAllText(Path.Join(folder, "engine.lock"), "");
+        using var engine = Process.Start(Native.Start(Path.Join(folder, "NexusRelay.exe"), ["--mcp", "--agent", "claude", "--protocol-fixture"]))!;
+        try
+        {
+            engine.StandardInput.WriteLine(Native.Rpc("initialize").ToJsonString()); engine.StandardInput.Flush();
+            Assert.True(engine.StandardOutput.ReadLineAsync(TestContext.Current.CancellationToken).AsTask().Wait(30_000, TestContext.Current.CancellationToken), "engine did not answer");
+            Assert.Throws<IOException>(() => new FileStream(Path.Join(folder, "engine.lock"), FileMode.Open, FileAccess.ReadWrite, FileShare.Delete).Dispose());
+            var ran = Native.RunFile("pwsh.exe", ["-NoProfile", "-NonInteractive", "-Command",
+                Cleanup("$i = Get-RelayEngineImages; \"$($i.Unknown)\"; $i.Paths")], timeoutS: 60);
+            Assert.True(ran.Code == 0, ran.Err + ran.Out);
+            string[] lines = ran.Out.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            Assert.Contains(Path.Join(folder, "NexusRelay.exe"), lines, StringComparer.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            if (!engine.HasExited) { engine.Kill(true); engine.WaitForExit(10_000); }
         }
     }
 
