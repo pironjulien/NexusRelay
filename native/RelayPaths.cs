@@ -266,6 +266,6 @@ public static partial class RelayPaths
     {
         var path = Path.Join(RelayHome(), $"{name}-restart.pid");
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        File.WriteAllText(path, Environment.ProcessId.ToString(), new UTF8Encoding(false));
+        File.WriteAllText(path, Environment.ProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture), new UTF8Encoding(false));
     }
 }

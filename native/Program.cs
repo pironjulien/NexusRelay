@@ -57,7 +57,7 @@ public static class Program
             using var cts = new CancellationTokenSource();
             Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
             using var fixtureRuntime = args.Contains("--protocol-fixture", StringComparer.Ordinal) ? new RelayRuntime(waker: (_, _, _) => AppTransport.Result("deferred", "isolated protocol fixture; app transport disabled"), tidy: () => { }) : null;
-            await McpServer.RunHttpAsync(port, cts.Token, fixtureRuntime);
+            await McpServer.RunHttpAsync(port, fixtureRuntime, cts.Token);
             return 0;
         }
 

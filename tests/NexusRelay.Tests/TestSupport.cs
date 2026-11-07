@@ -169,7 +169,7 @@ public sealed class Daemon : IDisposable
     {
         var all = new Dictionary<string, string?> { ["NEXUS_RELAY_HOST"] = "claude", ["NEXUS_MCP_TOKEN"] = Token, ["NEXUS_RELAY_WAKE_SINCE"] = "2099-01-01T00:00:00Z" };
         if (env is not null) foreach (var (k, v) in env) all[k] = v;
-        string[] args = fixture ? ["--http", Port.ToString(), "--protocol-fixture"] : ["--http", Port.ToString()];
+        string[] args = fixture ? ["--http", Port.ToString(System.Globalization.CultureInfo.InvariantCulture), "--protocol-fixture"] : ["--http", Port.ToString(System.Globalization.CultureInfo.InvariantCulture)];
         var start = Native.Start(Native.Exe, args, env: all);
         start.RedirectStandardInput = false; start.RedirectStandardOutput = false; start.RedirectStandardError = false;
         start.StandardInputEncoding = null; start.StandardOutputEncoding = null; start.StandardErrorEncoding = null;

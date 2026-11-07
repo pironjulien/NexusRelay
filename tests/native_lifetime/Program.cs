@@ -25,7 +25,7 @@ internal static partial class Program
                 var timer = Stopwatch.StartNew();
                 while (!File.Exists(Path.Join(folder, "child.stop")) && timer.Elapsed.TotalSeconds < 30)
                 {
-                    try { File.WriteAllText(heartbeat, timer.ElapsedTicks.ToString()); }
+                    try { File.WriteAllText(heartbeat, timer.ElapsedTicks.ToString(System.Globalization.CultureInfo.InvariantCulture)); }
                     catch (IOException) { /* The test reads the heartbeat concurrently: a sharing violation only skips one beat. */ }
                     Thread.Sleep(50);
                 }

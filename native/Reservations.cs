@@ -233,7 +233,7 @@ public static partial class Reservations
 
     private static string Folder(RelayBox box) => Path.Join(box.Root, "reservations");
 
-    private static IDisposable BetweenProcesses(RelayBox box, double waitSeconds = 10.0)
+    private static FileLockHandle BetweenProcesses(RelayBox box, double waitSeconds = 10.0)
     {
         var folder = Folder(box);
         Directory.CreateDirectory(folder);

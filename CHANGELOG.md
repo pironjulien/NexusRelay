@@ -6,6 +6,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Strict build: recommended .NET analyzers, code style enforced, warnings as errors (`.editorconfig` added). Number
+  and date formats written for files and arguments use the invariant culture; SQLite clean-up results are discarded
+  explicitly; fixed name lists are allocated once.
+- Tests run on Microsoft.Testing.Platform only (xUnit v3), without the old VSTest packages.
+- Tomlyn 2.10.2 and JsonSchema.Net 9.6.0 (tests).
+- Release workflow on NexusSystem's shared workflows v1.6.54, pinned by commit SHA.
+- CHANGELOG compare links for every released version.
+
 ## [1.13.7] - 2026-11-06
 
 ### Fixed
@@ -714,12 +723,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - English tool descriptions with titles and MCP annotations; `reply` accepts `done`/`refused`/`failed` and
   `agree`/`disagree`.
 
-[Unreleased]: https://github.com/pironjulien/NexusRelay/compare/v1.10.2...HEAD
+[Unreleased]: https://github.com/pironjulien/NexusRelay/compare/v1.13.7...HEAD
+[1.13.7]: https://github.com/pironjulien/NexusRelay/compare/v1.13.6...v1.13.7
+[1.13.6]: https://github.com/pironjulien/NexusRelay/compare/v1.13.5...v1.13.6
+[1.13.5]: https://github.com/pironjulien/NexusRelay/compare/v1.13.4...v1.13.5
+[1.13.4]: https://github.com/pironjulien/NexusRelay/compare/v1.13.3...v1.13.4
+[1.13.3]: https://github.com/pironjulien/NexusRelay/compare/v1.13.2...v1.13.3
+[1.13.2]: https://github.com/pironjulien/NexusRelay/compare/v1.13.1...v1.13.2
+[1.13.1]: https://github.com/pironjulien/NexusRelay/compare/v1.13.0...v1.13.1
+[1.13.0]: https://github.com/pironjulien/NexusRelay/compare/v1.12.12...v1.13.0
+[1.12.12]: https://github.com/pironjulien/NexusRelay/compare/v1.12.11...v1.12.12
+[1.12.11]: https://github.com/pironjulien/NexusRelay/compare/v1.12.10...v1.12.11
+[1.12.10]: https://github.com/pironjulien/NexusRelay/compare/v1.12.9...v1.12.10
+[1.12.9]: https://github.com/pironjulien/NexusRelay/compare/v1.12.8...v1.12.9
+[1.12.8]: https://github.com/pironjulien/NexusRelay/compare/v1.12.7...v1.12.8
+[1.12.7]: https://github.com/pironjulien/NexusRelay/compare/v1.12.6...v1.12.7
+[1.12.6]: https://github.com/pironjulien/NexusRelay/compare/v1.12.5...v1.12.6
+[1.12.5]: https://github.com/pironjulien/NexusRelay/compare/v1.12.4...v1.12.5
+[1.12.4]: https://github.com/pironjulien/NexusRelay/compare/v1.12.3...v1.12.4
+[1.12.3]: https://github.com/pironjulien/NexusRelay/compare/v1.12.2...v1.12.3
+[1.12.2]: https://github.com/pironjulien/NexusRelay/compare/v1.12.1...v1.12.2
+[1.12.1]: https://github.com/pironjulien/NexusRelay/compare/v1.12.0...v1.12.1
+[1.12.0]: https://github.com/pironjulien/NexusRelay/compare/v1.11.4...v1.12.0
+[1.11.4]: https://github.com/pironjulien/NexusRelay/compare/v1.11.3...v1.11.4
+[1.11.3]: https://github.com/pironjulien/NexusRelay/compare/v1.11.1...v1.11.3
+[1.11.1]: https://github.com/pironjulien/NexusRelay/compare/v1.11.0...v1.11.1
+[1.11.0]: https://github.com/pironjulien/NexusRelay/compare/v1.10.12...v1.11.0
+[1.10.12]: https://github.com/pironjulien/NexusRelay/compare/v1.10.11...v1.10.12
+[1.10.11]: https://github.com/pironjulien/NexusRelay/compare/v1.10.10...v1.10.11
+[1.10.10]: https://github.com/pironjulien/NexusRelay/compare/v1.10.9...v1.10.10
+[1.10.9]: https://github.com/pironjulien/NexusRelay/compare/v1.10.8...v1.10.9
+[1.10.8]: https://github.com/pironjulien/NexusRelay/compare/v1.10.7...v1.10.8
+[1.10.7]: https://github.com/pironjulien/NexusRelay/compare/v1.10.6...v1.10.7
+[1.10.6]: https://github.com/pironjulien/NexusRelay/compare/v1.10.5...v1.10.6
+[1.10.5]: https://github.com/pironjulien/NexusRelay/compare/v1.10.4...v1.10.5
+[1.10.4]: https://github.com/pironjulien/NexusRelay/compare/v1.10.3...v1.10.4
+[1.10.3]: https://github.com/pironjulien/NexusRelay/compare/v1.10.2...v1.10.3
 [1.10.2]: https://github.com/pironjulien/NexusRelay/compare/v1.10.1...v1.10.2
 [1.10.1]: https://github.com/pironjulien/NexusRelay/compare/v1.10.0...v1.10.1
 [1.10.0]: https://github.com/pironjulien/NexusRelay/compare/v1.9.0...v1.10.0
-[1.8.3]: https://github.com/pironjulien/NexusRelay/releases/tag/v1.8.3
-[1.8.2]: https://github.com/pironjulien/NexusRelay/releases/tag/v1.8.2
+[1.9.0]: https://github.com/pironjulien/NexusRelay/compare/v1.8.7...v1.9.0
+[1.8.7]: https://github.com/pironjulien/NexusRelay/compare/v1.8.6...v1.8.7
+[1.8.6]: https://github.com/pironjulien/NexusRelay/compare/v1.8.5...v1.8.6
+[1.8.5]: https://github.com/pironjulien/NexusRelay/compare/v1.8.4...v1.8.5
+[1.8.4]: https://github.com/pironjulien/NexusRelay/compare/v1.8.3...v1.8.4
+[1.8.3]: https://github.com/pironjulien/NexusRelay/compare/v1.8.2...v1.8.3
+[1.8.2]: https://github.com/pironjulien/NexusRelay/compare/v1.8.1...v1.8.2
+[1.8.1]: https://github.com/pironjulien/NexusRelay/compare/v1.8.0...v1.8.1
+[1.8.0]: https://github.com/pironjulien/NexusRelay/compare/v1.7.0...v1.8.0
+[1.7.0]: https://github.com/pironjulien/NexusRelay/compare/v1.6.2...v1.7.0
 [1.6.2]: https://github.com/pironjulien/NexusRelay/compare/v1.6.1...v1.6.2
 [1.6.1]: https://github.com/pironjulien/NexusRelay/compare/v1.6.0...v1.6.1
 [1.6.0]: https://github.com/pironjulien/NexusRelay/compare/v1.5.3...v1.6.0

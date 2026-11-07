@@ -153,7 +153,7 @@ public sealed class ContractTests : IDisposable
                 if (children[folder] is not JsonObject next) children[folder] = next = new JsonObject { ["files"] = new JsonObject() };
                 node = next;
             }
-            node["files"]![parts[^1]] = new JsonObject { ["size"] = data.Length, ["offset"] = blob.Length.ToString() };
+            node["files"]![parts[^1]] = new JsonObject { ["size"] = data.Length, ["offset"] = blob.Length.ToString(System.Globalization.CultureInfo.InvariantCulture) };
             blob.Write(data);
         }
         byte[] header = Encoding.UTF8.GetBytes(tree.ToJsonString());
@@ -228,7 +228,7 @@ public sealed class ContractTests : IDisposable
             string? url = null; var until = DateTime.UtcNow.AddSeconds(45);
             while (DateTime.UtcNow < until && url is null)
             {
-                try { url = JsonNode.Parse(http.GetStringAsync($"http://127.0.0.1:{port}/json/list").GetAwaiter().GetResult())!.AsArray().OfType<JsonObject>().FirstOrDefault(t => t["type"]?.ToString() == "page" && t["url"]?.ToString().StartsWith("file:") == true)?["webSocketDebuggerUrl"]?.ToString(); }
+                try { url = JsonNode.Parse(http.GetStringAsync($"http://127.0.0.1:{port}/json/list").GetAwaiter().GetResult())!.AsArray().OfType<JsonObject>().FirstOrDefault(t => t["type"]?.ToString() == "page" && t["url"]?.ToString().StartsWith("file:", StringComparison.Ordinal) == true)?["webSocketDebuggerUrl"]?.ToString(); }
                 catch (Exception e) when (e is HttpRequestException or TaskCanceledException) { /* Debugger not up yet: retried until the deadline. */ }
                 if (url is null) Thread.Sleep(100);
             }

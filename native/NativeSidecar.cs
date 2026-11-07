@@ -26,7 +26,7 @@ public sealed class NativeAgentApi
         if (candidate is null)
             foreach (string dir in (Environment.GetEnvironmentVariable("PATH") ?? "").Split(System.IO.Path.PathSeparator))
             {
-                candidate = new[] { "agentapi.exe", "agentapi.bat", "agentapi.cmd" }.Select(name => System.IO.Path.Join(dir, name)).FirstOrDefault(File.Exists);
+                candidate = Lists.AgentApiNames.Select(name => System.IO.Path.Join(dir, name)).FirstOrDefault(File.Exists);
                 if (candidate is not null) break;
             }
         if (candidate is null) throw new AgentApiFailure("agentapi not found: run as Antigravity's registered sidecar");

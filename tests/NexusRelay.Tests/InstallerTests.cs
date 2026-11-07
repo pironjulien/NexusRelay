@@ -184,7 +184,7 @@ public sealed class InstallerTests : IDisposable
         var forbidden = new Regex(@"\birm\b[^\n]*\|\s*iex\b|\|\s*Invoke-Expression|\[scriptblock\]::Create|-EncodedCommand|\biex\s*\(", RegexOptions.IgnoreCase);
         foreach (string file in Native.Git(Repo, "ls-files").Split('\n', StringSplitOptions.RemoveEmptyEntries)
             .Where(f => !(f is "CHANGELOG.md" || f.StartsWith("tests/", StringComparison.Ordinal) || !File.Exists(Path.Join(Repo, f))
-                || !(f.EndsWith(".ps1") || f.EndsWith(".md") || f.EndsWith(".yml") || f.EndsWith(".cs") || f.EndsWith(".json")))))
+                || !(f.EndsWith(".ps1", StringComparison.Ordinal) || f.EndsWith(".md", StringComparison.Ordinal) || f.EndsWith(".yml", StringComparison.Ordinal) || f.EndsWith(".cs", StringComparison.Ordinal) || f.EndsWith(".json", StringComparison.Ordinal)))))
         {
             Assert.False(forbidden.IsMatch(File.ReadAllText(Path.Join(Repo, file))), file);
         }

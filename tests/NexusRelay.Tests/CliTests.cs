@@ -20,13 +20,15 @@ internal static partial class Sqlite
     {
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         Assert.Equal(0, Open(path, out nint db, 0x02 | 0x04, 0));
-        try { Assert.Equal(0, Exec(db, sql, 0, 0, out _)); } finally { Close(db); }
+        try { Assert.Equal(0, Exec(db, sql, 0, 0, out _)); } finally { _ = Close(db); }
     }
 }
 
 /// <summary>Command-line entry points of the engine: hooks, commit guard, app activity and history, quota, CDP, sidecar.</summary>
 public sealed class CliTests : IDisposable
 {
+    private static readonly bool[] NotBrokerThenBroker = [false, true];
+
     private readonly Isolation iso = new();
     public void Dispose() => iso.Dispose();
     private const string CodexSchema = "CREATE TABLE threads(id TEXT,rollout_path TEXT,cwd TEXT,archived INTEGER,source TEXT DEFAULT 'vscode'); CREATE TABLE thread_spawn_edges(parent_thread_id TEXT,child_thread_id TEXT);";
@@ -239,7 +241,7 @@ public sealed class CliTests : IDisposable
             if (chat == "quoted") text = "A user quote: " + text;
             string log = Path.Join(iso.Root, chat + ".jsonl");
             File.WriteAllText(log, new JsonObject { ["type"] = "response_item", ["payload"] = new JsonObject { ["type"] = "message", ["role"] = "user", ["content"] = new JsonArray(new JsonObject { ["type"] = "input_text", ["text"] = text }) } }.ToJsonString() + "\n");
-            sql.Append($"INSERT INTO threads(id,rollout_path,cwd,archived) VALUES({Sqlite.Q(chat)},{Sqlite.Q(log)},{Sqlite.Q(documents)},1);");
+            sql.Append(System.Globalization.CultureInfo.InvariantCulture, $"INSERT INTO threads(id,rollout_path,cwd,archived) VALUES({Sqlite.Q(chat)},{Sqlite.Q(log)},{Sqlite.Q(documents)},1);");
             if (chat != "human") box.Event(ask.Id, "réveil", new() { ["status"] = "started", ["conversation"] = chat });
         }
         sql.Append("INSERT INTO thread_spawn_edges VALUES('relay','child');");
@@ -357,7 +359,7 @@ public sealed class CliTests : IDisposable
         Assert.True(result.Code == 0, result.Out + result.Err);
         var lines = result.Out.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Select(l => JsonNode.Parse(l)!).ToList();
         Assert.Equal(2, lines.Count);
-        foreach (var (line, broker) in lines.Zip(new[] { false, true }))
+        foreach (var (line, broker) in lines.Zip(NotBrokerThenBroker))
         {
             Assert.True(line["ok"]!.GetValue<bool>());
             Assert.Equal(broker, line["broker"]!.GetValue<bool>());
@@ -374,7 +376,7 @@ public sealed class CliTests : IDisposable
     public void Cdp_reads_multiple_responses_and_real_controls()
     {
         using var server = new FakeDebugger();
-        var response = Native.Run(["--inspect", "codex"], env: new Dictionary<string, string?> { ["NEXUS_RELAY_CODEX_PORT"] = server.Port.ToString() });
+        var response = Native.Run(["--inspect", "codex"], env: new Dictionary<string, string?> { ["NEXUS_RELAY_CODEX_PORT"] = server.Port.ToString(System.Globalization.CultureInfo.InvariantCulture) });
         var data = JsonNode.Parse(response.Out)!;
         Assert.True(data["status"]?.ToString() == "success", response.Out + response.Err);
         Assert.True(data["relay_project_visible"]!.GetValue<bool>());
@@ -491,7 +493,9 @@ public sealed class CliTests : IDisposable
                     continue;
                 }
                 string key = headers.Split("\r\n").First(l => l.StartsWith("Sec-WebSocket-Key:", StringComparison.OrdinalIgnoreCase))[18..].Trim();
+                #pragma warning disable CA5350 // RFC 6455 fixes SHA-1 for the WebSocket handshake key; not a security hash.
                 string accept = Convert.ToBase64String(SHA1.HashData(Encoding.ASCII.GetBytes(key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11")));
+#pragma warning restore CA5350
                 stream.Write(Encoding.ASCII.GetBytes($"HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: {accept}\r\n\r\n"));
                 while (true)
                 {

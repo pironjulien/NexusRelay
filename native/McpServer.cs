@@ -163,7 +163,7 @@ public sealed partial class McpServer
         }
         if (message.Info)
             obj["info"] = true;
-        foreach (var k in new[] { "round", "bad_citations", "stale" }.Where(k => message.ExtraObj[k] is not null))
+        foreach (var k in Lists.MessageExtras.Where(k => message.ExtraObj[k] is not null))
             obj[k] = message.ExtraObj[k]!.DeepClone();
         AddAttached(obj, message);
         return obj;
@@ -177,7 +177,7 @@ public sealed partial class McpServer
         foreach (var item in arr.OfType<JsonObject>())
         {
             var entry = new JsonObject();
-            foreach (var k in new[] { "name", "mime", "size", "path" }.Where(k => item[k] is not null))
+            foreach (var k in Lists.AttachmentFields.Where(k => item[k] is not null))
                 entry[k] = item[k]!.DeepClone();
             shown.Add(entry);
         }
@@ -346,7 +346,7 @@ public sealed partial class McpServer
         return ~crc;
     }
 
-    private static IDisposable AcquireTakingLock(RelayBox box, string messageId)
+    private static TakingLockHandle AcquireTakingLock(RelayBox box, string messageId)
     {
         var folder = Path.Join(box.Root, "locks");
         Directory.CreateDirectory(folder);
@@ -1457,7 +1457,7 @@ public sealed partial class McpServer
         foreach (var card in NativeCards.Overview()) agents[card.Key]!["carte"] = card.Value?.DeepClone();
         var host = RelayPaths.RelayHost();
         var selftestArr = new JsonArray();
-        foreach (var to in new[] { "codex", "antigravity" }.Where(a => a != host))
+        foreach (var to in Lists.Peers.Where(a => a != host))
         {
             var st = box.State($"selftest-{host}-{to}")?.DeepClone()
                 ?? new JsonObject { ["source"] = host, ["to"] = to, ["result"] = "non testé" };
@@ -1752,7 +1752,7 @@ public sealed partial class McpServer
         return CryptographicOperations.FixedTimeEquals(a, b);
     }
 
-    public static async Task RunHttpAsync(int port, CancellationToken cancellationToken = default, RelayRuntime? runtimeOverride = null)
+    public static async Task RunHttpAsync(int port, RelayRuntime? runtimeOverride = null, CancellationToken cancellationToken = default)
     {
         var expectedToken = ConfiguredToken();
         RestartPending = false;
@@ -1779,7 +1779,7 @@ public sealed partial class McpServer
                 catch (OperationCanceledException) { return; }
                 catch (IOException e) { Console.Error.WriteLine($"Restart request: {e.Message}"); }
             }
-        });
+        }, CancellationToken.None); // the loop itself stops on shutdown
         RelayPaths.MarkRestartable("daemon");
         using var listener = new TcpListener(IPAddress.Loopback, port);
         listener.Start();

@@ -112,7 +112,7 @@ public sealed class ProtocolTests : IDisposable
     public void Http_health_reports_runtime_identity_and_graceful_restart()
     {
         using var daemon = new Daemon();
-        var health = JsonNode.Parse(daemon.Health().Content.ReadAsStringAsync().GetAwaiter().GetResult())!;
+        var health = JsonNode.Parse(daemon.Health().Content.ReadAsStringAsync(TestContext.Current.CancellationToken).GetAwaiter().GetResult())!;
         Assert.Equal("ok", health["status"]?.ToString());
         Assert.Equal("nexus-relay", health["service"]?.ToString());
         Assert.Equal("native", health["runtime"]?.ToString());
@@ -169,7 +169,7 @@ public sealed class ProtocolTests : IDisposable
         Thread.Sleep(200);
         Assert.False(box.IsRead(answer));
         daemon.Rpc(Cancelled(89));
-        Assert.True(waiting.Wait(5000));
+        Assert.True(waiting.Wait(5000, TestContext.Current.CancellationToken));
         Assert.NotNull(waiting.Result!["error"]);
         Assert.False(box.IsRead(answer));
         Assert.True(box.State("waited") is null or { Count: 0 });
@@ -188,7 +188,7 @@ public sealed class ProtocolTests : IDisposable
         Assert.Contains("reserved", rejected["error"]!.ToString());
         Assert.True(box.State("waited")?.ContainsKey(ask.Id) == true && !first.IsCompleted);
         daemon.Rpc(Cancelled(100));
-        Assert.True(first.Wait(5000));
+        Assert.True(first.Wait(5000, TestContext.Current.CancellationToken));
         Assert.True(box.State("waited") is null or { Count: 0 });
     }
 
@@ -203,7 +203,7 @@ public sealed class ProtocolTests : IDisposable
         var waiting = Task.Run(() => daemon.Rpc(WaitCall([first.Id, second.Id], timeout: 10)));
         Wait.Until(() => box.State("waited")?.Count == 2, 5, "both waits reserved");
         File.WriteAllText(Path.Join(iso.Relay, "daemon-restart.request"), "force fixture");
-        Assert.True(waiting.Wait(6000));
+        Assert.True(waiting.Wait(6000, TestContext.Current.CancellationToken));
         var group = Payload(waiting.Result);
         Assert.Equal("partial", group["status"]?.ToString());
         Assert.Equal(["success", "restarting"], (group["replies"] as JsonArray)!.Select(r => r!["status"]!.ToString()));
@@ -237,11 +237,11 @@ public sealed class ProtocolTests : IDisposable
         using var second = new Daemon();
         string probe = Path.Join(Paths.Repo(), "tests", "native_restart", "probe.ps1");
         string[] common = ["-Mailbox", iso.Relay, "-Executable", Native.Exe];
-        var wrong = JsonNode.Parse(Native.Pwsh(probe, [.. common, "-Port", first.Port.ToString(), "-Request"]).Out)!;
+        var wrong = JsonNode.Parse(Native.Pwsh(probe, [.. common, "-Port", first.Port.ToString(System.Globalization.CultureInfo.InvariantCulture), "-Request"]).Out)!;
         Assert.False(wrong["ok"]!.GetValue<bool>());
         Assert.Contains("port", wrong["reason"]!.ToString());
         Assert.False(first.Process.HasExited || second.Process.HasExited);
-        var correct = JsonNode.Parse(Native.Pwsh(probe, [.. common, "-Port", second.Port.ToString(), "-Request", "-ConnectionOnly"]).Out)!;
+        var correct = JsonNode.Parse(Native.Pwsh(probe, [.. common, "-Port", second.Port.ToString(System.Globalization.CultureInfo.InvariantCulture), "-Request", "-ConnectionOnly"]).Out)!;
         Assert.True(correct["ok"]!.GetValue<bool>(), correct.ToJsonString());
         Assert.Equal(second.Process.Id, correct["pid"]!.GetValue<int>());
         Assert.True(second.Process.WaitForExit(10_000));

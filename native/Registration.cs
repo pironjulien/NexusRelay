@@ -11,7 +11,7 @@ using Tomlyn.Serialization;
 namespace NexusRelay;
 
 [TomlSerializable(typeof(TomlTable))]
-internal partial class RelayTomlContext : TomlSerializerContext { }
+internal sealed partial class RelayTomlContext : TomlSerializerContext { }
 
 /// <summary>
 /// Declarations made by the installer, without touching anything else in the client files (each file is backed up,
@@ -54,7 +54,7 @@ public static partial class Registration
     {
         if (!File.Exists(path)) return;
         Directory.CreateDirectory(backups);
-        string stamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
+        string stamp = DateTime.Now.ToString("yyyyMMdd-HHmmss", System.Globalization.CultureInfo.InvariantCulture);
         File.Copy(path, Path.Join(backups, $"{Path.GetFileName(Path.GetDirectoryName(Path.GetFullPath(path)))}-{Path.GetFileName(path)}-{stamp}"), true);
     }
 
@@ -206,7 +206,7 @@ public static partial class Registration
             catch (InvalidDataException) { /* Not a single-table header: copied unchanged below. */ }
             if (key is not null && remap.TryGetValue(key, out var target))
             {
-                if (target is not null) parts.Append($"[hooks.state.{TomlLiteral(target)}]\n").Append(text, match.Index + match.Length, end - match.Index - match.Length);
+                if (target is not null) parts.Append(System.Globalization.CultureInfo.InvariantCulture, $"[hooks.state.{TomlLiteral(target)}]\n").Append(text, match.Index + match.Length, end - match.Index - match.Length);
             }
             else parts.Append(text, match.Index, end - match.Index);
         }

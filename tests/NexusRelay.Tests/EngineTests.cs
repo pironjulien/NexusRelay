@@ -108,18 +108,18 @@ public sealed class EngineTests : IDisposable
         iso.Set("NEXUS_MCP_TOKEN", token);
         int port = Native.FreePort();
         using var cts = new CancellationTokenSource();
-        var server = McpServer.RunHttpAsync(port, cts.Token, new RelayRuntime(waker: (_, _, _) => AppTransport.Result("deferred", "isolated test adapter"), tidy: () => { }));
+        var server = McpServer.RunHttpAsync(port, new RelayRuntime(waker: (_, _, _) => AppTransport.Result("deferred", "isolated test adapter"), tidy: () => { }), cts.Token);
         try
         {
             using var http = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{port}") };
             HttpResponseMessage? health = null;
             for (int i = 0; i < 60 && health?.IsSuccessStatusCode != true; i++)
             {
-                try { health = await http.GetAsync("/health"); } catch (HttpRequestException) { await Task.Delay(50); }
+                try { health = await http.GetAsync("/health", TestContext.Current.CancellationToken); } catch (HttpRequestException) { await Task.Delay(50, TestContext.Current.CancellationToken); }
             }
             Assert.True(health?.IsSuccessStatusCode);
             using var ping = new StringContent("""{"jsonrpc":"2.0","id":1,"method":"ping"}""", Encoding.UTF8, "application/json");
-            var unauthorized = await http.PostAsync("/mcp?agent=claude", ping);
+            var unauthorized = await http.PostAsync("/mcp?agent=claude", ping, TestContext.Current.CancellationToken);
             Assert.Equal(HttpStatusCode.Unauthorized, unauthorized.StatusCode);
             http.DefaultRequestHeaders.Authorization = new("Bearer", token);
             async Task<JsonObject> Rpc(string method, JsonObject? parameters = null)
@@ -173,7 +173,7 @@ public sealed class EngineTests : IDisposable
         var woken = ClaudeInbox.Wake([request]);
         Assert.Equal("started", woken["status"]?.ToString());
         Assert.Equal("claude-inbox", woken["via"]?.ToString());
-        Assert.True(lines.Wait(5000));
+        Assert.True(lines.Wait(5000, TestContext.Current.CancellationToken));
         Assert.Equal(token, JsonNode.Parse(lines.Result[0]!)!["token"]?.ToString());
         var frame = JsonNode.Parse(lines.Result[1]!)!;
         Assert.Equal("user", frame["type"]?.ToString());
@@ -290,7 +290,7 @@ public sealed class EngineTests : IDisposable
     [Fact]
     public void Codex_quota_behind_the_router_is_the_pooled_one()
     {
-        var now = DateTimeOffset.Parse("2026-11-02T20:30:00Z");
+        var now = DateTimeOffset.Parse("2026-11-02T20:30:00Z", System.Globalization.CultureInfo.InvariantCulture);
         var summary = JsonNode.Parse("""{"primaryWindow":{"remainingPercent":50.0,"resetAt":"2026-11-02T23:36:42Z","windowMinutes":300},"secondaryWindow":{"remainingPercent":2.5,"resetAt":"2026-11-01T06:41:37Z","windowMinutes":10080}}""");
         var usage = CodexRouter.UsageFromSummary(summary, now)!;
         Assert.Equal(50.0, usage["windows"]!["primary"]!["used_pct"]!.GetValue<double>());

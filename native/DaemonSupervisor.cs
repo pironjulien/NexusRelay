@@ -31,7 +31,7 @@ public static class DaemonSupervisor
                 args.Add(item.ToString());
         }
         args.Add("--http");
-        args.Add(port.ToString());
+        args.Add(port.ToString(System.Globalization.CultureInfo.InvariantCulture));
 
         var env = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (System.Collections.DictionaryEntry entry in Environment.GetEnvironmentVariables())

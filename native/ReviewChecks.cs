@@ -258,7 +258,7 @@ public static partial class ReviewChecks
         => text.Split('\n')
             .Select(l => l.Trim().TrimStart('-', '*', '•', '·', ' ', '\t').Trim())
             .Select(l => Regex.Replace(l, @"^\d{1,2}[.)]\s+", ""))
-            .Where(l => WordRegex().Matches(l).Count >= 3)
+            .Where(l => WordRegex().Count(l) >= 3)
             .ToList();
 
     private static HashSet<string> Words(string point)

@@ -134,8 +134,8 @@ public sealed class RegistrationTests : IDisposable
         var text = new StringBuilder("# garder ce commentaire\nmodel = \"x\"\n[plugins.\"nexus-relay@nexus-plugins\"]\nenabled = true\n");
         foreach (var (key, (hash, enabled)) in state)
         {
-            text.Append($"\n[hooks.state.{System.Text.Json.JsonSerializer.Serialize(key)}]\ntrusted_hash = \"{hash}\"\n");  // quoted TOML keys too
-            if (enabled is not null) text.Append($"enabled = {(enabled.Value ? "true" : "false")}\n");
+            text.Append(System.Globalization.CultureInfo.InvariantCulture, $"\n[hooks.state.{System.Text.Json.JsonSerializer.Serialize(key)}]\ntrusted_hash = \"{hash}\"\n");  // quoted TOML keys too
+            if (enabled is not null) text.Append(System.Globalization.CultureInfo.InvariantCulture, $"enabled = {(enabled.Value ? "true" : "false")}\n");
         }
         Write(Path.Join(codex, "config.toml"), text.ToString());
         Assert.Contains("global entry removed", Registration.CodexHooks(iso.Root, Exe, Backups));

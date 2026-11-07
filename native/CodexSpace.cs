@@ -29,7 +29,7 @@ public static class CodexSpace
         string cutoff = Setting("NEXUS_RELAY_WAKE_SINCE", "wake_since");
         return cutoff.Length == 0 || AppSessions.Epoch(created) is double at && AppSessions.Epoch(cutoff) is double since && at >= since;
     }
-    public static bool Protected(string id) => new[] { "CODEX_SESSION_ID", "CODEX_THREAD_ID" }.Any(k => Environment.GetEnvironmentVariable(k) == id);
+    public static bool Protected(string id) => Lists.CodexThreadVariables.Any(k => Environment.GetEnvironmentVariable(k) == id);
     public static bool Owns(AppChat chat, RelayBox box)
     {
         var item = box.State("codex-owned")?["threads"]?[chat.Id] as JsonObject;

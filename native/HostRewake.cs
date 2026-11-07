@@ -165,7 +165,7 @@ public static partial class HostRewake
     private static double ParseEpoch(string iso)
         => DateTimeOffset.TryParse(iso, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeUniversal, out var at) ? at.ToUnixTimeMilliseconds() / 1000.0 : 0;
 
-    private static int Wake(RelayBox box, List<RelayMessage> pending, List<RelayMessage> answered, List<RelayMessage> closed, bool timeout, IReadOnlySet<string> seen)
+    private static int Wake(RelayBox box, List<RelayMessage> pending, List<RelayMessage> answered, List<RelayMessage> closed, bool timeout, HashSet<string> seen)
     {
         var unread = answered.Select(m => (Ask: m, Answer: AnswerOf(box, m)!)).Where(p => !p.Answer.Info && !seen.Contains(p.Answer.Id)).ToList();   // info: closes the request, wakes nobody
         var waiting = pending.Except(answered).Except(closed).ToList();
@@ -180,15 +180,15 @@ public static partial class HostRewake
         foreach (var (ask, answer) in unread)
         {
             var body = answer.Text.Length > MaxShown ? answer.Text[..MaxShown] + RelayPaths.Tr($"… (read({answer.Id}) for the rest)", $"… (read({answer.Id}) pour la suite)") : answer.Text;
-            text.Append($"\n— {answer.Sender} → {ask.Id} (topic {ask.Topic}, reply {answer.Id}");
-            foreach (var key in new[] { "state", "quality" })
-                if (answer.ExtraObj[key]?.GetValue<string>() is string value) text.Append($", {key}: {value}");
+            text.Append(System.Globalization.CultureInfo.InvariantCulture, $"\n— {answer.Sender} → {ask.Id} (topic {ask.Topic}, reply {answer.Id}");
+            foreach (var key in Lists.AnswerMarks)
+                if (answer.ExtraObj[key]?.GetValue<string>() is string value) text.Append(System.Globalization.CultureInfo.InvariantCulture, $", {key}: {value}");
             text.AppendLine(")");
             if (answer.ExtraObj["bad_citations"] is JsonArray bad && bad.Count > 0)
                 text.AppendLine(RelayPaths.Tr("citations not found: ", "citations introuvables : ") + string.Join("; ", bad.Select(b => b?.ToString())));
             if (answer.ExtraObj["stale"] is JsonObject stale)
                 text.AppendLine($"{stale["note"]} {string.Join(", ", (stale["changed"] as JsonArray ?? []).Select(c => c?.ToString()))}".TrimEnd());
-            text.AppendLine($"⟦relay:{nonce} …⟧\n{body}\n⟦/relay:{nonce}⟧");
+            text.AppendLine(System.Globalization.CultureInfo.InvariantCulture, $"⟦relay:{nonce} …⟧\n{body}\n⟦/relay:{nonce}⟧");
             box.MarkRead(answer);
         }
         foreach (var ask in closed)

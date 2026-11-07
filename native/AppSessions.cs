@@ -23,7 +23,7 @@ public static partial class AppSessions
         try
         {
             if (SqliteOpen(db, out handle, 1, 0) != 0) throw new RelayError("Codex app database cannot be opened read-only");
-            SqliteBusy(handle, 2000);
+            _ = SqliteBusy(handle, 2000);
             const string sql = "SELECT t.id,t.rollout_path,t.cwd,t.archived,EXISTS(SELECT 1 FROM thread_spawn_edges e WHERE e.child_thread_id=t.id) OR CASE WHEN json_valid(t.source) THEN json_type(t.source,'$.subagent') IS NOT NULL ELSE 0 END,t.source='exec' FROM threads t";
             if (SqlitePrepare(handle, sql, -1, out statement, 0) != 0) throw new RelayError("Codex app database schema is unreadable");
             var result = new List<AppChat>();
@@ -35,8 +35,8 @@ public static partial class AppSessions
         }
         finally
         {
-            if (statement != 0) SqliteFinalize(statement);
-            if (handle != 0) SqliteClose(handle);
+            if (statement != 0) _ = SqliteFinalize(statement);
+            if (handle != 0) _ = SqliteClose(handle);
         }
     }
     private static string Text(nint statement, int i) => Marshal.PtrToStringUTF8(SqliteText(statement, i)) ?? "";
@@ -180,8 +180,8 @@ public static partial class AppSessions
         }
         finally
         {
-            if (statement != 0) SqliteFinalize(statement);
-            if (db != 0) SqliteClose(db);
+            if (statement != 0) _ = SqliteFinalize(statement);
+            if (db != 0) _ = SqliteClose(db);
         }
     }
     public static JsonObject? CodexUsage()
@@ -192,12 +192,12 @@ public static partial class AppSessions
         if (CodexRouter.Usage() is JsonObject pooled) return pooled;
         try
         {
-            var files = new[] { "sessions", "archived_sessions" }.Select(f => System.IO.Path.Join(CodexHome, f)).Where(Directory.Exists).SelectMany(f => Directory.EnumerateFiles(f, "rollout-*.jsonl", SearchOption.AllDirectories));
+            var files = Lists.CodexSessionFolders.Select(f => System.IO.Path.Join(CodexHome, f)).Where(Directory.Exists).SelectMany(f => Directory.EnumerateFiles(f, "rollout-*.jsonl", SearchOption.AllDirectories));
             var readings = files.OrderByDescending(File.GetLastWriteTimeUtc).Take(8).SelectMany(f => Lines(Tail(f)).Where(e => e["payload"]?["rate_limits"] is JsonObject)).OrderByDescending(e => e["timestamp"]?.ToString()).FirstOrDefault();
             if (readings is null) return null;
             var windows = new JsonObject();
             var limits = readings["payload"]?["rate_limits"];
-            foreach (string name in new[] { "primary", "secondary" }.Where(n => limits?[n] is JsonObject))
+            foreach (string name in Lists.RateLimitWindows.Where(n => limits?[n] is JsonObject))
             {
                 var w = limits![name]!;
                 double reset = w["resets_at"]?.GetValue<double>() ?? 0;

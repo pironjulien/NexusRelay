@@ -11,6 +11,6 @@
     <EmbeddedResource Include="UiContracts.json" LogicalName="NexusRelay.UiContracts.json" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="Tomlyn" Version="2.10.1" />
+    <PackageReference Include="Tomlyn" Version="2.10.2" />
   </ItemGroup>
 </Project>
