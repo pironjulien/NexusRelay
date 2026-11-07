@@ -21,6 +21,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   supported" box, which blocked the update until clicked.
 - Tests: no test can show a Windows error box. The test process sets the error mode (no critical-error, crash or
   missing-file box) when it loads, and every process it starts inherits it; a test checks it in a child process.
+- Tests: the user-application lifetime test is deterministic under load and when two test runs overlap (another
+  session's test gate). Its fixture was published to, and kept its state files in, one shared folder
+  (`~\.nexus\build\nexusrelay\lifetime`, with a shared `obj`), so concurrent runs deleted and overwrote each other's
+  files; it is now built and run in the test's own folder. It read the child's heartbeat without sharing the file with
+  its writer, and judged survival after a fixed 1.6 s sleep: the beat is now read shared, and survival is a beat
+  written after the caller's job was closed, each wait bounded by a 60 s deadline instead of a fixed time.
 
 ## [1.13.11] - 2026-11-07
 

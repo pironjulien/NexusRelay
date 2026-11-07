@@ -352,10 +352,14 @@ public sealed class CliTests : IDisposable
     [Fact]
     public void User_application_survives_caller_job_with_negative_control()
     {
-        string output = Path.Join(Paths.Scratch, "..", "lifetime");
-        var build = Native.RunFile("dotnet", ["publish", Path.Join(Paths.Repo(), "tests", "native_lifetime", "LifetimeFixture.csproj"), "-c", "Release", "-o", output, "--nologo", "-v", "q"], timeoutS: 180);
-        Assert.True(build.Code == 0, build.Out + build.Err);
-        var result = Native.RunFile(Path.Join(output, "LifetimeFixture.exe"), ["--test"], timeoutS: 45);
+        // Built and run in this test's own folder: the fixture keeps its state files next to itself, and a shared
+        // folder (~\.nexus\build\nexusrelay\lifetime, with its obj) let two test runs at once (another session's test
+        // gate) publish over and delete each other's files.
+        string output = Path.Join(iso.Root, "lifetime");
+        string build = Path.Join(iso.Root, "lifetime-build") + "/"; // not '\': before a closing quote, it would escape it
+        var published = Native.RunFile("dotnet", ["publish", Path.Join(Paths.Repo(), "tests", "native_lifetime", "LifetimeFixture.csproj"), "-c", "Release", "-o", output, "-p:NexusRelayBuild=" + build, "--nologo", "-v", "q"], timeoutS: 600);
+        Assert.True(published.Code == 0, published.Out + published.Err);
+        var result = Native.RunFile(Path.Join(output, "LifetimeFixture.exe"), ["--test"], timeoutS: 600);
         Assert.True(result.Code == 0, result.Out + result.Err);
         var lines = result.Out.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Select(l => JsonNode.Parse(l)!).ToList();
         Assert.Equal(2, lines.Count);
