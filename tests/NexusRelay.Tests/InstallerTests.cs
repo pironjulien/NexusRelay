@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
@@ -284,7 +285,7 @@ public sealed class InstallerTests : IDisposable
         string install = File.ReadAllText(Path.Join(Repo, "install.ps1"), Encoding.UTF8);
         Assert.Contains("& $nativeExe --engine-pointer", install);  // the versioned copy, never bin
         Assert.Contains("foreach ($retired in @('scripts/bridge.ps1'))", install);  // the old PowerShell bridge left behind by Copy-Tree
-        Assert.True(install.IndexOf("--engine-pointer", StringComparison.Ordinal) < install.IndexOf("foreach ($old in Get-ChildItem -LiteralPath $versions", StringComparison.Ordinal));
+        Assert.True(install.IndexOf("--engine-pointer", StringComparison.Ordinal) < install.IndexOf("Remove-StaleRelayVersions -Versions $versions", StringComparison.Ordinal));
         foreach (string manifest in new[] { "plugin/antigravity/plugin.json", "fr/plugin/antigravity/plugin.json" })
             Assert.InRange(JsonNode.Parse(File.ReadAllText(Path.Join(Repo, manifest)))!["description"]!.ToString().Length, 120, 160);
     }
@@ -385,6 +386,54 @@ public sealed class InstallerTests : IDisposable
         Assert.Equal(0, check.Code);
         // Le contrôle final ayant validé la santé, bin.old-* a été nettoyé
         Assert.Empty(Directory.EnumerateDirectories(state, "bin.old-*"));
+    }
+
+    [Fact]
+    public void Installer_never_removes_the_versioned_engine_a_running_process_uses()
+    {
+        // NexusFree 1.3.3: a running .NET engine loads its DLLs from its folder on demand; deleting what it has not loaded
+        // yet leaves it answering every call with an empty error. Old versions are cleaned at each install: the one an
+        // engine still runs (here started through another spelling of the path, as from an MSIX-redirected or
+        // elevated view whose process path the installer cannot match) must stay whole, an unused one goes.
+        string versions = Path.Join(iso.Root, "localappdata", "NexusRelay", "versions");
+        string inUse = Path.Join(versions, "0000000000000001"), current = Path.Join(versions, "0000000000000002"), unused = Path.Join(versions, "0000000000000003");
+        foreach (string folder in new[] { inUse, current, unused })
+        {
+            Directory.CreateDirectory(folder);
+            foreach (string file in Directory.EnumerateFiles(AppContext.BaseDirectory)) File.Copy(file, Path.Join(folder, Path.GetFileName(file)));
+        }
+        int files = Directory.EnumerateFiles(inUse).Count();
+        string alias = Path.Join(iso.Root, "alias");
+        Assert.Equal(0, Native.RunFile("cmd.exe", ["/d", "/c", "mklink", "/J", alias, versions]).Code);
+
+        using var engine = Process.Start(Native.Start(Path.Join(alias, "0000000000000001", "NexusRelay.exe"), ["--mcp", "--agent", "claude", "--protocol-fixture"]))!;
+        try
+        {
+            string Ask(JsonObject request)
+            {
+                engine.StandardInput.WriteLine(request.ToJsonString()); engine.StandardInput.Flush();
+                var line = engine.StandardOutput.ReadLineAsync();
+                Assert.True(line.Wait(30_000), "engine did not answer");
+                return line.Result ?? "";
+            }
+            Assert.Contains("\"result\"", Ask(Native.Rpc("initialize")));
+
+            string script = $". '{Path.Join(Repo, "scripts", "Remove-RelayVersions.ps1")}'; Remove-StaleRelayVersions -Versions '{versions}' -Keep '0000000000000002'";
+            var ran = Native.RunFile("pwsh.exe", ["-NoProfile", "-NonInteractive", "-Command", script], timeoutS: 60);
+            Assert.True(ran.Code == 0, ran.Err + ran.Out);
+
+            Assert.Equal(files, Directory.EnumerateFiles(inUse).Count());  // the running engine's folder is left whole
+            Assert.True(Directory.Exists(current));
+            Assert.False(Directory.Exists(unused));
+            Assert.Equal([inUse, current], Directory.EnumerateDirectories(versions).Order(StringComparer.OrdinalIgnoreCase));  // no leftover beside them
+            string status = Ask(Native.Call("status"));
+            Assert.DoesNotContain("\"isError\":true", status);
+        }
+        finally
+        {
+            if (!engine.HasExited) { engine.Kill(true); engine.WaitForExit(10_000); }
+            Directory.Delete(alias);  // the junction only, never its target
+        }
     }
 
     [Fact]

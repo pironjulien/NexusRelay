@@ -42,6 +42,7 @@ New-Item -ItemType Directory -Force $state, $backups, $mailbox | Out-Null
 . (Join-Path $project 'scripts\Restart-Relay.ps1')
 . (Join-Path $project 'scripts\Configure-AntigravityRelay.ps1')
 . (Join-Path $project 'scripts\Resolve-RelayPath.ps1')
+. (Join-Path $project 'scripts\Remove-RelayVersions.ps1')
 $specPath = Join-Path $HOME '.nexus\daemons\specs\nexus-relay.json'
 $previousSpec = if (Test-Path -LiteralPath $specPath) { Get-Content -LiteralPath $specPath -Raw | ConvertFrom-RelayJson } else { $null }
 $previousExe = if ($previousSpec) { @([string]$previousSpec.exe, [string]$previousSpec.python) | Where-Object { $_ } | Select-Object -First 1 } else { $null }
@@ -382,14 +383,9 @@ $null = Request-RelayRestart -RequestPath (Join-Path $mailbox 'sidecar-restart.r
 # ~\.nexus\nexus-relay\engine.txt (version|chemin de la copie versionnée, jamais bin, que la promotion renomme).
 & $nativeExe --engine-pointer | Out-Null
 if ($LASTEXITCODE) { throw 'Pointeur du moteur pour Antigravity (engine.txt) : échec (NexusRelay.exe --engine-pointer).' }
-# Anciennes versions : retirées dès qu'aucun processus n'en tourne (la courante est gardée ; les autres, en service
-# jusqu'à leur relance, partent à une installation suivante).
-$running = @(Get-CimInstance Win32_Process -Filter "Name='NexusRelay.exe'" | ForEach-Object { $_.ExecutablePath } | Where-Object { $_ })
-foreach ($old in Get-ChildItem -LiteralPath $versions -Directory -ErrorAction SilentlyContinue) {
-    if ($old.FullName -eq (Resolve-RelayPath -Path $nativeOut)) { continue }
-    if ($running | Where-Object { $_.StartsWith($old.FullName + '\', [StringComparison]::OrdinalIgnoreCase) }) { continue }
-    Remove-Item -LiteralPath $old.FullName -Recurse -Force -ErrorAction SilentlyContinue
-}
+# Anciennes versions : retirées seulement quand aucun processus ne les utilise (renommage refusé par Windows tant qu'un
+# moteur y tient des fichiers) ; la courante est gardée, une version en service part à une installation suivante.
+Remove-StaleRelayVersions -Versions $versions -Keep $nativeKey
 # Sans superviseur des démons Nexus : tâche « NexusRelay » à l'ouverture de session, qui lance le petit superviseur du
 # relais (NexusRelay.exe --daemon : lit la spec ci-dessus, relance le démon quand il s'arrête). L'ancienne tâche
 # « Nexus Relay » (avant 1.13.2) est arrêtée puis retirée dans tous les cas, avant tout démarrage de la nouvelle.

@@ -6,7 +6,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.13.9] - 2026-11-07
+
 ### Fixed
+- An update no longer deletes the files of an engine version a running process still uses. The installer removed old
+  versions (`%LOCALAPPDATA%\NexusRelay\versions\<fingerprint>`) unless the process list named a running
+  `NexusRelay.exe` inside them; an engine whose path it could not match (elevated, MSIX-redirected or reached through
+  another spelling of the path) lost every DLL it had not loaded yet and answered each call with an empty error, as
+  NexusFree did before 1.3.3. Now the file system decides: an old version is first renamed aside, which Windows refuses while
+  an engine holds files in it, and only a folder renamed aside is deleted; one in use stays whole until a later
+  install (`scripts/Remove-RelayVersions.ps1`, with a test that runs an engine from an old version during the cleanup).
 - Installing or updating no longer leaves the retired `scripts/bridge.ps1` in Antigravity's `nexus-relay` plugin
   folder: the installer only adds files, so the 1.13.8 update kept the old PowerShell bridge next to `start.cmd`.
 
