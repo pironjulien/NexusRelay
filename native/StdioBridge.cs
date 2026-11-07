@@ -13,7 +13,33 @@ namespace NexusRelay;
 public sealed class StdioBridge
 {
     public const string Flag = "--bridge";
+    public const string PointerFlag = "--engine-pointer";
     public const string Product = "NexusRelay";
+
+    /// <summary>
+    /// <c>~\.nexus\nexus-relay\engine.txt</c>: the engine installed on this PC, for the Antigravity Marketplace
+    /// launcher (<c>plugin\antigravity\scripts\start.cmd</c>), which can only name its own folder and the user
+    /// profile. One line, <c>&lt;version&gt;|&lt;path&gt;</c>: the version lets the launcher refuse an engine older
+    /// than its bridge contract; the path is the immutable versioned copy install.ps1 runs (never the stable
+    /// <c>bin</c> folder, which an install renames), relative to the user profile when inside it (plain ASCII that
+    /// cmd.exe reads in any code page), else absolute. Written atomically, only when it changes. Returns the file.
+    /// </summary>
+    public static string WritePointer(string executable)
+    {
+        string home = RelayPaths.UserHome();
+        string state = Path.Join(home, ".nexus", "nexus-relay");
+        string file = Path.Join(state, "engine.txt");
+        string full = Path.GetFullPath(executable);
+        string relative = Path.GetRelativePath(home, full);
+        string path = Path.IsPathRooted(relative) || relative.StartsWith("..", StringComparison.Ordinal) ? full : relative;
+        string text = RelayPaths.Version + "|" + path + "\r\n";
+        if (File.Exists(file) && File.ReadAllText(file, Utf8) == text) return file;
+        Directory.CreateDirectory(state);
+        string temporary = file + ".tmp-" + Environment.ProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        File.WriteAllText(temporary, text, Utf8);
+        File.Move(temporary, file, true);
+        return file;
+    }
 
     private static readonly UTF8Encoding Utf8 = new(false);
     private readonly object gate = new();

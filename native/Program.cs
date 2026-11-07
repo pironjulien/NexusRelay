@@ -13,6 +13,12 @@ public static class Program
         Console.OutputEncoding = new UTF8Encoding(false);
 
         if (args.Length >= 1 && args[0] == StdioBridge.Flag) return await StdioBridge.RunCliAsync(args);
+        if (args.Length == 1 && args[0] == StdioBridge.PointerFlag)
+        {
+            if (Environment.ProcessPath is not { } self) { await Console.Error.WriteLineAsync("Engine path unknown.").ConfigureAwait(false); return 1; }
+            Console.WriteLine(StdioBridge.WritePointer(self));
+            return 0;
+        }
         if (args.Length >= 1 && args[0] == "--settings") return RelaySettings.RunCli(args);
         if (args.Length >= 1 && args[0] is "--register-hooks" or "--register-clients") return Registration.RunCli(args);
         if (args.Contains("--router-status", StringComparer.Ordinal)) { Console.WriteLine(CodexRouter.Inspect().ToJsonString()); return 0; }

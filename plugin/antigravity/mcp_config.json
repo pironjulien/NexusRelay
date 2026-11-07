@@ -1,9 +1,11 @@
 {
   "mcpServers": {
     "nexus-relay": {
-      "command": "${PLUGIN_ROOT}\\..\\..\\..\\..\\.nexus\\nexus-relay\\bin\\NexusRelay.exe",
+      "command": "cmd.exe",
       "args": [
-        "--bridge",
+        "/d",
+        "/c",
+        "${PLUGIN_ROOT}\\scripts\\start.cmd",
         "http://127.0.0.1:16181/mcp?agent=antigravity"
       ]
     }

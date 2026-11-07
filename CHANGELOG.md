@@ -6,13 +6,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.13.8] - 2026-11-07
+
 ### Changed
-- Antigravity Marketplace plugin: its stdio bridge is now the engine itself (`NexusRelay.exe --bridge <url>`), started
-  from the plugin folder by a relative path to the installed engine (`~\.nexus\nexus-relay\bin`), instead of
-  `scripts/bridge.ps1`, which compiled C# with Windows PowerShell at every start. Same relay: one line per JSON-RPC
-  message, event streams split per event, `NEXUS_MCP_TOKEN` or `~\.nexus\mcp-token.txt`, the MCP session kept and
-  closed at the end, a JSON-RPC error saying how to get NexusRelay when the daemon does not answer. Without the
-  engine installed, Antigravity now reports that the server could not start.
+- Antigravity Marketplace plugin: its stdio bridge is now the engine itself (`NexusRelay.exe --bridge <url>`)
+  instead of `scripts/bridge.ps1`, which compiled C# with Windows PowerShell at every start. Same relay: one line per
+  JSON-RPC message, event streams split per event, `NEXUS_MCP_TOKEN` or `~\.nexus\mcp-token.txt`, the MCP session
+  kept and closed at the end, a JSON-RPC error saying how to get NexusRelay when the daemon does not answer.
+- The plugin starts it like NexusWindows, NexusBrowser and NexusAndroid: `cmd.exe /d /c
+  ${PLUGIN_ROOT}\scripts\start.cmd <url>`. The launcher reads the engine every install records in
+  `~\.nexus\nexus-relay\engine.txt` (`NexusRelay.exe --engine-pointer`: version and immutable versioned copy, never
+  the stable `bin` folder, so a running Antigravity session no longer makes the next install fail with "bin in use"),
+  and fails at once, with how to install or update, when no engine is recorded or it is older than 1.13.8 (an older
+  engine ignored `--bridge` and started an unrelated server). It no longer assumes a global install path.
 - Build outputs under `~\.nexus\build\nexusrelay` take the user profile from .NET: Dependabot restores on Linux, where
   `USERPROFILE` is unset and its NuGet updates silently failed.
 - CodeQL runs from `.github/workflows/codeql.yml` (actions and C#, default queries, actions pinned by SHA) instead of
@@ -733,7 +739,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - English tool descriptions with titles and MCP annotations; `reply` accepts `done`/`refused`/`failed` and
   `agree`/`disagree`.
 
-[Unreleased]: https://github.com/pironjulien/NexusRelay/compare/v1.13.7...HEAD
+[Unreleased]: https://github.com/pironjulien/NexusRelay/compare/v1.13.8...HEAD
+[1.13.8]: https://github.com/pironjulien/NexusRelay/compare/v1.13.7...v1.13.8
 [1.13.7]: https://github.com/pironjulien/NexusRelay/compare/v1.13.6...v1.13.7
 [1.13.6]: https://github.com/pironjulien/NexusRelay/compare/v1.13.5...v1.13.6
 [1.13.5]: https://github.com/pironjulien/NexusRelay/compare/v1.13.4...v1.13.5

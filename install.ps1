@@ -2,7 +2,8 @@
 #  - moteur natif (.NET 10) : compilé depuis native\ (dotnet publish, sorties de compilation dans ~\.nexus\build\nexusrelay)
 #    ou pris tel quel dans bin\ (release publique, autonome) ; installé immuable par empreinte dans
 #    %LOCALAPPDATA%\NexusRelay\versions\<empreinte> ; chemin stable ~\.nexus\nexus-relay\bin (copie de la version
-#    en service), lu par les hooks d'édition et la garde de commit
+#    en service), lu par les hooks d'édition et la garde de commit ; ~\.nexus\nexus-relay\engine.txt (version et copie
+#    versionnée) pour le lanceur du plugin Antigravity du Marketplace
 #  - boîte aux lettres : ~\.nexus\relay (hors de tout dossier synchronisé)
 #  - réglages du poste : ~\.nexus\nexus-relay\settings.json (ce PC), puis settings.local.json à la racine du dépôt
 #    (partagé par les PC d'une installation synchronisée), valeurs en %VARIABLES% (NexusRelay.exe --settings), voir README :
@@ -377,6 +378,10 @@ $targetFingerprint = "sha256:$((Get-FileHash -LiteralPath ([IO.Path]::ChangeExte
 $null = Request-RelayRestart -RequestPath $daemonRequest -Owner $daemonOwner -Kind $(if ($forced) { 'force' } else { 'code' }) -Fingerprint $targetFingerprint
 # Pareil pour le sidecar d'Antigravity : il sort entre deux livraisons si son code a changé, Antigravity le relance.
 $null = Request-RelayRestart -RequestPath (Join-Path $mailbox 'sidecar-restart.request') -Owner $sidecarOwner -Kind $(if ($specChanged) { 'force' } else { 'code' }) -Fingerprint $targetFingerprint
+# Moteur de ce PC pour le lanceur du plugin Antigravity du Marketplace (plugin\antigravity\scripts\start.cmd) :
+# ~\.nexus\nexus-relay\engine.txt (version|chemin de la copie versionnée, jamais bin, que la promotion renomme).
+& $nativeExe --engine-pointer | Out-Null
+if ($LASTEXITCODE) { throw 'Pointeur du moteur pour Antigravity (engine.txt) : échec (NexusRelay.exe --engine-pointer).' }
 # Anciennes versions : retirées dès qu'aucun processus n'en tourne (la courante est gardée ; les autres, en service
 # jusqu'à leur relance, partent à une installation suivante).
 $running = @(Get-CimInstance Win32_Process -Filter "Name='NexusRelay.exe'" | ForEach-Object { $_.ExecutablePath } | Where-Object { $_ })

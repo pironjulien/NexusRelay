@@ -134,4 +134,140 @@ public sealed class BridgeTests : IDisposable
         Assert.Equal("NexusRelay answered HTTP 401.", JsonNode.Parse(refused.Out.Trim())!["error"]!["message"]!.ToString());
         Assert.Equal(2, Native.Run([StdioBridge.Flag]).Code);
     }
+
+    // ---- Antigravity's command line (cmd.exe /d /c ${PLUGIN_ROOT}\scripts\start.cmd <url>) on real stdio.
+
+    private string Pointer => Path.Join(iso.Home, ".nexus", "nexus-relay", "engine.txt");
+
+    private static string MinimumOf(string launcher) =>
+        System.Text.RegularExpressions.Regex.Match(File.ReadAllText(launcher), "set \"MINIMUM=([0-9.]+)\"").Groups[1].Value;
+
+    /// <summary>The Marketplace copy of the launcher, in a plugin folder whose path has a space (a profile such as
+    /// "Jean Dupont"), as Antigravity installs it.</summary>
+    private string Launcher()
+    {
+        string root = Path.Join(iso.Root, "Jean Dupont", ".gemini", "config", "plugins", "nexus-relay");
+        Directory.CreateDirectory(Path.Join(root, "scripts"));
+        string launcher = Path.Join(root, "scripts", "start.cmd");
+        File.Copy(Path.Join(Paths.Repo(), "plugin", "antigravity", "scripts", "start.cmd"), launcher, true);
+        return launcher;
+    }
+
+    private static System.Diagnostics.ProcessStartInfo Cmd(string launcher, string url) =>
+        Native.Start(Path.Join(Environment.SystemDirectory, "cmd.exe"), ["/d", "/c", launcher, url], env: new Dictionary<string, string?> { ["NEXUS_MCP_TOKEN"] = "e2e-token" });
+
+    [Fact]
+    public void Engine_pointer_names_the_versioned_copy_relative_to_the_profile_else_absolute()
+    {
+        string versioned = Path.Join(iso.Home, "AppData", "Local", "NexusRelay", "versions", "0123456789abcdef", "NexusRelay.exe");
+        Assert.Equal(Pointer, StdioBridge.WritePointer(versioned));
+        Assert.Equal($"{RelayPaths.Version}|AppData\\Local\\NexusRelay\\versions\\0123456789abcdef\\NexusRelay.exe\r\n", File.ReadAllText(Pointer));
+        StdioBridge.WritePointer(@"D:\Portable\NexusRelay\NexusRelay.exe");
+        Assert.Equal($"{RelayPaths.Version}|D:\\Portable\\NexusRelay\\NexusRelay.exe\r\n", File.ReadAllText(Pointer));
+        Assert.Single(Directory.EnumerateFiles(Path.GetDirectoryName(Pointer)!));  // no temporary file left
+
+        var ran = Native.Run(StdioBridge.PointerFlag);  // the running engine records itself
+        Assert.True(ran.Code == 0, ran.Err);
+        Assert.Equal(Pointer, ran.Out.Trim());
+        Assert.Equal($"{RelayPaths.Version}|{Native.Exe}\r\n", File.ReadAllText(Pointer));
+    }
+
+    [Fact]
+    public void Launcher_minimum_is_a_released_bridge_version_this_engine_meets()
+    {
+        var minimum = Version.Parse(MinimumOf(Path.Join(Paths.Repo(), "plugin", "antigravity", "scripts", "start.cmd")));
+        Assert.InRange(minimum, new Version(1, 13, 8), Version.Parse(RelayPaths.Version));  // 1.13.8: first engine writing engine.txt
+    }
+
+    [Fact]
+    public async Task Launcher_runs_the_recorded_engine_as_the_bridge_to_the_service()
+    {
+        var cancel = TestContext.Current.CancellationToken;
+        Directory.CreateDirectory(Path.GetDirectoryName(Pointer)!);
+        File.WriteAllText(Pointer, $"{RelayPaths.Version}|{Native.Exe}\r\n");
+
+        using var listener = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        int port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        var seen = new List<string>();
+        var service = Task.Run(async () =>
+        {
+            for (int i = 0; i < 2; i++)  // initialize (POST), then the session's DELETE
+            {
+                using var client = await listener.AcceptTcpClientAsync(cancel);
+                using var stream = client.GetStream();
+                string head = await ReadHead(stream, cancel);
+                lock (seen) seen.Add(head);
+                int length = head.Split("\r\n").Select(h => h.Split(':', 2)).Where(h => h.Length == 2 && h[0].Equals("Content-Length", StringComparison.OrdinalIgnoreCase)).Select(h => int.Parse(h[1].Trim(), System.Globalization.CultureInfo.InvariantCulture)).FirstOrDefault();
+                await stream.ReadExactlyAsync(new byte[length], cancel);
+                string body = head.StartsWith("POST", StringComparison.Ordinal) ? "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"serverInfo\":{\"name\":\"fixture\"}}}" : "";
+                string reply = $"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nMcp-Session-Id: e2e-session\r\nContent-Length: {Encoding.UTF8.GetByteCount(body)}\r\nConnection: close\r\n\r\n{body}";
+                await stream.WriteAsync(Encoding.UTF8.GetBytes(reply), cancel);
+            }
+        }, cancel);
+
+        using var process = System.Diagnostics.Process.Start(Cmd(Launcher(), $"http://127.0.0.1:{port}/mcp?agent=antigravity"))!;
+        try
+        {
+            await process.StandardInput.WriteLineAsync("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}".AsMemory(), cancel);
+            await process.StandardInput.FlushAsync(cancel);
+            string? line = await process.StandardOutput.ReadLineAsync(cancel).AsTask().WaitAsync(TimeSpan.FromSeconds(30), cancel);
+            Assert.Equal("{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"serverInfo\":{\"name\":\"fixture\"}}}", line);
+            process.StandardInput.Close();
+            Assert.True(process.WaitForExit(15_000));
+            Assert.Equal(0, process.ExitCode);
+            await service.WaitAsync(TimeSpan.FromSeconds(10), cancel);
+        }
+        finally
+        {
+            if (!process.HasExited) process.Kill(true);
+        }
+        Assert.StartsWith("POST /mcp?agent=antigravity HTTP/1.1", seen[0], StringComparison.Ordinal);
+        Assert.Contains("Authorization: Bearer e2e-token", seen[0], StringComparison.Ordinal);
+        Assert.StartsWith("DELETE /mcp?agent=antigravity HTTP/1.1", seen[1], StringComparison.Ordinal);
+        Assert.Contains("Mcp-Session-Id: e2e-session", seen[1], StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Launcher_refuses_a_missing_engine_and_an_engine_older_than_its_bridge()
+    {
+        string launcher = Launcher();
+        Ran Launch()
+        {
+            using var process = System.Diagnostics.Process.Start(Cmd(launcher, "http://127.0.0.1:9/mcp?agent=antigravity"))!;
+            var output = process.StandardOutput.ReadToEndAsync(); var error = process.StandardError.ReadToEndAsync();
+            process.StandardInput.Close();
+            Assert.True(process.WaitForExit(15_000));
+            return new(process.ExitCode, output.Result, error.Result);
+        }
+        void Record(string text) { Directory.CreateDirectory(Path.GetDirectoryName(Pointer)!); File.WriteAllText(Pointer, text); }
+
+        var none = Launch();  // nothing recorded (no install, or one older than 1.13.8)
+        Assert.Equal((1, ""), (none.Code, none.Out));  // stdout carries the protocol only
+        Assert.Contains("NexusRelay is not installed on this PC.", none.Err, StringComparison.Ordinal);
+
+        Record($"{RelayPaths.Version}|AppData\\Local\\NexusRelay\\versions\\gone\\NexusRelay.exe\r\n");  // folder removed since
+        Assert.Contains("NexusRelay is not installed on this PC.", Launch().Err, StringComparison.Ordinal);
+
+        string minimum = MinimumOf(launcher);
+        foreach (string old in new[] { "1.13.7", "0.9.99", "garbage" })
+        {
+            Record($"{old}|{Native.Exe}\r\n");
+            var refused = Launch();
+            Assert.Equal((1, ""), (refused.Code, refused.Out));
+            Assert.Contains($"NexusRelay {old} is installed on this PC, but this plugin needs {minimum} or later.", refused.Err, StringComparison.Ordinal);
+        }
+    }
+
+    private static async Task<string> ReadHead(System.Net.Sockets.NetworkStream stream, CancellationToken cancel)
+    {
+        var head = new List<byte>();
+        var one = new byte[1];
+        while (!(head.Count >= 4 && head[^4] == '\r' && head[^3] == '\n' && head[^2] == '\r' && head[^1] == '\n'))
+        {
+            if (await stream.ReadAsync(one, cancel) == 0) break;
+            head.Add(one[0]);
+        }
+        return Encoding.ASCII.GetString([.. head]);
+    }
 }

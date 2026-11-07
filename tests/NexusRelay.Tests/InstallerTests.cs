@@ -270,18 +270,20 @@ public sealed class InstallerTests : IDisposable
     [Fact]
     public void Antigravity_marketplace_copy_bridges_to_the_local_daemon()
     {
-        // A Marketplace copy cannot name this PC's token (Antigravity expands only ${PLUGIN_ROOT}): it starts the
-        // installed engine's stdio bridge, reached from the plugin folder (~\.gemini\config\plugins\nexus-relay, where
-        // Antigravity installs Marketplace plugins) to the stable engine (~\.nexus\nexus-relay\bin). install.ps1
-        // replaces this declaration with its own and adds the sidecar.
+        // A Marketplace copy cannot name this PC's token (Antigravity expands only ${PLUGIN_ROOT}): like NexusWindows,
+        // NexusBrowser and NexusAndroid, a fixed command (cmd.exe) runs the plugin's own launcher, ${PLUGIN_ROOT} in
+        // the arguments; the launcher finds the installed engine (engine.txt) and starts its stdio bridge (see
+        // BridgeTests). install.ps1 replaces this declaration with its own and adds the sidecar.
         string bundle = Path.Join(Repo, "plugin", "antigravity");
         var server = JsonNode.Parse(File.ReadAllText(Path.Join(bundle, "mcp_config.json")))!["mcpServers"]!["nexus-relay"]!;
-        string home = Path.Join(Path.GetTempPath(), "Jean Dupont");
-        string pluginRoot = Path.Join(home, ".gemini", "config", "plugins", "nexus-relay");
-        Assert.Equal(Path.Join(home, ".nexus", "nexus-relay", "bin", "NexusRelay.exe"), Path.GetFullPath(server["command"]!.ToString().Replace("${PLUGIN_ROOT}", pluginRoot, StringComparison.Ordinal)));
-        Assert.Equal([StdioBridge.Flag, "http://127.0.0.1:16181/mcp?agent=antigravity"], server["args"]!.AsArray().Select(a => a!.ToString()));
-        Assert.False(Directory.Exists(Path.Join(bundle, "scripts")));  // no script compiled at each start any more
+        Assert.Equal("cmd.exe", server["command"]!.ToString());
+        Assert.Equal(["/d", "/c", @"${PLUGIN_ROOT}\scripts\start.cmd", "http://127.0.0.1:16181/mcp?agent=antigravity"], server["args"]!.AsArray().Select(a => a!.ToString()));
+        Assert.Equal(["start.cmd"], Directory.EnumerateFiles(Path.Join(bundle, "scripts")).Select(Path.GetFileName));  // no script compiled at each start
+        Assert.Contains("\r\n", File.ReadAllText(Path.Join(bundle, "scripts", "start.cmd")), StringComparison.Ordinal);  // cmd.exe labels need CRLF
         Assert.True(File.Exists(Path.Join(bundle, "README.md")));
+        string install = File.ReadAllText(Path.Join(Repo, "install.ps1"), Encoding.UTF8);
+        Assert.Contains("& $nativeExe --engine-pointer", install);  // the versioned copy, never bin
+        Assert.True(install.IndexOf("--engine-pointer", StringComparison.Ordinal) < install.IndexOf("foreach ($old in Get-ChildItem -LiteralPath $versions", StringComparison.Ordinal));
         foreach (string manifest in new[] { "plugin/antigravity/plugin.json", "fr/plugin/antigravity/plugin.json" })
             Assert.InRange(JsonNode.Parse(File.ReadAllText(Path.Join(Repo, manifest)))!["description"]!.ToString().Length, 120, 160);
     }
