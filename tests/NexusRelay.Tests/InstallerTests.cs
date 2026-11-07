@@ -517,12 +517,31 @@ public sealed partial class InstallerTests : IDisposable
     [LibraryImport("advapi32.dll", SetLastError = true)]
     private static partial uint SetSecurityInfo(IntPtr handle, int objectType, uint information, IntPtr owner, IntPtr group, IntPtr dacl, IntPtr sacl);
 
-    [LibraryImport("kernel32.dll", SetLastError = true)]
-    private static partial IntPtr OpenProcess(uint access, [MarshalAs(UnmanagedType.Bool)] bool inherit, int id);
+    /// <summary>PowerShell prefix removing SeDebugPrivilege from its own token (no-op when the token lacks it).</summary>
+    private const string DropDebugPrivilege = """
+        Add-Type -TypeDefinition @'
+        using System; using System.Runtime.InteropServices;
+        public static class NexusRelayNoDebug {
+            [StructLayout(LayoutKind.Sequential, Pack = 4)] struct Privileges { public int Count; public long Luid; public int Attributes; }
+            [DllImport("advapi32.dll", SetLastError = true)] static extern bool OpenProcessToken(IntPtr process, uint access, out IntPtr token);
+            [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)] static extern bool LookupPrivilegeValue(string system, string name, out long luid);
+            [DllImport("advapi32.dll", SetLastError = true)] static extern bool AdjustTokenPrivileges(IntPtr token, bool none, ref Privileges state, int length, IntPtr previous, IntPtr size);
+            [DllImport("kernel32.dll")] static extern IntPtr GetCurrentProcess();
+            [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr handle);
+            public static void Drop() {
+                IntPtr token; long luid;
+                if (!OpenProcessToken(GetCurrentProcess(), 0x28, out token)) return;  // TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY
+                try {
+                    if (!LookupPrivilegeValue(null, "SeDebugPrivilege", out luid)) return;
+                    var state = new Privileges { Count = 1, Luid = luid, Attributes = 4 };  // SE_PRIVILEGE_REMOVED
+                    AdjustTokenPrivileges(token, false, ref state, 0, IntPtr.Zero, IntPtr.Zero);
+                } finally { CloseHandle(token); }
+            }
+        }
+        '@
+        [NexusRelayNoDebug]::Drop();
 
-    [LibraryImport("kernel32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static partial bool CloseHandle(IntPtr handle);
+        """;
 
     /// <summary>Sets a process object's DACL: empty (nobody may open it, its owner included) or, with null, NULL (open).</summary>
     private static unsafe void SetProcessDacl(Process process, byte[]? dacl)
@@ -561,15 +580,14 @@ public sealed partial class InstallerTests : IDisposable
             engine.StandardInput.WriteLine(Native.Rpc("initialize").ToJsonString()); engine.StandardInput.Flush();
             Assert.True(engine.StandardOutput.ReadLineAsync(TestContext.Current.CancellationToken).AsTask().Wait(30_000, TestContext.Current.CancellationToken), "engine did not answer");
             SetProcessDacl(engine, EmptyDacl());
-            IntPtr probe = OpenProcess(0x1000, false, engine.Id);  // PROCESS_QUERY_LIMITED_INFORMATION
-            if (probe != IntPtr.Zero) CloseHandle(probe);
-            Assert.True(probe == IntPtr.Zero, "precondition: the engine must not be queryable");
-
-            var images = Native.RunFile("pwsh.exe", ["-NoProfile", "-NonInteractive", "-Command", Cleanup("(Get-RelayEngineImages).Unknown")], timeoutS: 60);
-            Assert.True(images.Code == 0, images.Err + images.Out);
-            Assert.Equal("True", images.Out.Trim());
-            var ran = Native.RunFile("pwsh.exe", ["-NoProfile", "-NonInteractive", "-Command", Cleanup($"Remove-StaleRelayVersions -Versions '{versions}' -Keep 'none'")], timeoutS: 60);
+            // An elevated runner may hold SeDebugPrivilege enabled, which opens any process: the cleanup's PowerShell
+            // drops it first, as an ordinary user has it.
+            var ran = Native.RunFile("pwsh.exe", ["-NoProfile", "-NonInteractive", "-Command", DropDebugPrivilege + Cleanup(
+                $"\"probe=$($null -eq [NexusRelayProcessImage]::Read({engine.Id}))\"; \"unknown=$((Get-RelayEngineImages).Unknown)\"; " +
+                $"Remove-StaleRelayVersions -Versions '{versions}' -Keep 'none'")], timeoutS: 60);
             Assert.True(ran.Code == 0, ran.Err + ran.Out);
+            Assert.Contains("probe=True", ran.Out, StringComparison.Ordinal);  // precondition: the engine cannot be queried
+            Assert.Contains("unknown=True", ran.Out, StringComparison.Ordinal);
             Assert.True(File.Exists(Path.Join(old, "NexusRelay.exe")));
         }
         finally
