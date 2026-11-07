@@ -283,6 +283,7 @@ public sealed class InstallerTests : IDisposable
         Assert.True(File.Exists(Path.Join(bundle, "README.md")));
         string install = File.ReadAllText(Path.Join(Repo, "install.ps1"), Encoding.UTF8);
         Assert.Contains("& $nativeExe --engine-pointer", install);  // the versioned copy, never bin
+        Assert.Contains("foreach ($retired in @('scripts/bridge.ps1'))", install);  // the old PowerShell bridge left behind by Copy-Tree
         Assert.True(install.IndexOf("--engine-pointer", StringComparison.Ordinal) < install.IndexOf("foreach ($old in Get-ChildItem -LiteralPath $versions", StringComparison.Ordinal));
         foreach (string manifest in new[] { "plugin/antigravity/plugin.json", "fr/plugin/antigravity/plugin.json" })
             Assert.InRange(JsonNode.Parse(File.ReadAllText(Path.Join(Repo, manifest)))!["description"]!.ToString().Length, 120, 160);

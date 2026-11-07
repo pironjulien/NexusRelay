@@ -411,6 +411,13 @@ if ($null -ne $packTargets -and $packTargets -notcontains 'antigravity') {
     if ($french -and (Test-Path (Join-Path $project 'fr\plugin\antigravity'))) {
         $copied += Copy-Tree (Join-Path $project 'fr\plugin\antigravity') $plugin  # copie française par-dessus
     }
+    # Copy-Tree n'ajoute que des fichiers : ceux que le plugin ne livre plus restent sinon dans le dossier
+    # (scripts\bridge.ps1, pont PowerShell remplacé par NexusRelay.exe --bridge en 1.13.8). Seuls ces fichiers nommés,
+    # écrits par une installation précédente, sont retirés ; le reste du dossier n'est jamais touché.
+    foreach ($retired in @('scripts/bridge.ps1')) {
+        $stale = Join-Path $plugin $retired
+        if (Test-Path -LiteralPath $stale -PathType Leaf) { Remove-Item -LiteralPath $stale -Force; $copied++ }
+    }
     $mcp = [ordered]@{ mcpServers = [ordered]@{ 'nexus-relay' = [ordered]@{
         serverUrl = (Get-Url 'antigravity'); headers = [ordered]@{ Authorization = "Bearer $token" } } } }
     if (Write-IfChanged (Join-Path $plugin 'mcp_config.json') ($mcp | ConvertTo-Json -Depth 10)) { $copied++ }

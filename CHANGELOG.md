@@ -6,6 +6,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Installing or updating no longer leaves the retired `scripts/bridge.ps1` in Antigravity's `nexus-relay` plugin
+  folder: the installer only adds files, so the 1.13.8 update kept the old PowerShell bridge next to `start.cmd`.
+
 ## [1.13.8] - 2026-11-07
 
 ### Changed
