@@ -160,8 +160,7 @@ created before 1.13.2, is still recognized).
 
 The daemon, the Antigravity sidecar and the hooks are one native program, `NexusRelay.exe` (.NET 10). Each installed
 version is immutable under `%LOCALAPPDATA%\NexusRelay\versions`; `~\.nexus\nexus-relay\bin` always holds a copy of the
-one in service. The qualification report ([`native/QUALIFICATION.md`](native/QUALIFICATION.md)) distinguishes isolated
-protocol/DOM tests, real app observations and completed live actions.
+one in service.
 
 </details>
 

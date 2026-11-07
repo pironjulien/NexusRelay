@@ -13,6 +13,13 @@ public sealed class EngineTests : IDisposable
     private static JsonObject Tool(string name, JsonObject args, string agent) => McpServer.CallToolPayload(name, args, agent);
 
     [Fact]
+    public void Package_family_lookup_is_native_and_rejects_an_unregistered_family()
+    {
+        Assert.False(AppLifecycle.PackageFamilyInstalled("OpenAI.Codex_0000000000000"));
+        Assert.False(AppLifecycle.PackageFamilyInstalled("not a family"));
+    }
+
+    [Fact]
     public void Room_cycle_send_inbox_progress_read_reply_track_search_summary_close()
     {
         iso.Set("NEXUS_RELAY_HOST", "claude");

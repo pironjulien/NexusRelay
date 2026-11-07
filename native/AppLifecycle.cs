@@ -213,15 +213,22 @@ public static partial class AppLifecycle
         if (AppTransport.Truth(result["launched"])) { state["restarted"] = now; HungFor("agy-port", false); }
         state["last"] = result.DeepClone(); box.SetState("agy-port-maintenance", state); return result;
     }
+    // Native lookup, no PowerShell child: Windows creates %LOCALAPPDATA%\Packages\<family> for each package registered
+    // to the user; the family is kept only when the package manager still reports a package in it.
     private static string? CodexPackage()
     {
-        var start = new ProcessStartInfo("powershell.exe") { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
-        foreach (string arg in new[] { "-NoProfile", "-NonInteractive", "-Command", "(Get-AppxPackage OpenAI.Codex | Select-Object -First 1).PackageFamilyName" }) start.ArgumentList.Add(arg);
-        using var process = Process.Start(start); if (process is null) return null;
-        var result = process.StandardOutput.ReadToEndAsync(); _ = process.StandardError.ReadToEndAsync(); // Drained so a full stderr pipe cannot block the child.
-        if (!process.WaitForExit(10_000)) { process.Kill(entireProcessTree: true); return null; }
-        string family = result.GetAwaiter().GetResult().Trim(); return family.StartsWith("OpenAI.Codex_", StringComparison.Ordinal) ? family : null;
+        string packages = Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Packages");
+        if (!Directory.Exists(packages)) return null;
+        return Directory.EnumerateDirectories(packages, "OpenAI.Codex_*").Select(Path.GetFileName).OfType<string>().FirstOrDefault(PackageFamilyInstalled);
     }
+    /// <summary>True when at least one package of this family is registered for the current user (kernel32 appmodel API).</summary>
+    public static bool PackageFamilyInstalled(string family)
+    {
+        uint count = 0, length = 0;
+        int status = GetPackagesByPackageFamily(family, ref count, 0, ref length, 0);
+        return status is 0 or 122 && count > 0; // 122 = ERROR_INSUFFICIENT_BUFFER: packages exist, names not requested.
+    }
+    [LibraryImport("kernel32.dll", StringMarshalling = StringMarshalling.Utf16)] private static partial int GetPackagesByPackageFamily(string family, ref uint count, nint fullNames, ref uint bufferLength, nint buffer);
     [ComImport, Guid("2E941141-7F97-4756-BA1D-9DECDE894A3D"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)] private interface IAppActivation { [PreserveSig] int ActivateApplication([MarshalAs(UnmanagedType.LPWStr)] string id, [MarshalAs(UnmanagedType.LPWStr)] string args, uint options, out uint pid); }
     [ComImport, Guid("45BA127D-10A8-46EA-8AB7-56EA9078943C")] private class AppActivation { }
     private delegate bool EnumWindow(nint hwnd, nint parameter);

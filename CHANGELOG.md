@@ -6,6 +6,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Restarting the Codex app finds its package natively (the user's package folder, confirmed by the Windows package
+  API) instead of starting a hidden PowerShell child.
+
+### Removed
+- `native/QUALIFICATION.md`, the October qualification report of the switch from Python, which no longer described
+  the product (the Git history keeps it).
+- The daemon supervisor no longer reads the retired `python` key of its spec: every native install writes `exe`.
+
 ### Fixed
 - The installer no longer runs a stable engine that is not a Windows program image (a corrupted or truncated file):
   it is treated as unhealthy and replaced without being started, so Windows never shows its "16-bit application not

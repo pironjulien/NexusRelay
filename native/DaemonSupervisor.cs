@@ -20,8 +20,7 @@ public static class DaemonSupervisor
     {
         var exe = spec["exe"]?.GetValue<string>()
             ?? spec["executable"]?.GetValue<string>()
-            ?? spec["python"]?.GetValue<string>()
-            ?? throw new RelayError("missing executable/python in spec");
+            ?? throw new RelayError("missing executable in spec");
         var port = spec["port"]?.GetValue<int>() ?? throw new RelayError("missing port in spec");
 
         var args = new List<string>();
