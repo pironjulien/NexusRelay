@@ -366,7 +366,8 @@ public sealed partial class InstallerTests : IDisposable
         string nativeKey = Convert.ToHexString(digest.AsSpan(0, 8)).ToLowerInvariant();
 
         // Stable corrompu portant le stamp exact nativeKey : un probe non protégé lèverait
-        // ApplicationFailedException sous $ErrorActionPreference='Stop' et bloquerait la reprise.
+        // ApplicationFailedException sous $ErrorActionPreference='Stop' et bloquerait la reprise. Ce fichier n'est pas une
+        // image PE : install.ps1 le juge malsain sans le lancer (sinon boîte « Application 16 bits non prise en charge »).
         File.WriteAllText(Path.Join(stable, "NexusRelay.exe"), "invalid dummy non-PE");
         File.WriteAllText(Path.Join(stable, "publish.complete"), nativeKey);
 
@@ -387,6 +388,18 @@ public sealed partial class InstallerTests : IDisposable
         Assert.Equal(0, check.Code);
         // Le contrôle final ayant validé la santé, bin.old-* a été nettoyé
         Assert.Empty(Directory.EnumerateDirectories(state, "bin.old-*"));
+    }
+
+    [Fact]
+    public void Processes_started_by_tests_inherit_the_no_error_box_mode()
+    {
+        // NoErrorBoxes (TestSupport.cs): set in the test process, inherited by its children, so no Windows error box
+        // (invalid image, missing file, crash) can ever appear while the tests run.
+        Assert.Equal(NoErrorBoxes.Mode, NoErrorBoxes.GetErrorMode() & NoErrorBoxes.Mode);
+        var ran = Native.RunFile("pwsh.exe", ["-NoProfile", "-NonInteractive", "-Command",
+            "Add-Type -Namespace NexusRelayTests -Name ErrorMode -MemberDefinition '[DllImport(\"kernel32.dll\")] public static extern uint GetErrorMode();'; [NexusRelayTests.ErrorMode]::GetErrorMode()"], timeoutS: 60);
+        Assert.True(ran.Code == 0, ran.Err + ran.Out);
+        Assert.Equal(NoErrorBoxes.Mode, uint.Parse(ran.Out.Trim(), System.Globalization.CultureInfo.InvariantCulture) & NoErrorBoxes.Mode);
     }
 
     [Fact]

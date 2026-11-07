@@ -6,6 +6,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- The installer no longer runs a stable engine that is not a Windows program image (a corrupted or truncated file):
+  it is treated as unhealthy and replaced without being started, so Windows never shows its "16-bit application not
+  supported" box, which blocked the update until clicked.
+- Tests: no test can show a Windows error box. The test process sets the error mode (no critical-error, crash or
+  missing-file box) when it loads, and every process it starts inherits it; a test checks it in a child process.
+
 ## [1.13.11] - 2026-11-07
 
 ### Fixed

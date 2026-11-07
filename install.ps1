@@ -133,16 +133,28 @@ if (-not (Test-Path -LiteralPath $stable)) {
 
 # Contrôle de santé préalable sur stable : même si le stamp correspond à nativeKey,
 # un ancien arrêt entre promotion et santé a pu laisser un binaire invalide avec stamp hérité.
+# Un fichier qui n'est pas une image PE n'est jamais lancé : Windows afficherait la boîte « Application 16 bits non prise
+# en charge » et bloquerait l'installation jusqu'au clic.
+function Test-RelayPeImage([string]$path) {
+    try {
+        $bytes = [IO.File]::ReadAllBytes($path)
+        if ($bytes.Length -lt 64 -or $bytes[0] -ne 0x4D -or $bytes[1] -ne 0x5A) { return $false }
+        $pe = [BitConverter]::ToInt32($bytes, 0x3C)
+        $pe -gt 0 -and $pe + 4 -le $bytes.Length -and $bytes[$pe] -eq 0x50 -and $bytes[$pe + 1] -eq 0x45 -and $bytes[$pe + 2] -eq 0 -and $bytes[$pe + 3] -eq 0
+    } catch { $false }
+}
 $stableHealthy = $false
 if ((Test-Path -LiteralPath $stamp) -and [IO.File]::ReadAllText($stamp) -eq $nativeKey -and (Test-Path -LiteralPath $stableExe)) {
-    try {
-        & $stableExe --schemas | Out-Null
-        if ($LASTEXITCODE -eq 0) {
-            $stableHealthy = $true
+    if (Test-RelayPeImage $stableExe) {
+        try {
+            & $stableExe --schemas | Out-Null
+            if ($LASTEXITCODE -eq 0) {
+                $stableHealthy = $true
+            }
+        } catch {
+            # Exception levée si l'image est corrompue (ApplicationFailedException)
+            $stableHealthy = $false
         }
-    } catch {
-        # Exception levée si le fichier n'est pas un PE valide ou est corrompu (ApplicationFailedException)
-        $stableHealthy = $false
     }
     if (-not $stableHealthy) {
         Write-Warning "Le moteur dans '$stable' porte le stamp mais a échoué au contrôle de santé (--schemas). Réinstallation requise."

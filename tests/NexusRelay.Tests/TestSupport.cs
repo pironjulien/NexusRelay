@@ -2,12 +2,32 @@ using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json.Nodes;
 
 [assembly: CollectionBehavior(CollectionBehavior.CollectionPerAssembly)]
 
 namespace NexusRelay.Tests;
+
+/// <summary>
+/// No test may ever show a Windows error box: a process started on a file that is not a valid image (the "16-bit
+/// application not supported" box), a missing DLL or drive, a crash. Set once when the test assembly loads; every
+/// process a test starts inherits the error mode (no CREATE_DEFAULT_ERROR_MODE), and so do theirs.
+/// </summary>
+internal static partial class NoErrorBoxes
+{
+    internal const uint Mode = 0x0001 /* SEM_FAILCRITICALERRORS */ | 0x0002 /* SEM_NOGPFAULTERRORBOX */ | 0x8000 /* SEM_NOOPENFILEERRORBOX */;
+
+    [ModuleInitializer]
+    internal static void Set() => _ = SetErrorMode(GetErrorMode() | Mode);
+
+    [LibraryImport("kernel32.dll")]
+    internal static partial uint SetErrorMode(uint mode);
+
+    [LibraryImport("kernel32.dll")]
+    internal static partial uint GetErrorMode();
+}
 
 /// <summary>
 /// Common guards: temporary mailbox, profile and app folders; no network; no installed AI touched. Process-wide
