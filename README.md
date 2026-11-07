@@ -12,6 +12,7 @@ one agent to another and the answers come back, without you copy-pasting between
 [![Release](https://img.shields.io/github/v/release/pironjulien/NexusRelay?style=flat-square&label=release)](https://github.com/pironjulien/NexusRelay/releases/latest)
 [![Tests](https://img.shields.io/github/actions/workflow/status/pironjulien/NexusRelay/test.yml?branch=main&style=flat-square&label=tests)](https://github.com/pironjulien/NexusRelay/actions/workflows/test.yml)
 [![OpenSSF Scorecard](https://img.shields.io/ossf-scorecard/github.com/pironjulien/NexusRelay?style=flat-square&label=scorecard)](https://scorecard.dev/viewer/?uri=github.com/pironjulien/NexusRelay)
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/16435/badge)](https://www.bestpractices.dev/projects/16435)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
 [![.NET 10](https://img.shields.io/badge/.NET-10-512BD4?style=flat-square)](native/NexusRelay.csproj)
 [![Windows 10 | 11](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?style=flat-square)](#requirements)
