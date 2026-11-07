@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- Antigravity Marketplace plugin: its stdio bridge is now the engine itself (`NexusRelay.exe --bridge <url>`), started
+  from the plugin folder by a relative path to the installed engine (`~\.nexus\nexus-relay\bin`), instead of
+  `scripts/bridge.ps1`, which compiled C# with Windows PowerShell at every start. Same relay: one line per JSON-RPC
+  message, event streams split per event, `NEXUS_MCP_TOKEN` or `~\.nexus\mcp-token.txt`, the MCP session kept and
+  closed at the end, a JSON-RPC error saying how to get NexusRelay when the daemon does not answer. Without the
+  engine installed, Antigravity now reports that the server could not start.
+- Build outputs under `~\.nexus\build\nexusrelay` take the user profile from .NET: Dependabot restores on Linux, where
+  `USERPROFILE` is unset and its NuGet updates silently failed.
+- CodeQL runs from `.github/workflows/codeql.yml` (actions and C#, default queries, actions pinned by SHA) instead of
+  the default setup, so OpenSSF Scorecard credits SAST on commits pushed without pull requests.
 - Strict build: recommended .NET analyzers, code style enforced, warnings as errors (`.editorconfig` added). Number
   and date formats written for files and arguments use the invariant culture; SQLite clean-up results are discarded
   explicitly; fixed name lists are allocated once.

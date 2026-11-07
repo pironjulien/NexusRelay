@@ -1,7 +1,9 @@
 <Project>
-  <!-- Build outside OneDrive (no synchronized bin/obj): ~\.nexus\build\nexusrelay\<project>. -->
+  <!-- Build outside OneDrive (no synchronized bin/obj): ~\.nexus\build\nexusrelay\<project>.
+       The user profile comes from .NET, not $(USERPROFILE): Dependabot restores on Linux, where USERPROFILE is unset
+       and '\.nexus' at the file system root was denied, so its NuGet updates silently found nothing. -->
   <PropertyGroup>
-    <NexusRelayBuild>$(USERPROFILE)\.nexus\build\nexusrelay\$(MSBuildProjectName)\</NexusRelayBuild>
+    <NexusRelayBuild>$([System.IO.Path]::Combine($([System.Environment]::GetFolderPath(SpecialFolder.UserProfile)), '.nexus', 'build', 'nexusrelay', '$(MSBuildProjectName)'))$([System.IO.Path]::DirectorySeparatorChar)</NexusRelayBuild>
     <BaseIntermediateOutputPath>$(NexusRelayBuild)obj\</BaseIntermediateOutputPath>
     <MSBuildProjectExtensionsPath>$(BaseIntermediateOutputPath)</MSBuildProjectExtensionsPath>
     <BaseOutputPath>$(NexusRelayBuild)bin\</BaseOutputPath>

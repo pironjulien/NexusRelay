@@ -1,17 +1,10 @@
 {
   "mcpServers": {
     "nexus-relay": {
-      "command": "powershell.exe",
+      "command": "${PLUGIN_ROOT}\\..\\..\\..\\..\\.nexus\\nexus-relay\\bin\\NexusRelay.exe",
       "args": [
-        "-NoProfile",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-File",
-        "${PLUGIN_ROOT}\\scripts\\bridge.ps1",
-        "-Url",
-        "http://127.0.0.1:16181/mcp?agent=antigravity",
-        "-Product",
-        "NexusRelay"
+        "--bridge",
+        "http://127.0.0.1:16181/mcp?agent=antigravity"
       ]
     }
   }

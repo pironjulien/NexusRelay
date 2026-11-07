@@ -270,13 +270,17 @@ public sealed class InstallerTests : IDisposable
     [Fact]
     public void Antigravity_marketplace_copy_bridges_to_the_local_daemon()
     {
-        // A Marketplace copy cannot name this PC's token (Antigravity expands only ${PLUGIN_ROOT}); install.ps1
+        // A Marketplace copy cannot name this PC's token (Antigravity expands only ${PLUGIN_ROOT}): it starts the
+        // installed engine's stdio bridge, reached from the plugin folder (~\.gemini\config\plugins\nexus-relay, where
+        // Antigravity installs Marketplace plugins) to the stable engine (~\.nexus\nexus-relay\bin). install.ps1
         // replaces this declaration with its own and adds the sidecar.
         string bundle = Path.Join(Repo, "plugin", "antigravity");
-        var args = JsonNode.Parse(File.ReadAllText(Path.Join(bundle, "mcp_config.json")))!["mcpServers"]!["nexus-relay"]!["args"]!.AsArray().Select(a => a!.ToString()).ToList();
-        Assert.Equal(@"${PLUGIN_ROOT}\scripts\bridge.ps1", args[args.IndexOf("-File") + 1]);
-        Assert.Equal("http://127.0.0.1:16181/mcp?agent=antigravity", args[args.IndexOf("-Url") + 1]);
-        Assert.Contains(@".nexus"", ""mcp-token.txt""", File.ReadAllText(Path.Join(bundle, "scripts", "bridge.ps1")));
+        var server = JsonNode.Parse(File.ReadAllText(Path.Join(bundle, "mcp_config.json")))!["mcpServers"]!["nexus-relay"]!;
+        string home = Path.Join(Path.GetTempPath(), "Jean Dupont");
+        string pluginRoot = Path.Join(home, ".gemini", "config", "plugins", "nexus-relay");
+        Assert.Equal(Path.Join(home, ".nexus", "nexus-relay", "bin", "NexusRelay.exe"), Path.GetFullPath(server["command"]!.ToString().Replace("${PLUGIN_ROOT}", pluginRoot, StringComparison.Ordinal)));
+        Assert.Equal([StdioBridge.Flag, "http://127.0.0.1:16181/mcp?agent=antigravity"], server["args"]!.AsArray().Select(a => a!.ToString()));
+        Assert.False(Directory.Exists(Path.Join(bundle, "scripts")));  // no script compiled at each start any more
         Assert.True(File.Exists(Path.Join(bundle, "README.md")));
         foreach (string manifest in new[] { "plugin/antigravity/plugin.json", "fr/plugin/antigravity/plugin.json" })
             Assert.InRange(JsonNode.Parse(File.ReadAllText(Path.Join(Repo, manifest)))!["description"]!.ToString().Length, 120, 160);
