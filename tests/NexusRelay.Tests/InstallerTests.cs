@@ -252,6 +252,23 @@ public sealed partial class InstallerTests : IDisposable
     }
 
     [Fact]
+    public void Installer_messages_are_english_unless_windows_shows_french()
+    {
+        // Rule of the public Nexus products: English by default, French when Windows is displayed in French. Every
+        // message of the installers that carries French text goes through Tr (English first).
+        foreach (string script in new[] { "install.ps1", Path.Join("scripts", "install_commit_guard.ps1") })
+        {
+            string text = File.ReadAllText(Path.Join(Repo, script), Encoding.UTF8);
+            Assert.Contains("CurrentUICulture.TwoLetterISOLanguageName -eq 'fr'", text);
+            foreach (string line in text.Split('\n').Select(l => l.Trim()))
+            {
+                if (line.StartsWith('#') || !Regex.IsMatch(line, @"\b(throw|Write-(Output|Warning|Error|Host))\b")) continue;
+                if (Regex.IsMatch(line, "[éèàêçôù«]")) Assert.True(Regex.IsMatch(line, @"[({]\s*Tr\s"), $"{script}: {line}");
+            }
+        }
+    }
+
+    [Fact]
     public void Instructions_in_two_languages_and_one_version()
     {
         string fr = Path.Join(Repo, "fr");

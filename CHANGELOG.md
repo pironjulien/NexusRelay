@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Restarting the Codex app finds its package natively (the user's package folder, confirmed by the Windows package
   API) instead of starting a hidden PowerShell child.
+- The installer (`install.ps1`) and the commit guard installer (`scripts/install_commit_guard.ps1`) speak English,
+  and French when Windows is displayed in French; they were French only. The `lang` setting still chooses the language
+  of the instructions deployed for the agents, which now includes the description of the Antigravity sidecar.
 
 ### Removed
 - `native/QUALIFICATION.md`, the October qualification report of the switch from Python, which no longer described

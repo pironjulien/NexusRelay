@@ -33,6 +33,10 @@
 param([switch]$SkipTests, [string]$TokenFile, [switch]$Register, [switch]$PrepareOnly, [switch]$PromoteOnly)
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)  # sorties JSON et chemins accentués du moteur
+# Messages de cet installeur : anglais par défaut, français quand Windows est affiché en français (règle des produits
+# Nexus). Le réglage `lang` ne choisit que la langue des consignes déployées pour les IA ($french plus bas).
+$frenchUi = [Globalization.CultureInfo]::CurrentUICulture.TwoLetterISOLanguageName -eq 'fr'
+function Tr([string]$en, [string]$fr) { if ($frenchUi) { $fr } else { $en } }
 
 $project = $PSScriptRoot
 $state = Join-Path $HOME '.nexus\nexus-relay'
@@ -61,14 +65,14 @@ $versions = Join-Path $env:LOCALAPPDATA 'NexusRelay\versions'
 $nativeCsproj = Join-Path $project 'native\NexusRelay.csproj'
 $prebuilt = Join-Path $project 'bin'
 if (Test-Path -LiteralPath $nativeCsproj) {
-    if (-not (Get-Command dotnet.exe -ErrorAction SilentlyContinue)) { throw '.NET 10 SDK requis pour compiler le moteur natif (native\).' }
+    if (-not (Get-Command dotnet.exe -ErrorAction SilentlyContinue)) { throw (Tr '.NET 10 SDK required to build the native engine (native\).' '.NET 10 SDK requis pour compiler le moteur natif (native\).') }
     $sources = @(Get-ChildItem (Join-Path $project 'native') -File | Where-Object Extension -in @('.cs', '.csproj', '.json')) + @(Get-Item (Join-Path $project 'Directory.Build.props'))
     $nativeKey = Get-Digest $sources.FullName
     $nativeOut = Join-Path $versions $nativeKey
     if (-not (Test-Path -LiteralPath (Join-Path $nativeOut 'publish.complete'))) {
         # obj et bin intermédiaires : ~\.nexus\build\nexusrelay (Directory.Build.props), jamais dans OneDrive.
         & dotnet.exe publish $nativeCsproj -c Release -o $nativeOut --nologo -v q
-        if ($LASTEXITCODE) { throw 'dotnet publish (moteur natif) a échoué.' }
+        if ($LASTEXITCODE) { throw (Tr 'dotnet publish (native engine) failed.' 'dotnet publish (moteur natif) a échoué.') }
         [IO.File]::WriteAllText((Join-Path $nativeOut 'engine.lock'), '', [Text.UTF8Encoding]::new($false))
         [IO.File]::WriteAllText((Join-Path $nativeOut 'publish.complete'), $nativeKey, [Text.UTF8Encoding]::new($false))
     }
@@ -85,7 +89,7 @@ if (Test-Path -LiteralPath $nativeCsproj) {
         Rename-Item -LiteralPath $partial -NewName $nativeKey
         [IO.File]::WriteAllText((Join-Path $nativeOut 'publish.complete'), $nativeKey, [Text.UTF8Encoding]::new($false))
     }
-} else { throw "Moteur natif absent : ni native\NexusRelay.csproj ni bin\NexusRelay.exe dans $project." }
+} else { throw (Tr "Native engine missing: neither native\NexusRelay.csproj nor bin\NexusRelay.exe in $project." "Moteur natif absent : ni native\NexusRelay.csproj ni bin\NexusRelay.exe dans $project.") }
 # Verrou d'usage (native\EngineLock.cs) : chaque moteur lancé d'une copie versionnée tient ouvert l'engine.lock de son
 # dossier pendant toute sa vie, ce qui protège ce dossier du ménage des anciennes versions. Créé aussi dans une version
 # installée avant 1.13.10 ; jamais dans bin (retiré de la copie plus bas).
@@ -96,9 +100,9 @@ if (-not (Test-Path -LiteralPath $engineLock)) { [IO.File]::WriteAllText($engine
 $nativeExe = Resolve-RelayPath -Path (Join-Path $nativeOut 'NexusRelay.exe')
 if ($PrepareOnly) {
     & $nativeExe --schemas | Out-Null
-    if ($LASTEXITCODE) { throw 'Candidat natif illisible.' }
+    if ($LASTEXITCODE) { throw (Tr 'Native candidate unreadable.' 'Candidat natif illisible.') }
     Write-Output "NEXUS_RELAY_NATIVE_CANDIDATE $nativeExe"
-    Write-Output 'Candidat préparé ; spec, plugins et processus en service inchangés.'
+    Write-Output (Tr 'Candidate prepared; spec, plugins and running processes unchanged.' 'Candidat préparé ; spec, plugins et processus en service inchangés.')
     exit 0
 }
 
@@ -157,7 +161,7 @@ if ((Test-Path -LiteralPath $stamp) -and [IO.File]::ReadAllText($stamp) -eq $nat
         }
     }
     if (-not $stableHealthy) {
-        Write-Warning "Le moteur dans '$stable' porte le stamp mais a échoué au contrôle de santé (--schemas). Réinstallation requise."
+        Write-Warning (Tr "The engine in '$stable' carries the stamp but failed its health check (--schemas). Reinstalling." "Le moteur dans '$stable' porte le stamp mais a échoué au contrôle de santé (--schemas). Réinstallation requise.")
     }
 }
 
@@ -181,7 +185,7 @@ if (-not $stableHealthy) {
     & $freshExe --schemas | Out-Null
     if ($LASTEXITCODE) {
         Remove-Item -LiteralPath $fresh -Recurse -Force -ErrorAction SilentlyContinue
-        throw "Candidat stable '$freshExe' invalide (--schemas, code $LASTEXITCODE)."
+        throw (Tr "Stable candidate '$freshExe' invalid (--schemas, code $LASTEXITCODE)." "Candidat stable '$freshExe' invalide (--schemas, code $LASTEXITCODE).")
     }
 
     $link = Get-Item -LiteralPath $stable -Force -ErrorAction SilentlyContinue
@@ -214,7 +218,7 @@ if (-not $stableHealthy) {
                 $null = Move-RelayFolderContent -From $old -To $stable
                 Remove-Item -LiteralPath $old -Recurse -Force -ErrorAction SilentlyContinue
                 Remove-Item -LiteralPath $fresh -Recurse -Force -ErrorAction SilentlyContinue
-                throw "$stable est en cours d'utilisation ($($left -join ', ')) : relancer l'installation."
+                throw (Tr "$stable is in use ($($left -join ', ')): run the installation again." "$stable est en cours d'utilisation ($($left -join ', ')) : relancer l'installation.")
             }
             $inPlace = $true
         }
@@ -225,7 +229,7 @@ if (-not $stableHealthy) {
     try {
         if ($inPlace) {
             $stuck = @(Move-RelayFolderContent -From $fresh -To $stable)
-            if ($stuck.Count) { throw "Fichiers du candidat non placés dans $stable : $($stuck -join ', ')." }
+            if ($stuck.Count) { throw (Tr "Candidate files not placed in $($stable): $($stuck -join ', ')." "Fichiers du candidat non placés dans $stable : $($stuck -join ', ').") }
             Remove-Item -LiteralPath $fresh -Recurse -Force
         } else {
             Rename-Item -LiteralPath $fresh -NewName 'bin'
@@ -233,37 +237,37 @@ if (-not $stableHealthy) {
         $promoted = $true
         & $stableExe --schemas | Out-Null
         if ($LASTEXITCODE) {
-            throw "Le moteur dans '$stable' a échoué au contrôle de santé (--schemas, code $LASTEXITCODE)."
+            throw (Tr "The engine in '$stable' failed its health check (--schemas, code $LASTEXITCODE)." "Le moteur dans '$stable' a échoué au contrôle de santé (--schemas, code $LASTEXITCODE).")
         }
         # Empreinte validée uniquement après le contrôle de santé réussi
         [IO.File]::WriteAllText($stamp, $nativeKey, [Text.UTF8Encoding]::new($false))
     } catch {
         $swapError = $_
-        Write-Warning "Échec lors de la bascule vers $stable : $swapError. Tentative de restauration de la version précédente..."
+        Write-Warning (Tr "Switch to $stable failed: $swapError. Restoring the previous version..." "Échec lors de la bascule vers $stable : $swapError. Tentative de restauration de la version précédente...")
         if ($inPlace) {
             # Échange fichier par fichier : retirer ce qui a été placé (pas les fichiers restés tenus), puis tout ramener.
             foreach ($item in @(Get-ChildItem -LiteralPath $stable -Force)) {
                 if ($left -notcontains $item.Name) { Remove-Item -LiteralPath $item.FullName -Recurse -Force -ErrorAction SilentlyContinue }
             }
             $back = @(Move-RelayFolderContent -From $old -To $stable)
-            if ($back.Count) { Write-Warning "Échec critique de restauration automatique : $($back -join ', ') resté(s) dans $old." }
-            else { Remove-Item -LiteralPath $old -Recurse -Force -ErrorAction SilentlyContinue; Write-Warning "Restauration automatique réussie dans $stable." }
+            if ($back.Count) { Write-Warning (Tr "Automatic restore failed: $($back -join ', ') left in $old." "Échec critique de restauration automatique : $($back -join ', ') resté(s) dans $old.") }
+            else { Remove-Item -LiteralPath $old -Recurse -Force -ErrorAction SilentlyContinue; Write-Warning (Tr "Previous version restored in $stable." "Restauration automatique réussie dans $stable.") }
         } elseif ($promoted -and (Test-Path -LiteralPath $stable)) {
             Remove-Item -LiteralPath $stable -Recurse -Force -ErrorAction SilentlyContinue
         }
         if (-not $inPlace -and $old -and (Test-Path -LiteralPath $old)) {
             try {
                 Rename-Item -LiteralPath $old -NewName 'bin'
-                Write-Warning "Restauration automatique réussie depuis $old."
+                Write-Warning (Tr "Previous version restored from $old." "Restauration automatique réussie depuis $old.")
             } catch {
-                Write-Error "Échec critique de restauration automatique : $old n'a pas pu être restauré en $stable ($_)."
+                Write-Error (Tr "Automatic restore failed: $old could not be restored as $stable ($_)." "Échec critique de restauration automatique : $old n'a pas pu être restauré en $stable ($_).")
             }
         } elseif ($targetJunction -and -not (Test-Path -LiteralPath $stable)) {
             try {
                 New-Item -ItemType Junction -Path $stable -Target $targetJunction | Out-Null
-                Write-Warning "Jonction restaurée vers $targetJunction."
+                Write-Warning (Tr "Junction to $targetJunction restored." "Jonction restaurée vers $targetJunction.")
             } catch {
-                Write-Error "Échec de restauration de la jonction vers $targetJunction ($_)."
+                Write-Error (Tr "Could not restore the junction to $targetJunction ($_)." "Échec de restauration de la jonction vers $targetJunction ($_).")
             }
         }
         if (Test-Path -LiteralPath $fresh) {
@@ -296,9 +300,9 @@ if ($canCleanOld) {
 }
 if ($PromoteOnly) {
     if (-not $canCleanOld) {
-        throw "Promotion dans '$stable' échouée ou santé finale invalide (--schemas) ; sauvegardes conservées."
+        throw (Tr "Promotion into '$stable' failed or final health check invalid (--schemas); backups kept." "Promotion dans '$stable' échouée ou santé finale invalide (--schemas) ; sauvegardes conservées.")
     }
-    Write-Output "Promotion dans $stable validée (--schemas)."
+    Write-Output (Tr "Promotion into $stable validated (--schemas)." "Promotion dans $stable validée (--schemas).")
     exit 0
 }
 
@@ -311,7 +315,7 @@ New-Item -ItemType Directory -Force (Join-Path $HOME '.nexus\relay\NexusRelay') 
 function Save-Backup([string]$path, [string]$name) {
     $backup = Join-Path $backups "$name-$(Get-Date -Format 'yyyyMMdd-HHmmss')$([IO.Path]::GetExtension($path))"
     Copy-Item -LiteralPath $path -Destination $backup
-    Write-Output "  copie de sauvegarde : $backup"
+    Write-Output (Tr "  backup copy: $backup" "  copie de sauvegarde : $backup")
 }
 function Write-IfChanged([string]$path, [string]$content) {
     if ((Test-Path $path) -and [IO.File]::ReadAllText($path) -ceq $content) { return $false }
@@ -337,7 +341,7 @@ function Copy-Tree([string]$source, [string]$target) {
 $port = 16181
 # Réglages effectifs (fichier de ce PC, puis celui du dépôt ; variables développées) : une seule lecture, celle du démon.
 $settings = (& $nativeExe --settings $project | Out-String) | ConvertFrom-RelayJson
-if ($LASTEXITCODE) { throw 'Lecture des réglages du poste : échec (NexusRelay.exe --settings).' }
+if ($LASTEXITCODE) { throw (Tr 'Reading the settings of this PC failed (NexusRelay.exe --settings).' 'Lecture des réglages du poste : échec (NexusRelay.exe --settings).') }
 # Langue des consignes déployées (réglage `lang`) : anglais par défaut ; `fr` prend la copie française du dossier fr\.
 $french = ([string]$settings.lang).Trim().ToLower().StartsWith('fr')
 function Get-Localized([string]$relative) {
@@ -385,11 +389,11 @@ if ($Register -and -not $settings.host) {
         $local | Add-Member -NotePropertyName host -NotePropertyValue $chosenHost -Force
         [IO.File]::WriteAllText($settingsPath, ($local | ConvertTo-Json -Depth 10), $utf8)
         $settings | Add-Member -NotePropertyName host -NotePropertyValue $chosenHost -Force
-        Write-Output "Hôte du relais : $chosenHost (réglage host de $settingsPath)."
+        Write-Output (Tr "Relay host: $chosenHost (host setting in $settingsPath)." "Hôte du relais : $chosenHost (réglage host de $settingsPath).")
     }
 }
 if (-not $tokenFile -or -not (Test-Path $tokenFile)) {
-    throw "Jeton absent : régler token_file dans $settingsPath, -TokenFile ou NEXUS_MCP_TOKEN_FILE (ou installer avec -Register)."
+    throw (Tr "Token missing: set token_file in $settingsPath, -TokenFile or NEXUS_MCP_TOKEN_FILE (or install with -Register)." "Jeton absent : régler token_file dans $settingsPath, -TokenFile ou NEXUS_MCP_TOKEN_FILE (ou installer avec -Register).")
 }
 $token = (Get-Content $tokenFile -Raw).Trim()
 function Get-Url([string]$agent) { "http://127.0.0.1:$port/mcp?agent=$agent" }
@@ -411,7 +415,7 @@ try {
         [Environment]::SetEnvironmentVariable($key, [string]$daemonEnv[$key], 'Process')
     }
     & $nativeExe --register-known-relay-chats | Out-Null
-    if ($LASTEXITCODE) { throw 'Vérification des anciens chats Relay en échec ; aucune appropriation par dossier seul.' }
+    if ($LASTEXITCODE) { throw (Tr 'Checking the earlier Relay chats failed; none is claimed by its folder alone.' 'Vérification des anciens chats Relay en échec ; aucune appropriation par dossier seul.') }
 } finally { foreach ($key in $priorEnvironment.Keys) { [Environment]::SetEnvironmentVariable($key, $priorEnvironment[$key], 'Process') } }
 # restart_request : la demande de relance que suit le démon. Un superviseur la prend juste avant de le lancer (avant de
 # relire la spec) : ce lancement la satisfait, le démon neuf ne se relance pas aussitôt.
@@ -436,7 +440,7 @@ $null = Request-RelayRestart -RequestPath (Join-Path $mailbox 'sidecar-restart.r
 # Moteur de ce PC pour le lanceur du plugin Antigravity du Marketplace (plugin\antigravity\scripts\start.cmd) :
 # ~\.nexus\nexus-relay\engine.txt (version|chemin de la copie versionnée, jamais bin, que la promotion renomme).
 & $nativeExe --engine-pointer | Out-Null
-if ($LASTEXITCODE) { throw 'Pointeur du moteur pour Antigravity (engine.txt) : échec (NexusRelay.exe --engine-pointer).' }
+if ($LASTEXITCODE) { throw (Tr 'Engine pointer for Antigravity (engine.txt) failed (NexusRelay.exe --engine-pointer).' 'Pointeur du moteur pour Antigravity (engine.txt) : échec (NexusRelay.exe --engine-pointer).') }
 # Anciennes versions : retirées seulement quand aucun moteur ne les utilise (verrou d'usage tenu, image du processus lue
 # par QueryFullProcessImageNameW, et rien retiré si un moteur en marche ne peut pas être lu) ; la courante est gardée,
 # une version en service part à une installation suivante.
@@ -451,10 +455,10 @@ Sync-RelayTask -Executable $nativeExe -WorkingDirectory $state -SharedSupervisor
 # --- Antigravity : plugin nexus-relay (serveur MCP, skill, sidecar) et activation du sidecar
 $agyRoot = Join-Path $HOME '.gemini\config'
 if ($null -ne $packTargets -and $packTargets -notcontains 'antigravity') {
-    Write-Output 'Antigravity : hors du périmètre choisi (NEXUS_PACK_TARGETS), non touché.'
+    Write-Output (Tr 'Antigravity: outside the chosen scope (NEXUS_PACK_TARGETS), left untouched.' 'Antigravity : hors du périmètre choisi (NEXUS_PACK_TARGETS), non touché.')
     $agyResult = ''
 } elseif (-not (Test-Path $agyRoot)) {
-    Write-Warning 'Antigravity absent de ce PC : plugin non installé.'
+    Write-Warning (Tr 'Antigravity is not on this PC: plugin not installed.' 'Antigravity absent de ce PC : plugin non installé.')
     $agyResult = ''
 } else {
     $plugin = Join-Path $agyRoot 'plugins\nexus-relay'
@@ -474,14 +478,14 @@ if ($null -ne $packTargets -and $packTargets -notcontains 'antigravity') {
     if (Write-IfChanged (Join-Path $plugin 'mcp_config.json') ($mcp | ConvertTo-Json -Depth 10)) { $copied++ }
     $sidecar = [ordered]@{
         display_name = 'NexusRelay'
-        description = 'Livre à Antigravity les messages de Claude (boîte ~\.nexus\relay) par agentapi, une conversation par sujet dans le projet NexusRelay ; une livraison incertaine n''est jamais rejouée.'
+        description = if ($french) { 'Livre à Antigravity les messages de Claude (boîte ~\.nexus\relay) par agentapi, une conversation par sujet dans le projet NexusRelay ; une livraison incertaine n''est jamais rejouée.' } else { 'Delivers the Relay messages (mailbox ~\.nexus\relay) to Antigravity through agentapi, one conversation per topic in the NexusRelay project; an uncertain delivery is never replayed.' }
         command = $nativeExe
         args = @('--sidecar')
         env = [ordered]@{ NEXUS_RELAY_HOME = $mailbox; NEXUS_RELAY_HOST = [string]$settings.host; NEXUS_RELAY_WAKE_SINCE = [string]$settings.wake_since; NEXUS_RELAY_SOURCE_ROOT = $project }
         restart_policy = 'always'
     }
     if (Write-IfChanged (Join-Path $plugin 'sidecars\relay\sidecar.json') ($sidecar | ConvertTo-Json -Depth 10)) { $copied++ }
-    Write-Output "Antigravity : plugin nexus-relay $(if ($copied) { "installé ($copied fichier(s))" } else { 'déjà à jour' }) dans $plugin."
+    Write-Output $(if ($copied) { Tr "Antigravity: nexus-relay plugin installed ($copied file(s)) in $plugin." "Antigravity : plugin nexus-relay installé ($copied fichier(s)) dans $plugin." } else { Tr "Antigravity: nexus-relay plugin already up to date in $plugin." "Antigravity : plugin nexus-relay déjà à jour dans $plugin." })
     $agyResult = "plugin installed in $plugin"
 
     # Projet où agentapi crée les conversations : « NexusRelay », à part des conversations de l'utilisateur, sur un
@@ -511,30 +515,30 @@ if ($null -ne $packTargets -and $packTargets -notcontains 'antigravity') {
             permissionGrants = [ordered]@{ permissionGrants = [ordered]@{} }; settings = [ordered]@{}; isWorkspaceOnly = $false
         }
         [IO.File]::WriteAllText((Join-Path $projectsDir "$projectId.json"), ($definition | ConvertTo-Json -Depth 10), $utf8)
-        Write-Output "Antigravity : projet « $relayProjectName » créé ($relayFolder)."
+        Write-Output (Tr "Antigravity: project `"$relayProjectName`" created ($relayFolder)." "Antigravity : projet « $relayProjectName » créé ($relayFolder).")
     }
     # Sidecar activé dans config.json (doc officielle : sidecars.<id>.enabled + projectId). Rien d'autre n'est touché.
     $configPath = Join-Path $agyRoot 'config.json'
     $config = if (Test-Path $configPath) { [IO.File]::ReadAllText($configPath) | ConvertFrom-RelayJson } else { [PSCustomObject]@{} }
     $activation = Set-AntigravityRelayActivation -Config $config -ProjectId $projectId
-    if ($activation.Disabled) { Write-Output 'Antigravity : choix de désactivation du plugin ou du sidecar conservé.' }
+    if ($activation.Disabled) { Write-Output (Tr 'Antigravity: the choice to disable the plugin or the sidecar is kept.' 'Antigravity : choix de désactivation du plugin ou du sidecar conservé.') }
     elseif ($activation.Changed) {
         if (Test-Path $configPath) { Save-Backup $configPath 'antigravity-config' }
         [IO.File]::WriteAllText($configPath, ($activation.Config | ConvertTo-Json -Depth 100), $utf8)
-        Write-Output "Antigravity : plugin et sidecar nexus-relay/relay activés (projet $projectId), rechargés à chaud par Antigravity."
-    } else { Write-Output "Antigravity : plugin et sidecar nexus-relay/relay déjà activés (projet $projectId)." }
+        Write-Output (Tr "Antigravity: nexus-relay plugin and nexus-relay/relay sidecar enabled (project $projectId), hot-reloaded by Antigravity." "Antigravity : plugin et sidecar nexus-relay/relay activés (projet $projectId), rechargés à chaud par Antigravity.")
+    } else { Write-Output (Tr "Antigravity: nexus-relay plugin and nexus-relay/relay sidecar already enabled (project $projectId)." "Antigravity : plugin et sidecar nexus-relay/relay déjà activés (projet $projectId).") }
 }
 
 # --- Hook d'édition chez Codex et Antigravity (moteur par son chemin stable) : refus d'un fichier réservé par un autre
 #     agent, réservation automatique sinon. Claude Code l'a par le plugin nexus-relay.
 & $nativeExe --register-hooks --backups $backups --command $stableExe | Write-Output
-if ($LASTEXITCODE) { throw 'Hook d''édition incomplet (voir ci-dessus).' }
+if ($LASTEXITCODE) { throw (Tr 'Edit hook incomplete (see above).' 'Hook d''édition incomplet (voir ci-dessus).') }
 # Anciens relais de hooks (PowerShell vers Python ou natif) : plus aucune déclaration ne les appelle.
 Remove-Item -LiteralPath (Join-Path $state 'hooks') -Recurse -Force -ErrorAction SilentlyContinue
 
 if (-not $SkipTests -and (Test-Path (Join-Path $project 'test.ps1')) -and (Test-Path $nativeCsproj)) {
     & (Get-Process -Id $PID).Path -NoProfile -File (Join-Path $project 'test.ps1')
-    if ($LASTEXITCODE) { throw 'test.ps1 échoue : installation incomplète.' }
+    if ($LASTEXITCODE) { throw (Tr 'test.ps1 failed: installation incomplete.' 'test.ps1 échoue : installation incomplète.') }
 }
 
 [IO.File]::WriteAllText((Join-Path $state 'installed.stamp'), "$nativeKey $((Get-FileHash (Join-Path $project 'install.ps1')).Hash)", $utf8)
@@ -542,11 +546,11 @@ if (-not $SkipTests -and (Test-Path (Join-Path $project 'test.ps1')) -and (Test-
 # --- Installation publique : jeton dans la variable utilisateur NEXUS_MCP_TOKEN (lue par Claude Code et Codex, jamais
 #     écrite dans leurs fichiers), puis serveur déclaré aux clients trouvés.
 if ($Register) {
-    if (Set-NexusTokenVariable -Token $token) { Write-Output 'Variable utilisateur NEXUS_MCP_TOKEN posée (redémarrer Claude Code et Codex pour la voir).' }
+    if (Set-NexusTokenVariable -Token $token) { Write-Output (Tr 'User variable NEXUS_MCP_TOKEN set (restart Claude Code and Codex to see it).' 'Variable utilisateur NEXUS_MCP_TOKEN posée (redémarrer Claude Code et Codex pour la voir).') }
     $env:NEXUS_MCP_TOKEN = $token
     $agyArgs = if ($agyResult) { @('--antigravity', $agyResult) } else { @() }  # 5.1 : un argument vide disparaît
     & $nativeExe --register-clients --port $port --backups $backups @agyArgs | Write-Output
-    if ($LASTEXITCODE) { throw 'Déclaration aux clients incomplète (voir ci-dessus).' }
+    if ($LASTEXITCODE) { throw (Tr 'Declaration to the clients incomplete (see above).' 'Déclaration aux clients incomplète (voir ci-dessus).') }
 }
 # pack Nexus : la ligne NEXUS_PACK_RESULT reste la dernière
-if (-not ($Register -and $env:NEXUS_PACK -eq '1')) { Write-Output 'NexusRelay installé avec succès.' }
+if (-not ($Register -and $env:NEXUS_PACK -eq '1')) { Write-Output (Tr 'NexusRelay installed successfully.' 'NexusRelay installé avec succès.') }
