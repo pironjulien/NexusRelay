@@ -260,8 +260,8 @@ public sealed class RelayRuntime : IDisposable
         var ages = new JsonObject(); var missing = new JsonArray(); var stuck = new JsonArray();
         foreach (string name in Workers)
         {
-            if (!workers.TryGetValue(name, out var task) || task.IsCompleted || !beats.TryGetValue(name, out double at)) { missing.Add(name); continue; }
-            double age = Reservations.Now() - at; ages[name] = Math.Round(age, 1); if (age > 420) stuck.Add(name);
+            if (!workers.TryGetValue(name, out var task) || task.IsCompleted || !beats.TryGetValue(name, out double at)) { missing.Add((JsonNode?)name); continue; }
+            double age = Reservations.Now() - at; ages[name] = Math.Round(age, 1); if (age > 420) stuck.Add((JsonNode?)name);
         }
         return new() { ["ages_s"] = ages, ["missing"] = missing, ["stuck"] = stuck, ["errors"] = new JsonObject(errors.Select(e => new KeyValuePair<string, JsonNode?>(e.Key, JsonValue.Create(e.Value)))) };
     }

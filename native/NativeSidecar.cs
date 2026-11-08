@@ -163,7 +163,7 @@ public sealed class NativeSidecar(RelayBox box, NativeAgentApi api)
                 if (old is not null && old != conversation)
                 {
                     var retired = box.TopicState(topic, "agy_retired")?["conversations"] as JsonArray ?? [];
-                    retired.Add(old); box.SetTopicState(topic, "agy_retired", new() { ["conversations"] = retired.DeepClone() });
+                    retired.Add((JsonNode?)old); box.SetTopicState(topic, "agy_retired", new() { ["conversations"] = retired.DeepClone() });
                 }
             }
             foreach (var item in owned)

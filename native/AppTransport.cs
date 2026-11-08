@@ -63,7 +63,7 @@ public sealed class CdpPage : IDisposable
         Call("Input.dispatchKeyEvent", new() { ["type"] = "keyUp", ["key"] = "Enter", ["code"] = "Enter", ["windowsVirtualKeyCode"] = 13 });
         return true;
     }
-    public bool Click(params string[] labels) => Press($"[...document.querySelectorAll('button,[role=button],[role=menuitem],[role=option]')].find(e=>e.getClientRects().length&&{System.Text.Json.JsonSerializer.Serialize(labels)}.includes((e.getAttribute('aria-label')||e.innerText||'').trim()))");
+    public bool Click(params string[] labels) => Press($"[...document.querySelectorAll('button,[role=button],[role=menuitem],[role=option]')].find(e=>e.getClientRects().length&&{System.Text.Json.JsonSerializer.Serialize(labels, RelayJsonContext.Default.StringArray)}.includes((e.getAttribute('aria-label')||e.innerText||'').trim()))");
     public void Escape() { Call("Input.dispatchKeyEvent", new() { ["type"] = "keyDown", ["key"] = "Escape", ["code"] = "Escape", ["windowsVirtualKeyCode"] = 27 }); Call("Input.dispatchKeyEvent", new() { ["type"] = "keyUp", ["key"] = "Escape", ["code"] = "Escape", ["windowsVirtualKeyCode"] = 27 }); }
     public void Dispose() { socket.Dispose(); }
 }
@@ -85,7 +85,7 @@ public static partial class AppTransport
         do { if (probe()) return true; Thread.Sleep(100); } while (deadline.Elapsed.TotalSeconds < seconds);
         return false;
     }
-    public static string Quote(string? text) => System.Text.Json.JsonSerializer.Serialize(text);
+    public static string Quote(string? text) => System.Text.Json.JsonSerializer.Serialize(text, RelayJsonContext.Default.String);
     public static bool Truth(JsonNode? node) => node is JsonValue v && v.TryGetValue<bool>(out var b) && b;
     public static bool UserPresent(string app)
     {

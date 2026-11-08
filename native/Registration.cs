@@ -171,7 +171,7 @@ public static partial class Registration
     private static partial Regex TableHeader();
 
     public static string TomlLiteral(string text) =>
-        text.Contains('\'') || text.Contains('\n') ? JsonSerializer.Serialize(text, Indented) : $"'{text}'";
+        text.Contains('\'') || text.Contains('\n') ? JsonSerializer.Serialize(text, RelayJsonContext.Relaxed.String) : $"'{text}'";
 
     private static TomlTable? StateOf(TomlTable parsed) => Table(Table(parsed, "hooks"), "state");
 
@@ -249,7 +249,7 @@ public static partial class Registration
                     {
                         var copy = group!.DeepClone().AsObject();
                         copy["hooks"] = new JsonArray(remaining.Select(h => h?.DeepClone()).ToArray());
-                        kept.Add(copy);
+                        kept.Add((JsonNode?)copy);
                     }
                     else kept.Add(group?.DeepClone());
                 }
@@ -301,7 +301,7 @@ public static partial class Registration
             var handler = new JsonObject { ["type"] = "command", ["command"] = Command(exe, "codex", phase), ["timeout"] = TimeoutS, ["async"] = false };
             var group = new JsonObject { ["matcher"] = eventName != "Stop" ? CodexMatcher : "", ["hooks"] = new JsonArray(handler) };
             int index = groups.Select((g, i) => (g, i)).FirstOrDefault(x => Ours(x.g), (null, groups.Count)).Item2;
-            if (index == groups.Count) { groups.Add(group); changed = true; }
+            if (index == groups.Count) { groups.Add((JsonNode?)group); changed = true; }
             else if (!JsonNode.DeepEquals(groups[index], group)) { groups[index] = group; changed = true; }
         }
         if (changed) { Backup(hooksPath, backups); WriteAtomic(hooksPath, Dump(data)); }
@@ -449,7 +449,7 @@ public static partial class Registration
             text = parts.ToString();
             if (Table(ReadToml(text), "mcp_servers") is { } left && left.ContainsKey(Name)) return "kept (entry written in a form this installer does not edit)";
         }
-        string block = $"[mcp_servers.{Name}]\nurl = {JsonSerializer.Serialize(Url(port, "codex"))}\nbearer_token_env_var = {JsonSerializer.Serialize(TokenVar)}\n";
+        string block = $"[mcp_servers.{Name}]\nurl = {JsonSerializer.Serialize(Url(port, "codex"), RelayJsonContext.Default.String)}\nbearer_token_env_var = {JsonSerializer.Serialize(TokenVar, RelayJsonContext.Default.String)}\n";
         string updated = text.TrimEnd('\n', '\r') + (text.Trim().Length > 0 ? "\n\n" : "") + block;
         if (!CodexEntryMatches(Table(ReadToml(updated), "mcp_servers")?[Name], port)) return "failed: the edited config.toml would not read back";
         Backup(config, backups);

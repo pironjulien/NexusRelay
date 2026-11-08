@@ -234,7 +234,7 @@ public static partial class ReviewChecks
             foreach (var (path, hash) in files)
             {
                 if (Hash(path) != hash?.GetValue<string>())
-                    changed.Add(repo is not null && path.StartsWith(repo, StringComparison.OrdinalIgnoreCase) ? Path.GetRelativePath(repo, path).Replace('\\', '/') : path);
+                    changed.Add((JsonNode?)(repo is not null && path.StartsWith(repo, StringComparison.OrdinalIgnoreCase) ? Path.GetRelativePath(repo, path).Replace('\\', '/') : path));
             }
         }
         var head = snapshot["head"]?.GetValue<string>();

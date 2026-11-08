@@ -6,6 +6,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.15.0] - 2026-11-08
+
+### Changed
+- The engine is compiled ahead of time with Native AOT: the release packages and the `.mcpb` bundles carry one
+  `NexusRelay.exe` per architecture (win-x64, win-arm64), with no .NET runtime and no JIT. Measured on the same PC
+  against 1.14.1, with the same method (isolated `--http --protocol-fixture` daemon, then the real `--http 16181`
+  daemon after 5 minutes):
+  - engine on disk: 1 file of 11.4 MB instead of 195 files and 77.9 MB;
+  - start-up until the first `tools/list` answer: 37 ms instead of 93 ms (median of 15); `--version` 11 ms instead of
+    46 ms;
+  - isolated daemon at rest after 5 minutes: working set 26.4 MB instead of 36.8 MB (private bytes 17.6 MB instead
+    of 11.1 MB: the AOT garbage collector reserves its heap up front);
+  - real daemon (Claude, Codex and Antigravity connected) after 5 minutes: working set 72.9 MB instead of 134.6 MB,
+    private bytes 74.7 MB instead of 95.7 MB, although two end-to-end wake self-tests ran during the AOT window.
+- Windows interop without the runtime binder or the built-in COM wrappers: the desktop launch broker (Explorer's
+  `ShellWindows` and `Shell.Application`) goes through a source-generated `IDispatch`, the Task Scheduler and the
+  Store app activation through `[GeneratedComInterface]` interfaces, window enumeration through an
+  `UnmanagedCallersOnly` callback and the process snapshot through a blittable `PROCESSENTRY32W`; JSON strings are
+  written with a source-generated context. The trimming and AOT analyzers run in every build, warnings as errors.
+- The AOT compiler and trimmer packages are pinned in `packages.lock.json`; building from a clone (`install.ps1`) needs
+  the Visual Studio C++ build tools.
+
 ## [1.14.1] - 2026-11-08
 
 ### Fixed

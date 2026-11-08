@@ -71,9 +71,9 @@ public static class NativeCards
             {
                 string name = step.Contains(" « ", StringComparison.Ordinal) ? step.Split(" « ", 2)[1].TrimEnd(' ', '»') : step;
                 var source = elements.FirstOrDefault(e => Label(e) == name && (step.StartsWith("page",StringComparison.Ordinal) ? e["popup"] is null || e["role"]?.ToString().StartsWith("menuitem",StringComparison.Ordinal)==true : e["popup"] is not null));
-                how.Add(new JsonObject { ["step"] = step, ["gesture"] = step.StartsWith("sous-menu", StringComparison.Ordinal) ? RelayPaths.Tr("hover (Input.dispatchMouseEvent mouseMoved)","survol (Input.dispatchMouseEvent mouseMoved)") : RelayPaths.Tr("emulated click (cdp._press)","clic émulé (cdp._press)"), ["locator"] = source is null ? new JsonObject { ["text"] = name } : Locator(source) });
+                how.Add((JsonNode?)new JsonObject { ["step"] = step, ["gesture"] = step.StartsWith("sous-menu", StringComparison.Ordinal) ? RelayPaths.Tr("hover (Input.dispatchMouseEvent mouseMoved)","survol (Input.dispatchMouseEvent mouseMoved)") : RelayPaths.Tr("emulated click (cdp._press)","clic émulé (cdp._press)"), ["locator"] = source is null ? new JsonObject { ["text"] = name } : Locator(source) });
             }
-            how.Add(new JsonObject { ["step"] = RelayPaths.Tr("element","élément"), ["locator"] = Locator(item) });
+            how.Add((JsonNode?)new JsonObject { ["step"] = RelayPaths.Tr("element","élément"), ["locator"] = Locator(item) });
             return (JsonNode)new JsonObject { ["label"] = Label(item), ["role"] = item["role"]?.DeepClone(), ["path"] = string.Join(" > ", (item["path"] as JsonArray ?? []).Select(p => p?.ToString())), ["landmark"] = rules.FirstOrDefault(kv => kv.Value is JsonObject r && Matches(item, r)).Key, ["data"] = item["data"]?.DeepClone() ?? new JsonObject(), ["how"] = how };
         }).ToArray());
     }
@@ -286,7 +286,7 @@ public static class NativeCards
             {
                 Guard();if(spec["reveal"]?.ToString() is {Length:>0} reveal){var point=page.Eval("(()=>{const e="+Element(new JsonObject{["css"]=reveal,["nth"]=0})+";if(!e)return null;const r=e.getBoundingClientRect();return r.width?[r.x+r.width/2,r.y+r.height/2]:null})()");if(point is JsonArray xy){Guard();page.Call("Input.dispatchMouseEvent",new(){["type"]="mouseMoved",["x"]=xy[0]!.DeepClone(),["y"]=xy[1]!.DeepClone()});pause(300);}}
                 var raw = Raw().OfType<JsonObject>().ToList();
-                void Add(IEnumerable<JsonObject> items, List<string> location) { foreach (var masked in Collapse(items.Select(mask.Mask))) { masked["path"] = new JsonArray(location.Select(s => JsonValue.Create(s)).ToArray()); elements.Add(masked); } }
+                void Add(IEnumerable<JsonObject> items, List<string> location) { foreach (var masked in Collapse(items.Select(mask.Mask))) { masked["path"] = new JsonArray(location.Select(s => JsonValue.Create(s)).ToArray()); elements.Add((JsonNode?)masked); } }
                 Add(raw, path);
                 foreach (var trigger in raw.Where(Trigger).Where(e => !Danger.IsMatch(Label(e))))
                 {
@@ -320,7 +320,7 @@ public static class NativeCards
                     var next = queue.Dequeue(); var target = next.Target; string key = target.ToJsonString() + string.Join("/", next.Path); if (!seen.Add(key)) continue; Guard();
                     if (target["via_menu"] is JsonObject via) { if (!Press(via)) continue; pause(800); target = (JsonObject)target["entry"]!.DeepClone(); }
                     if (!Allowed(target, next.Selector) || !Press(target)) { Close(); continue; }
-                    pause(1200); owned.Add(View()); var path = next.Path.Append("page « " + mask.Canon(Label(target)) + " »").ToList(); pages.Add(string.Join(" > ", path)); var raw = ReadPage(path);
+                    pause(1200); owned.Add(View()); var path = next.Path.Append("page « " + mask.Canon(Label(target)) + " »").ToList(); pages.Add((JsonNode?)string.Join(" > ", path)); var raw = ReadPage(path);
                     if (next.Path.Count == 0) { string sub = spec["subpages"]!.ToString(); foreach (var item in raw.Where(e => Allowed(e, sub))) queue.Enqueue((item, path, sub)); }
                 }
             }

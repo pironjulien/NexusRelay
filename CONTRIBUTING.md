@@ -3,6 +3,8 @@
 ## Environment
 
 - Windows 10 or 11, the .NET SDK pinned by `global.json`, PowerShell 7;
+- for a Native AOT publish (`install.ps1` from a clone, releases): the Visual Studio C++ build tools ("Desktop
+  development with C++" workload);
 - Claude, Codex or Antigravity only for checks on the real apps, never needed by the tests.
 
 ## Rules

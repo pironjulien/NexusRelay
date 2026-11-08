@@ -97,7 +97,7 @@ public static partial class AppLifecycle
     public static bool HungWindow(string app)
     {
         using var processes = Processes(app); var ids = processes.Select(p => p.Id).ToHashSet(); bool hung = false;
-        EnumWindows((hwnd, _) => { GetWindowThreadProcessId(hwnd, out uint pid); if (ids.Contains((int)pid) && IsWindowVisible(hwnd) && IsHungAppWindow(hwnd)) { hung = true; } return true; }, 0);
+        ForEachWindow(hwnd => { GetWindowThreadProcessId(hwnd, out uint pid); if (ids.Contains((int)pid) && IsWindowVisible(hwnd) && IsHungAppWindow(hwnd)) { hung = true; } });
         return hung;
     }
     private static bool Responsive(string url) { try { using var page = new CdpPage(url); return page.Eval("1 + 1")?.ToString() == "2"; } catch (Exception e) when (e is IOException or RelayError or System.Net.WebSockets.WebSocketException or OperationCanceledException) { return false; } }
@@ -133,7 +133,7 @@ public static partial class AppLifecycle
             {
                 var identities = processes.Select(p => (Process: p, Born: p.StartTime.ToUniversalTime().Ticks, Path: p.MainModule!.FileName)).ToList();
                 var ids = identities.Select(i => i.Process.Id).ToHashSet(); var windows = new List<nint>();
-                EnumWindows((hwnd, _) => { GetWindowThreadProcessId(hwnd, out uint pid); if (ids.Contains((int)pid) && IsWindowVisible(hwnd) && GetWindow(hwnd, 4) == 0) { windows.Add(hwnd); } return true; }, 0);
+                ForEachWindow(hwnd => { GetWindowThreadProcessId(hwnd, out uint pid); if (ids.Contains((int)pid) && IsWindowVisible(hwnd) && GetWindow(hwnd, 4) == 0) { windows.Add(hwnd); } });
                 foreach (nint window in windows)
                 {
                     if (RestartGuard(app, frozen, AppTransport.UserPresent(app) || AppTransport.EmergencyStop(), Busy(app), true) is string changed) return AppTransport.Result("deferred", changed);
@@ -164,9 +164,9 @@ public static partial class AppLifecycle
         {
             if (app == "codex" && package is not null)
             {
-                var activation = (IAppActivation)new AppActivation();
+                var activation = ComObjects.Create<IApplicationActivationManager>(ComObjects.ApplicationActivationManager, 0x17 /* CLSCTX_SERVER */);
                 try { BeforeLaunch(); int hr = activation.ActivateApplication(package + "!App", $"--remote-debugging-port={AppTransport.Port(app)} --remote-debugging-address=127.0.0.1", 0, out _); Marshal.ThrowExceptionForHR(hr); }
-                finally { Marshal.ReleaseComObject(activation); }
+                finally { ((System.Runtime.InteropServices.Marshalling.ComObject)(object)activation).FinalRelease(); }
             }
             else DetachedProcess.Start(exe!, [$"--remote-debugging-port={AppTransport.Port(app)}", "--remote-debugging-address=127.0.0.1"], BeforeLaunch);
             launchState.SetState("launch-" + app, new() { ["status"] = "submitted", ["at"] = RelayBox.NowIso() });
@@ -181,7 +181,7 @@ public static partial class AppLifecycle
             using (var processes = Processes(app))
             {
                 var ids = processes.Select(p => p.Id).ToHashSet();
-                EnumWindows((hwnd, _) => { GetWindowThreadProcessId(hwnd, out uint pid); if (ids.Contains((int)pid) && IsWindowVisible(hwnd)) { windows.Add(hwnd); } return true; }, 0);
+                ForEachWindow(hwnd => { GetWindowThreadProcessId(hwnd, out uint pid); if (ids.Contains((int)pid) && IsWindowVisible(hwnd)) { windows.Add(hwnd); } });
             }
             if (windows.Count > 0)
             {
@@ -229,11 +229,25 @@ public static partial class AppLifecycle
         return status is 0 or 122 && count > 0; // 122 = ERROR_INSUFFICIENT_BUFFER: packages exist, names not requested.
     }
     [LibraryImport("kernel32.dll", StringMarshalling = StringMarshalling.Utf16)] private static partial int GetPackagesByPackageFamily(string family, ref uint count, nint fullNames, ref uint bufferLength, nint buffer);
-    [ComImport, Guid("2E941141-7F97-4756-BA1D-9DECDE894A3D"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)] private interface IAppActivation { [PreserveSig] int ActivateApplication([MarshalAs(UnmanagedType.LPWStr)] string id, [MarshalAs(UnmanagedType.LPWStr)] string args, uint options, out uint pid); }
-    [ComImport, Guid("45BA127D-10A8-46EA-8AB7-56EA9078943C")] private class AppActivation { }
-    private delegate bool EnumWindow(nint hwnd, nint parameter);
-    // Kept as DllImport: LibraryImport cannot marshal the managed callback delegate.
-    [DllImport("user32.dll")] private static extern bool EnumWindows(EnumWindow callback, nint parameter);
+    // EnumWindows with a function pointer to an UnmanagedCallersOnly callback (no marshalled delegate, Native AOT
+    // compatible); the managed visitor travels in a GCHandle and an exception it raises is rethrown after the walk.
+    [LibraryImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static unsafe partial bool EnumWindows(delegate* unmanaged[Stdcall]<nint, nint, int> callback, nint parameter);
+    private sealed class WindowWalk(Action<nint> visit) { public readonly Action<nint> Visit = visit; public Exception? Error; }
+    private static unsafe void ForEachWindow(Action<nint> visit)
+    {
+        var walk = new WindowWalk(visit);
+        var handle = GCHandle.Alloc(walk);
+        try { EnumWindows(&VisitWindow, GCHandle.ToIntPtr(handle)); }
+        finally { handle.Free(); }
+        if (walk.Error is not null) System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw(walk.Error);
+    }
+    [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvStdcall)])]
+    private static int VisitWindow(nint hwnd, nint state)
+    {
+        var walk = (WindowWalk)GCHandle.FromIntPtr(state).Target!;
+        try { walk.Visit(hwnd); return 1; }
+        catch (Exception e) { walk.Error = e; return 0; } // Boundary: an exception must not cross the native frame; rethrown by ForEachWindow.
+    }
     [LibraryImport("user32.dll")] private static partial uint GetWindowThreadProcessId(nint hwnd, out uint pid);
     [LibraryImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static partial bool IsWindowVisible(nint hwnd);
     [LibraryImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static partial bool IsHungAppWindow(nint hwnd);

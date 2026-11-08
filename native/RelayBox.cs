@@ -519,7 +519,7 @@ public sealed partial class RelayBox
                 var arr = new JsonArray();
                 for (int i = 0; i < contents.Count; i++)
                 {
-                    arr.Add(SaveAttachment(attachFolder, i + 1, contents[i].Path, contents[i].Data));
+                    arr.Add((JsonNode?)SaveAttachment(attachFolder, i + 1, contents[i].Path, contents[i].Data));
                 }
                 extraClone["attachments"] = arr;
             }

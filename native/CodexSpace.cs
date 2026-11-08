@@ -73,7 +73,7 @@ public static class CodexSpace
                 catch (IOException) { continue; }
                 if (!proof) continue;
                 registry["threads"]![id] = new JsonObject { ["verified"] = true, ["topic"] = message.Topic, ["workspace"] = chat.Cwd, ["verified_at"] = RelayBox.NowIso(), ["origin"] = "verified-relay-history", ["message"] = message.Id };
-                registered.Add(id);
+                registered.Add((JsonNode?)id);
             }
         }
         if (registered.Count > 0) box.SetState("codex-owned", registry);

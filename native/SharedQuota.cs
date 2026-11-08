@@ -22,7 +22,7 @@ public static class SharedQuota
                 if (family is not ("gemini" or "claude-gpt" or "argon") || group["utilise"] is not JsonValue value || !value.TryGetValue<double>(out double used) || !double.IsFinite(used) || used is < 0 or > 1) continue;
                 bool five = group["cinq"]?.GetValue<bool>() ?? false;
                 double reset = AppSessions.Epoch(group["fin"]?.ToString()) ?? observed.Value + (five ? 5 * 3600 : 7 * 24 * 3600);
-                limits.Add(new JsonObject { ["family"] = family, ["limit"] = five ? "5 h" : "semaine", ["remaining_pct"] = Reservations.Now() < reset ? 100 * (1 - used) : 100.0, ["resets_at"] = reset });
+                limits.Add((JsonNode?)new JsonObject { ["family"] = family, ["limit"] = five ? "5 h" : "semaine", ["remaining_pct"] = Reservations.Now() < reset ? 100 * (1 - used) : 100.0, ["resets_at"] = reset });
             }
             return new() { ["status"] = "success", ["source"] = "NexusKeypad shared quota", ["read_at"] = data["lu"]?.DeepClone(), ["selected_family"] = selected, ["selection_proven"] = selected is not null && limits.OfType<JsonObject>().Any(l => l["family"]?.ToString() == selected), ["limits"] = limits };
         }

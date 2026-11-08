@@ -1,6 +1,6 @@
 # Release, in two channels, with the shared Nexus release workflows of NexusSystem.
 # - Development: every push to main runs test.ps1 and publishes the native engine self-contained for win-x64 and
-#   win-arm64 (no .NET to install):
+#   win-arm64 with Native AOT (one NexusRelay.exe compiled ahead of time, no .NET to install):
 #     - NexusRelay-win-x64.zip / NexusRelay-win-arm64.zip: engine (bin\, which installs itself: NexusRelay.exe --install)
 #       and what it deploys (plugins, instructions), started by get.ps1 after checking SHA256SUMS.txt;
 #     - nexus-relay-win-x64.mcpb / nexus-relay-win-arm64.mcpb: MCP bundles (stdio), listed in the official MCP registry;
@@ -84,10 +84,17 @@ jobs:
           # plugin/ from the NexusSystem catalog.
           $deployed = 'plugin/antigravity', 'fr/plugin/antigravity', 'fr/codex-projet', 'fr/claude-projet'
           $scripts = 'install_commit_guard.ps1', 'pre-commit', 'post-commit'
+          # One locked restore for both architectures (packages.lock.json, the AOT compiler included); then no restore.
+          dotnet restore native/NexusRelay.csproj
+          if ($LASTEXITCODE) { throw 'dotnet restore failed' }
+          # Native AOT finds the C++ linker through vswhere, which is not on PATH outside a developer prompt.
+          $env:PATH = "$env:PATH;${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer"
           foreach ($rid in 'win-x64', 'win-arm64') {
             $engine = Join-Path $stage "engine-$rid"
-            dotnet publish native/NexusRelay.csproj -c Release -r $rid --self-contained true -o $engine --nologo
+            # PublishAot (native/NexusRelay.csproj): NexusRelay.exe compiled ahead of time, no assembly beside it.
+            dotnet publish native/NexusRelay.csproj -c Release -r $rid --no-restore -p:DebugType=none -o $engine --nologo
             if ($LASTEXITCODE) { throw "dotnet publish $rid failed" }
+            if (-not (Test-Path "$engine/NexusRelay.exe") -or (Get-ChildItem $engine -Filter *.dll)) { throw "$rid was not compiled ahead of time." }
             # Installer archive: the engine in bin\ (it installs itself), install.ps1 (the starter an older get.ps1 runs) and
             # what the engine deploys (no sources).
             $zip = Join-Path $stage "zip-$rid"

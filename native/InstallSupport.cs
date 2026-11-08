@@ -499,52 +499,46 @@ public static class TaskXml
         xml is null ? null : XDocument.Parse(xml).Root?.Element(Ns + "Actions")?.Element(Ns + "Exec")?.Element(Ns + "Command")?.Value;
 }
 
-/// <summary>The Task Scheduler's own COM API (Schedule.Service), root folder: no schtasks.exe, no PowerShell.</summary>
+/// <summary>The Task Scheduler's own COM API (taskschd.dll, ITaskService), root folder: no schtasks.exe, no PowerShell.
+/// Source-generated COM interop (TaskSchedulerInterop.cs), Native AOT compatible.</summary>
 public sealed class WindowsTaskStore : ITaskStore
 {
     private const int TaskCreateOrUpdate = 6, LogonInteractiveToken = 3;
 
-    private static dynamic Folder()
+    /// <summary>No such task (or folder).</summary>
+    private static bool Missing(int hr) => hr is unchecked((int)0x80070002) or unchecked((int)0x80070003);
+
+    private static IRegisteredTask? Find(string name)
     {
-        var type = Type.GetTypeFromProgID("Schedule.Service", throwOnError: true)!;
-        dynamic service = Activator.CreateInstance(type)!;
-        service.Connect();
-        return service.GetFolder("\\");
+        int hr = TaskScheduler.Root().GetTask(name, out var task);
+        if (Missing(hr)) return null;
+        Marshal.ThrowExceptionForHR(hr);
+        return task;
     }
 
-    /// <summary>No such task (or folder): the COM binder raises it as a FileNotFoundException, others as COMException.</summary>
-    private static bool Missing(Exception e) => e.HResult is unchecked((int)0x80070002) or unchecked((int)0x80070003);
-
-    private static dynamic? Find(string name)
-    {
-        try { return Folder().GetTask(name); }
-        catch (Exception e) when (Missing(e)) { return null; }
-    }
-
-    public string? Xml(string name) => Find(name) is { } task ? (string)task.Xml : null;
+    public string? Xml(string name) => Find(name)?.GetXml();
 
     public string State(string name)
     {
         if (Find(name) is not { } task) return "Absent";
-        return (int)task.State switch { 1 => "Disabled", 2 => "Queued", 3 => "Ready", 4 => "Running", _ => "Unknown" };
+        return task.GetState() switch { 1 => "Disabled", 2 => "Queued", 3 => "Ready", 4 => "Running", _ => "Unknown" };
     }
 
-    public void Register(string name, string xml) => Folder().RegisterTask(name, xml, TaskCreateOrUpdate, null, null, LogonInteractiveToken, null);
+    public void Register(string name, string xml) => TaskScheduler.Root().RegisterTask(name, xml, TaskCreateOrUpdate, default, default, LogonInteractiveToken, default);
 
-    public void Stop(string name)
-    {
-        if (Find(name) is { } task) task.Stop(0);
-    }
+    public void Stop(string name) => Find(name)?.Stop(0);
 
     public void Delete(string name)
     {
-        try { Folder().DeleteTask(name, 0); }
-        catch (Exception e) when (Missing(e)) { /* already gone */ }
+        int hr = TaskScheduler.Root().DeleteTask(name, 0);
+        if (!Missing(hr)) Marshal.ThrowExceptionForHR(hr); // already gone otherwise
     }
 
     public void Run(string name)
     {
-        if (Find(name) is { } task) task.Run(null);
+        if (Find(name) is not { } task) return;
+        nint running = task.Run(default);
+        if (running != 0) Marshal.Release(running);
     }
 }
 

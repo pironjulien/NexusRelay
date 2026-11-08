@@ -100,7 +100,7 @@ public static class AppAutomation
             else
             {
                 string label = space["label"]!.ToString();
-                string labels = System.Text.Json.JsonSerializer.Serialize(CodexSpace.Labels(space).SelectMany(name => new[] { $"Démarrer un nouveau chat dans {name}", $"Start new chat in {name}" }));
+                string labels = System.Text.Json.JsonSerializer.Serialize(CodexSpace.Labels(space).SelectMany(name => new[] { $"Démarrer un nouveau chat dans {name}", $"Start new chat in {name}" }).ToArray(), RelayJsonContext.Default.StringArray);
                 string relayButton = $"[...document.querySelectorAll('button,[role=button]')].find(e=>e.getClientRects().length&&{labels}.includes((e.getAttribute('aria-label')||'').trim()))";
                 if (explicitSpace)
                 {
@@ -284,10 +284,10 @@ public static class AppAutomation
                 var left = new JsonArray();
                 foreach (string old in retired.Select(n => n?.ToString()).OfType<string>().Distinct().Where(o => RelayPaths.IsConversationId(o) && RelayPaths.ConversationAlive(o)))
                 {
-                    if (old == id) { left.Add(old); continue; }
+                    if (old == id) { left.Add((JsonNode?)old); continue; }
                     bool Ready() => AntigravityTidyReady(box, topic, true, AppSessions.AntigravityTurn(old), Reservations.Now());
                     if (ArchiveAntigravity(page, old, Ready) == "archived") archived++;
-                    else left.Add(old);
+                    else left.Add((JsonNode?)old);
                 }
                 if (retired.Count > 0) box.SetTopicState(topic, "agy_retired", new() { ["conversations"] = left });
                 if (id is null || !RelayPaths.IsConversationId(id) || !RelayPaths.ConversationAlive(id)) continue;

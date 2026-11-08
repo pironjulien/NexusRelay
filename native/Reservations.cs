@@ -423,7 +423,7 @@ public static partial class Reservations
             record["session"] = session;
         var pathsArray = new JsonArray();
         foreach (var w in wanted)
-            pathsArray.Add(w);
+            pathsArray.Add((JsonNode?)w);
         record["paths"] = pathsArray;
         var trimmedReason = reason.Trim();
         record["reason"] = trimmedReason[..Math.Min(300, trimmedReason.Length)];
@@ -447,7 +447,7 @@ public static partial class Reservations
                 pendingTools.Add(tool);
             var pendingArr = new JsonArray();
             foreach (var pt in pendingTools)
-                pendingArr.Add(pt);
+                pendingArr.Add((JsonNode?)pt);
             record["pending_tools"] = pendingArr;
             if (string.IsNullOrEmpty(tool))
                 record["pending_unknown"] = true;
@@ -654,7 +654,7 @@ public static partial class Reservations
 
                 var pendingArr = new JsonArray();
                 foreach (var pt in pending.OrderBy(x => x, StringComparer.Ordinal))
-                    pendingArr.Add(pt);
+                    pendingArr.Add((JsonNode?)pt);
                 record["pending_tools"] = pendingArr;
 
                 var id = record["id"]!.GetValue<string>();
@@ -697,8 +697,9 @@ public static partial class Reservations
 
     #region WhoAmI (Parent process tree inspection)
 
-    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
-    private struct PROCESSENTRY32W
+    // Blittable PROCESSENTRY32W (fixed name buffer): marshalled by LibraryImport without runtime marshalling code.
+    [StructLayout(LayoutKind.Sequential)]
+    private unsafe struct PROCESSENTRY32W
     {
         public uint dwSize;
         public uint cntUsage;
@@ -709,27 +710,25 @@ public static partial class Reservations
         public uint th32ParentProcessID;
         public int pcPriClassBase;
         public uint dwFlags;
-        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)]
-        public string szExeFile;
+        public fixed char szExeFile[260];
     }
 
     [LibraryImport("kernel32.dll", SetLastError = true)]
     private static partial IntPtr CreateToolhelp32Snapshot(uint dwFlags, uint th32ProcessID);
 
-    // Process32FirstW/NextW stay DllImport: PROCESSENTRY32W carries a ByValTStr field that LibraryImport cannot marshal.
-    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    [LibraryImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool Process32FirstW(IntPtr hSnapshot, ref PROCESSENTRY32W lppe);
+    private static partial bool Process32FirstW(IntPtr hSnapshot, ref PROCESSENTRY32W lppe);
 
-    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    [LibraryImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool Process32NextW(IntPtr hSnapshot, ref PROCESSENTRY32W lppe);
+    private static partial bool Process32NextW(IntPtr hSnapshot, ref PROCESSENTRY32W lppe);
 
     [LibraryImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static partial bool CloseHandle(IntPtr hObject);
 
-    private static Dictionary<int, (int ParentPid, string Exe)> ProcessTable()
+    private static unsafe Dictionary<int, (int ParentPid, string Exe)> ProcessTable()
     {
         var table = new Dictionary<int, (int, string)>();
         if (!OperatingSystem.IsWindows())
@@ -739,12 +738,12 @@ public static partial class Reservations
             return table;
         try
         {
-            var entry = new PROCESSENTRY32W { dwSize = (uint)Marshal.SizeOf<PROCESSENTRY32W>() };
+            var entry = new PROCESSENTRY32W { dwSize = (uint)sizeof(PROCESSENTRY32W) };
             if (Process32FirstW(snap, ref entry))
             {
                 do
                 {
-                    table[(int)entry.th32ProcessID] = ((int)entry.th32ParentProcessID, (entry.szExeFile ?? "").ToLowerInvariant());
+                    table[(int)entry.th32ProcessID] = ((int)entry.th32ParentProcessID, new string(entry.szExeFile).ToLowerInvariant());
                 }
                 while (Process32NextW(snap, ref entry));
             }

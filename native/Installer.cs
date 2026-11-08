@@ -248,7 +248,7 @@ public sealed class Installer
 
         // New code: restart request to the daemon, never a forced stop. It restarts only if its code changed, once no
         // call is running, and its supervisor starts it again. Same for Antigravity's sidecar, between two deliveries.
-        string fingerprint = $"sha256:{InstallFiles.Sha256(Path.ChangeExtension(nativeExe, ".dll")).ToLowerInvariant()} ";
+        string fingerprint = $"sha256:{InstallFiles.Sha256(RelayPaths.CodeFile(nativeExe)).ToLowerInvariant()} ";
         bool forced = specChanged || ReadText(daemonRequest).StartsWith("force", StringComparison.Ordinal);
         RestartOwner.Request(daemonRequest, daemonOwner, forced ? "force" : "code", fingerprint);
         RestartOwner.Request(Path.Join(mailbox, "sidecar-restart.request"), sidecarOwner, specChanged ? "force" : "code", fingerprint);

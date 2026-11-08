@@ -9,7 +9,7 @@ namespace NexusRelay;
 
 public static partial class RelayPaths
 {
-    public const string Version = "1.14.1";
+    public const string Version = "1.15.0";
     public static readonly string[] Agents = ["claude", "antigravity", "codex"];
     public const string User = "user";
     public static readonly string[] Parties = ["claude", "antigravity", "codex", "user"];
@@ -176,11 +176,19 @@ public static partial class RelayPaths
         }
     }
 
+    /// <summary>The file holding an engine's code: NexusRelay.dll beside the apphost (JIT build, the tests), else the
+    /// executable itself (Native AOT release).</summary>
+    public static string CodeFile(string exe)
+    {
+        string dll = Path.ChangeExtension(exe, ".dll");
+        return File.Exists(dll) ? dll : exe;
+    }
+
     public static string CodeFingerprint()
     {
         try
         {
-            var exePath = Assembly.GetExecutingAssembly().Location;
+            var exePath = CodeFile(Path.Join(AppContext.BaseDirectory, "NexusRelay.exe"));
             if (!string.IsNullOrEmpty(exePath) && File.Exists(exePath))
             {
                 var bytes = File.ReadAllBytes(exePath);

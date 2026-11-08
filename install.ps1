@@ -51,7 +51,10 @@ if (Test-Path -LiteralPath $nativeCsproj) {
     $nativeOut = Join-Path $env:LOCALAPPDATA "NexusRelay\versions\$nativeKey"
     if (-not (Test-Path -LiteralPath (Join-Path $nativeOut 'publish.complete'))) {
         # obj et bin intermédiaires : ~\.nexus\build\nexusrelay (Directory.Build.props), jamais dans OneDrive.
-        & dotnet.exe publish $nativeCsproj -c Release -o $nativeOut --nologo -v q
+        # Native AOT (PublishAot): one NexusRelay.exe for this machine's architecture; the C++ linker it needs is found
+        # through vswhere, which is not on PATH outside a developer prompt.
+        $env:PATH = "$env:PATH;${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer"
+        & dotnet.exe publish $nativeCsproj -c Release -o $nativeOut -p:DebugType=none --nologo -v q
         if ($LASTEXITCODE) { throw (Tr 'dotnet publish (native engine) failed.' 'dotnet publish (moteur natif) a échoué.') }
         [IO.File]::WriteAllText((Join-Path $nativeOut 'engine.lock'), '', [Text.UTF8Encoding]::new($false))
         [IO.File]::WriteAllText((Join-Path $nativeOut 'publish.complete'), $nativeKey, [Text.UTF8Encoding]::new($false))

@@ -180,7 +180,7 @@ public sealed partial class McpServer
             var entry = new JsonObject();
             foreach (var k in Lists.AttachmentFields.Where(k => item[k] is not null))
                 entry[k] = item[k]!.DeepClone();
-            shown.Add(entry);
+            shown.Add((JsonNode?)entry);
         }
         if (shown.Count > 0)
             target["attachments"] = shown;
@@ -324,7 +324,7 @@ public sealed partial class McpServer
             var nonce = RelayBox.RandomHex(4);
             var arr = new JsonArray();
             foreach (var m in late)
-                arr.Add(RenderMessage(m, nonce));
+                arr.Add((JsonNode?)RenderMessage(m, nonce));
             data["late_replies"] = arr;
             data["late_note"] = LateNote() + PeerNote(nonce);
         }
@@ -517,7 +517,7 @@ public sealed partial class McpServer
             eventsArr.Add(e.DeepClone());
         var repliesArr = new JsonArray();
         foreach (var r in replies)
-            repliesArr.Add(r);
+            repliesArr.Add((JsonNode?)r);
 
         var obj = new JsonObject
         {
@@ -539,7 +539,7 @@ public sealed partial class McpServer
                 var dc = (JsonObject)c.DeepClone();
                 dc["attempt"] = n;
                 dc["phase"] = RelayBox.ClaimLabel(c);
-                deliv.Add(dc);
+                deliv.Add((JsonNode?)dc);
             }
             obj["delivery"] = deliv;
             if (ToolErrors(box, message) is JsonObject blocked) obj["tool_errors"] = blocked;
@@ -754,7 +754,7 @@ public sealed partial class McpServer
             {
                 var idsArr = new JsonArray();
                 foreach (var s in sent)
-                    idsArr.Add(s["id"]?.GetValue<string>());
+                    idsArr.Add((JsonNode?)s["id"]?.GetValue<string>());
                 first["ids"] = idsArr;
                 first["widened"] = widenedText;
             }
@@ -765,8 +765,8 @@ public sealed partial class McpServer
         var msgArr = new JsonArray();
         foreach (var s in sent)
         {
-            allIds.Add(s["id"]?.GetValue<string>());
-            msgArr.Add(s);
+            allIds.Add((JsonNode?)s["id"]?.GetValue<string>());
+            msgArr.Add((JsonNode?)s);
         }
         var res = new JsonObject
         {
@@ -817,7 +817,7 @@ public sealed partial class McpServer
             var rendered = RenderMessage(message, nonce, full: false);
             if (!string.IsNullOrEmpty(message.ReplyTo) || message.Info)
                 box.MarkRead(message);
-            items.Add(rendered);
+            items.Add((JsonNode?)rendered);
         }
         var res = new JsonObject
         {
@@ -1055,7 +1055,7 @@ public sealed partial class McpServer
             statuses.Add(st);
             if (st == "success")
                 answeredCount++;
-            results.Add(one);
+            results.Add((JsonNode?)one);
         }
         return new JsonObject
         {
@@ -1206,7 +1206,7 @@ public sealed partial class McpServer
         var released = Reservations.Release(box, me, id, args["force"]?.GetValue<bool>() ?? false);
         var arr = new JsonArray();
         foreach (var r in released)
-            arr.Add(r);
+            arr.Add((JsonNode?)r);
         return new JsonObject { ["released"] = arr };
     }
 
@@ -1219,7 +1219,7 @@ public sealed partial class McpServer
             var item = new JsonObject();
             foreach (var k in keys.Where(k => r[k] is not null))
                 item[k] = r[k]!.DeepClone();
-            arr.Add(item);
+            arr.Add((JsonNode?)item);
         }
         return arr;
     }
@@ -1267,7 +1267,7 @@ public sealed partial class McpServer
         }
         var arr = new JsonArray();
         foreach (var r in released)
-            arr.Add(r);
+            arr.Add((JsonNode?)r);
         return new JsonObject { ["released"] = arr };
     }
 
@@ -1301,7 +1301,7 @@ public sealed partial class McpServer
             };
             if (!string.IsNullOrEmpty(m.ReplyTo))
                 hit["reply_to"] = m.ReplyTo;
-            shown.Add(hit);
+            shown.Add((JsonNode?)hit);
         }
 
         return new JsonObject
@@ -1329,7 +1329,7 @@ public sealed partial class McpServer
         var openArr = new JsonArray();
         foreach (var m in openFiltered.TakeLast(SummaryOpenLimit))
         {
-            openArr.Add(new JsonObject
+            openArr.Add((JsonNode?)new JsonObject
             {
                 ["id"] = m.Id,
                 ["to"] = m.To,
@@ -1353,13 +1353,13 @@ public sealed partial class McpServer
                 aObj["vote"] = answer.Vote;
             aObj["text"] = Framed(ask);
             aObj["reply"] = Framed(answer);
-            answeredArr.Add(aObj);
+            answeredArr.Add((JsonNode?)aObj);
         }
 
         var lastArr = new JsonArray();
         foreach (var m in data.Messages.TakeLast(5))
         {
-            lastArr.Add(new JsonObject
+            lastArr.Add((JsonNode?)new JsonObject
             {
                 ["id"] = m.Id,
                 ["from"] = m.Sender,
@@ -1410,13 +1410,13 @@ public sealed partial class McpServer
             foreach (var point in ReviewChecks.Points(answer.Text))
             {
                 var framed = $"⟦relay:{nonce} …⟧ {SearchAndSummary.Preview(point)} ⟦/relay:{nonce}⟧";
-                if (ReviewChecks.Repeated(point, earlier)) { oldPoints.Add(framed); repeated++; }
-                else { newPoints.Add(framed); fresh++; }
+                if (ReviewChecks.Repeated(point, earlier)) { oldPoints.Add((JsonNode?)framed); repeated++; }
+                else { newPoints.Add((JsonNode?)framed); fresh++; }
             }
             var item = new JsonObject { ["id"] = answer.Id, ["reply_to"] = answer.ReplyTo, ["from"] = answer.Sender, ["new"] = newPoints, ["repeated"] = oldPoints };
             if (answer.ExtraObj["quality"]?.GetValue<string>() is string quality)
                 item["quality"] = quality;
-            replies.Add(item);
+            replies.Add((JsonNode?)item);
         }
         return new JsonObject
         {
@@ -1661,7 +1661,7 @@ public sealed partial class McpServer
 
         var contentArr = new JsonArray
         {
-            new JsonObject
+            (JsonNode?)new JsonObject
             {
                 ["type"] = "text",
                 ["text"] = text,

@@ -161,7 +161,8 @@ other chats in that same workspace, child chats and the current conversation rem
 workspace, the compatibility default remains the dedicated `NexusRelay` project (a project named `Nexus Relay`, as
 created before 1.13.2, is still recognized).
 
-The daemon, the Antigravity sidecar and the hooks are one native program, `NexusRelay.exe` (.NET 10). Each installed
+The daemon, the Antigravity sidecar and the hooks are one native program, `NexusRelay.exe` (.NET 10, compiled ahead of time with Native AOT: a single file, no .NET
+runtime, no JIT at start-up). Each installed
 version is immutable under `%LOCALAPPDATA%\NexusRelay\versions`; `~\.nexus\nexus-relay\bin` always holds a copy of the
 one in service.
 
@@ -214,7 +215,8 @@ JSON stays in the text block); an error comes back with `isError`.
    with `install.ps1 -Register` otherwise uses `%USERPROFILE%\.nexus\mcp-token.txt`, shared by Relay, Android and Browser.
    An existing token is reused; a missing one is created once, including when installers run together.
 
-2. **Install** — builds the engine (.NET 10 SDK; in a release folder, takes its self-contained `bin\`), registers the
+2. **Install** — builds the engine (.NET 10 SDK and the Visual Studio C++ build tools for Native AOT; in a release folder, takes
+   its self-contained `bin\`), registers the
    daemon, installs the Antigravity plugin, sidecar and edit guards, and runs the tests:
 
    ```powershell
