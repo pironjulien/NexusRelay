@@ -84,10 +84,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\get.ps1
 ```
 
 `get.ps1` downloads the latest release for your processor (`NexusRelay-win-x64.zip` or `NexusRelay-win-arm64.zip`),
-checks it against the release's `SHA256SUMS.txt`, installs it into `%LOCALAPPDATA%\NexusRelay`, creates a local
-token (user variable `NEXUS_MCP_TOKEN`), starts the background daemon (scheduled task "NexusRelay"), installs the
-Antigravity plugin and sidecar, and declares the server to Claude Code and Codex (the token itself is never written
-in their files). Run it again to update; the daemon also updates itself (see [Updates](#updates)).
+checks it against the release's `SHA256SUMS.txt` (and its build provenance when the GitHub CLI is signed in), then
+starts the package's own engine, `NexusRelay.exe --install`, which does the rest: it installs into
+`%LOCALAPPDATA%\NexusRelay`, creates a local token (user variable `NEXUS_MCP_TOKEN`), starts the background daemon
+(scheduled task "NexusRelay"), installs the Antigravity plugin and sidecar, and declares the server to Claude Code and
+Codex (the token itself is never written in their files). If a step fails, the previous installation is put back.
+Run it again to update; the daemon also updates itself (see [Updates](#updates)).
 
 Every release file has a Sigstore build provenance attestation (made by GitHub Actions, no key to manage):
 
@@ -295,8 +297,9 @@ the daemon's environment win.
 ## Updates
 
 The daemon updates itself: `POST /api/update` on its local API (same bearer token as `/mcp`) answers `202` and the
-daemon runs its own `get.ps1` (`powershell -File`, no window), which installs the latest release; the daemon then
-restarts on it. `GET /api/update` returns the state, also written to `~\.nexus\status\relay.json`:
+daemon starts its own engine, `NexusRelay.exe --update` (no window, no PowerShell), which downloads the latest
+release, checks it like `get.ps1` and runs the new package's `--install`; the daemon then restarts on it. Its log is
+`~\.nexus\nexus-relay\update.log`. `GET /api/update` returns the state, also written to `~\.nexus\status\relay.json`:
 
 ```json
 {"product": "relay", "version": "1.3.0", "latest": "1.3.0", "state": "idle", "checked_at": "2026-10-26T10:00:00Z", "message": null}
@@ -341,8 +344,8 @@ install made by `get.ps1` (`%LOCALAPPDATA%\NexusRelay\app`) updates itself; a gi
   interface maps of both apps in `~\.nexus\relay\v1\cartes` (element roles and visible labels, which can include
   conversation titles shown on screen), and one line per action in `%LOCALAPPDATA%\NexusJournal\relay` (never a
   message's text).
-- **How to remove everything**: remove the scheduled task (`powershell -NoProfile -File scripts\RelayTask.ps1 -Remove`
-  in the installed folder removes "NexusRelay" and the older "Nexus Relay") and stop the `NexusRelay.exe` processes,
+- **How to remove everything**: remove the scheduled task (`NexusRelay.exe --remove-task`, from
+  `~\.nexus\nexus-relay\bin`, removes "NexusRelay" and the older "Nexus Relay") and stop the `NexusRelay.exe` processes,
   then delete `~\.nexus\relay`, `~\.nexus\nexus-relay`, `%LOCALAPPDATA%\NexusRelay`,
   `~\.nexus\daemons\specs\nexus-relay.json`, `%LOCALAPPDATA%\NexusJournal\relay`, the `nexus-relay` plugin in
   `~\.gemini\config\plugins` and its `sidecars` entry in `~\.gemini\config\config.json`.

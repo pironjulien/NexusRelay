@@ -1,8 +1,8 @@
 # Release, in two channels, with the shared Nexus release workflows of NexusSystem.
 # - Development: every push to main runs test.ps1 and publishes the native engine self-contained for win-x64 and
 #   win-arm64 (no .NET to install):
-#     - NexusRelay-win-x64.zip / NexusRelay-win-arm64.zip: engine (bin\) and installer (install.ps1, scripts, plugins),
-#       installed by get.ps1 after checking SHA256SUMS.txt;
+#     - NexusRelay-win-x64.zip / NexusRelay-win-arm64.zip: engine (bin\, which installs itself: NexusRelay.exe --install)
+#       and what it deploys (plugins, instructions), started by get.ps1 after checking SHA256SUMS.txt;
 #     - nexus-relay-win-x64.mcpb / nexus-relay-win-arm64.mcpb: MCP bundles (stdio), listed in the official MCP registry;
 #     - get.ps1 and SHA256SUMS.txt.
 #   product-dev-release attests them (Sigstore build provenance, NexusRelay-X.Y.Z.intoto.jsonl; verify with
@@ -83,12 +83,13 @@ jobs:
           # Only the Antigravity part of plugin/ ships with the engine (install.ps1 deploys it); Claude Code and Codex take
           # plugin/ from the NexusSystem catalog.
           $deployed = 'plugin/antigravity', 'fr/plugin/antigravity', 'fr/codex-projet', 'fr/claude-projet'
-          $scripts = 'Configure-AntigravityRelay.ps1', 'Restart-Relay.ps1', 'Resolve-RelayPath.ps1', 'install_commit_guard.ps1', 'Resolve-NexusToken.ps1', 'RelayTask.ps1', 'Remove-RelayVersions.ps1', 'pre-commit', 'post-commit', 'update-native.ps1'
+          $scripts = 'install_commit_guard.ps1', 'pre-commit', 'post-commit'
           foreach ($rid in 'win-x64', 'win-arm64') {
             $engine = Join-Path $stage "engine-$rid"
             dotnet publish native/NexusRelay.csproj -c Release -r $rid --self-contained true -o $engine --nologo
             if ($LASTEXITCODE) { throw "dotnet publish $rid failed" }
-            # Installer archive: the engine in bin\, the install script and what it deploys (no sources).
+            # Installer archive: the engine in bin\ (it installs itself), install.ps1 (the starter an older get.ps1 runs) and
+            # what the engine deploys (no sources).
             $zip = Join-Path $stage "zip-$rid"
             New-Item -ItemType Directory "$zip\scripts" | Out-Null
             Copy-Item $shared $zip -Recurse

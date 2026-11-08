@@ -2,21 +2,21 @@
 #   download get.ps1 and SHA256SUMS.txt from the latest release, check the hash, then run it as a file:
 #   powershell -NoProfile -ExecutionPolicy Bypass -File .\get.ps1
 #   (never run downloaded code in memory; the NexusSystem app of the Microsoft Store does the same with -File)
-# Downloads NexusRelay-win-x64.zip or NexusRelay-win-arm64.zip (this PC's architecture) from the latest GitHub release,
-# checks it against the release's SHA256SUMS.txt, mirrors it into %LOCALAPPDATA%\NexusRelay\app (the same folder on
-# every update), then runs install.ps1 -Register: self-contained native engine (no .NET to install), token, background
-# daemon (scheduled task "NexusRelay"), Antigravity plugin and sidecar, MCP server declared to Claude Code and Codex.
-# Run it again to update. Each release file also has a Sigstore build provenance attestation:
-#   gh attestation verify NexusRelay-win-x64.zip --repo pironjulien/NexusRelay
-# NEXUS_RELAY_SOURCE (a local folder: a checkout, built with the .NET 10 SDK, or an extracted release) installs that
-# copy instead. NEXUS_RELEASE_TAG: install that release (vX.Y.Z, or a development build vX.Y.Z-dev.N) instead of the
-# latest. NEXUS_PACK=1 (the Nexus pack, get-nexus.ps1): no question, no wait, no window; exit code 0 on success;
-# a last "NEXUS_PACK_RESULT ..." line (one word per AI client).
-# Test variables: NEXUS_RELAY_ROOT (install folder instead of %LOCALAPPDATA%\NexusRelay), NEXUS_RELAY_DOWNLOAD_ONLY=1
-# (download, check and mirror only; nothing is installed nor declared).
+# A minimal starter: it downloads NexusRelay-win-x64.zip or NexusRelay-win-arm64.zip (this PC's architecture) from the
+# latest GitHub release, checks it against the release's SHA256SUMS.txt and, when the GitHub CLI is signed in, its
+# Sigstore build provenance, unpacks it, and starts the package's own engine: NexusRelay.exe --install does everything
+# else (%LOCALAPPDATA%\NexusRelay\app and an immutable engine copy, token, background daemon with its scheduled task
+# "NexusRelay", Antigravity plugin and sidecar, edit hooks, MCP server declared to Claude Code and Codex), and puts the
+# previous installation back if it fails. Run it again to update; the daemon also updates itself (NexusRelay.exe --update).
+# NEXUS_RELEASE_TAG: install that release (vX.Y.Z, or a development build vX.Y.Z-dev.N) instead of the latest.
+# NEXUS_PACK=1 (the Nexus pack): no question, no wait, no window; exit code 0 on success; a last
+# "NEXUS_PACK_RESULT ..." line (one word per AI client).
+# NEXUS_RELAY_SOURCE: a local folder instead of a download, an unpacked release (bin\NexusRelay.exe) or a checkout
+# (built by its install.ps1 with the .NET 10 SDK). NEXUS_RELAY_ROOT: another folder than %LOCALAPPDATA%\NexusRelay for
+# the app copy and the download.
 $ErrorActionPreference = 'Stop'
 # A Windows PowerShell child of PowerShell 7 inherits Core-only module folders ahead of its own modules.
-# Restore this host's standard modules first (Get-FileHash, Expand-Archive, Unblock-File), retaining user modules.
+# Restore this host's standard modules first (Get-FileHash, Unblock-File), retaining user modules.
 if ($PSVersionTable.PSEdition -eq 'Desktop') {
     $desktopModules = Join-Path $PSHOME 'Modules'
     $env:PSModulePath = (@($desktopModules) + @($env:PSModulePath -split ';' | Where-Object {
@@ -27,65 +27,120 @@ $ProgressPreference = 'SilentlyContinue'  # Invoke-WebRequest is many times slow
 [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 
 $root = if ($env:NEXUS_RELAY_ROOT) { $env:NEXUS_RELAY_ROOT } else { Join-Path $env:LOCALAPPDATA 'NexusRelay' }
-$app = Join-Path $root 'app'
+$repository = 'pironjulien/NexusRelay'
+$firstNative = [version]'1.14.0'  # first release whose engine installs itself (--install)
 New-Item -ItemType Directory -Force $root | Out-Null
 
-if ($env:NEXUS_RELAY_SOURCE) {
+# Runs the engine (a Windows program: PowerShell would not wait for it) without a window, shows its output as it
+# comes, returns its exit code. Its standard input is closed at once.
+function Invoke-Engine([string]$Exe, [string[]]$Arguments) {
+    $info = New-Object Diagnostics.ProcessStartInfo $Exe
+    $info.Arguments = (($Arguments | ForEach-Object { if ($_ -match '[\s"]') { '"' + ($_ -replace '"', '\"') + '"' } else { $_ } }) -join ' ')
+    $info.UseShellExecute = $false
+    $info.CreateNoWindow = $true
+    $info.RedirectStandardInput = $true
+    $info.RedirectStandardOutput = $true
+    $info.RedirectStandardError = $true
+    $info.StandardOutputEncoding = [Text.Encoding]::UTF8
+    $info.StandardErrorEncoding = [Text.Encoding]::UTF8
+    $process = [Diagnostics.Process]::Start($info)
+    $process.StandardInput.Close()
+    $errors = $process.StandardError.ReadToEndAsync()
+    while ($null -ne ($line = $process.StandardOutput.ReadLine())) { Write-Host $line }
+    $process.WaitForExit()
+    if ($errors.Result.Trim()) { Write-Host $errors.Result.Trim() }
+    return $process.ExitCode
+}
+
+# A checkout: its own install.ps1 builds the engine, then the engine installs (same steps as a release).
+if ($env:NEXUS_RELAY_SOURCE -and (Test-Path -LiteralPath (Join-Path $env:NEXUS_RELAY_SOURCE 'native\NexusRelay.csproj'))) {
     $source = (Resolve-Path -LiteralPath $env:NEXUS_RELAY_SOURCE).Path
-    Write-Output "Installing NexusRelay from $source..."
-} else {
-    # This PC's architecture (an x64 PowerShell emulated on ARM still gets the ARM64 build).
-    $arch = $env:PROCESSOR_ARCHITEW6432
-    if (-not $arch) { $arch = $env:PROCESSOR_ARCHITECTURE }
-    $rid = switch ($arch) { 'ARM64' { 'win-arm64' } 'AMD64' { 'win-x64' } default { throw "Unsupported processor architecture: $arch (x64 or ARM64 needed)." } }
-    if ($env:NEXUS_RELEASE_TAG) {
-        # NEXUS_RELEASE_TAG (set by NexusSystem for its development channel): that release instead, a stable vX.Y.Z or
-        # a development vX.Y.Z-dev.N build, checked against its own SHA256SUMS.txt like any other.
-        if ($env:NEXUS_RELEASE_TAG -notmatch '^v\d+\.\d+\.\d+(-dev\.\d+)?$') { throw "NEXUS_RELEASE_TAG is not a release tag: $env:NEXUS_RELEASE_TAG" }
-        $tag = $env:NEXUS_RELEASE_TAG
-    } else {
-        # Latest tag from the releases/latest redirect (no GitHub API, so no rate limit).
-        $request = [Net.WebRequest]::Create('https://github.com/pironjulien/NexusRelay/releases/latest')
-        $request.Method = 'HEAD'
-        $request.AllowAutoRedirect = $false
-        try { $response = $request.GetResponse() } catch [Net.WebException] { $response = $_.Exception.Response }
-        $location = if ($response) { [string]$response.Headers['Location'] } else { '' }
-        if ($response) { $response.Close() }
-        $tag = ($location -split '/tag/')[-1]
-        if ($tag -notmatch '^v\d+\.\d+\.\d+$') { throw "Latest NexusRelay release not found (redirect: '$location')." }
+    Write-Host "Installing NexusRelay from $source..."
+    & (Get-Process -Id $PID).Path -NoProfile -ExecutionPolicy Bypass -File (Join-Path $source 'install.ps1') -SkipTests -Register -Mirror
+    exit $LASTEXITCODE
+}
+
+# Expected SHA-256 of one file in a SHA256SUMS.txt ("<hash>  <name>" lines).
+function Get-ExpectedHash([string]$Sums, [string]$Name) {
+    $expected = $null
+    foreach ($line in ($Sums -split '\r?\n' | Where-Object { $_.Trim() })) {
+        if ($line -notmatch '^([0-9a-fA-F]{64})\s+\*?(\S+)\s*$') { throw 'SHA256SUMS.txt has an invalid line: installation refused.' }
+        if ($Matches[2] -ceq $Name) {
+            if ($expected) { throw "SHA256SUMS.txt lists $Name twice: installation refused." }
+            $expected = $Matches[1].ToLowerInvariant()
+        }
     }
-    $name = "NexusRelay-$rid.zip"
-    Write-Output "Downloading NexusRelay $tag ($rid)..."
-    $download = Join-Path $root 'download'
-    if (Test-Path -LiteralPath $download) { Remove-Item -LiteralPath $download -Recurse -Force }
-    New-Item -ItemType Directory -Force $download | Out-Null
-    $base = "https://github.com/pironjulien/NexusRelay/releases/download/$tag"
-    $zip = Join-Path $download $name
-    $sums = Join-Path $download 'SHA256SUMS.txt'
-    Invoke-WebRequest -UseBasicParsing "$base/$name" -OutFile $zip
-    Invoke-WebRequest -UseBasicParsing "$base/SHA256SUMS.txt" -OutFile $sums
-    $expected = @(Get-Content -LiteralPath $sums | Where-Object { $_ -match "^([0-9a-fA-F]{64})\s+\*?$([regex]::Escape($name))$" } | ForEach-Object { $Matches[1].ToLowerInvariant() })
-    if ($expected.Count -ne 1) { throw "$name is not listed in SHA256SUMS.txt of $tag." }
-    $actual = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
-    if ($actual -ne $expected[0]) { throw "$name does not match its SHA-256 in SHA256SUMS.txt (expected $($expected[0]), got $actual)." }
-    $source = Join-Path $download 'release'
-    Expand-Archive -LiteralPath $zip -DestinationPath $source
+    if (-not $expected) { throw "$Name is absent from SHA256SUMS.txt: installation refused." }
+    return $expected
 }
 
-# Mirror into the stable folder (files of an older version that no longer exist are removed).
-& robocopy.exe $source $app /MIR /NFL /NDL /NJH /NJS /NP /XD .git | Out-Null
-if ($LASTEXITCODE -ge 8) { throw "Copy to $app failed (robocopy $LASTEXITCODE)." }
-Get-ChildItem -LiteralPath $app -Recurse -File | Unblock-File
-if (-not $env:NEXUS_RELAY_SOURCE) { Remove-Item -LiteralPath (Join-Path $root 'download') -Recurse -Force }
-if ($env:NEXUS_RELAY_DOWNLOAD_ONLY -eq '1') { Write-Output "NexusRelay mirrored into $app (download only)."; exit 0 }
-
-$shell = (Get-Process -Id $PID).Path  # the same PowerShell that runs this script
-& $shell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $app 'install.ps1') -SkipTests -Register
-if ($LASTEXITCODE) { throw 'NexusRelay installation failed (see above).' }
-if ($env:NEXUS_PACK -ne '1') {
-    Write-Output ''
-    Write-Output 'Last steps:'
-    Write-Output '  1. Restart Claude Code and Codex (quit them completely) so they see NEXUS_MCP_TOKEN.'
-    Write-Output '  2. Codex app, once: Add a project, name "NexusRelay", folder %USERPROFILE%\.nexus\relay\codex-projet.'
-    Write-Output '  3. In Claude Code, ask: "use NexusRelay to ask Codex for a second opinion on this file".'
+# Build provenance when the GitHub CLI is installed and signed in; a failed check refuses the package. gh writes to
+# stderr when it is not signed in: under Windows PowerShell 5.1 with ErrorActionPreference Stop, a redirected stderr
+# line of a native command is a terminating error, so gh runs with Continue here.
+function Confirm-Provenance([string]$File) {
+    $gh = Get-Command gh.exe -ErrorAction SilentlyContinue
+    if (-not $gh) { return }
+    $preference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        & $gh.Source auth status *> $null
+        if ($LASTEXITCODE -ne 0) { Write-Host 'Build provenance not checked (GitHub CLI not signed in); SHA-256 checked.'; return }
+        & $gh.Source attestation verify $File --repo $repository --signer-repo pironjulien/NexusSystem *> $null
+        $verified = $LASTEXITCODE -eq 0
+    } finally { $ErrorActionPreference = $preference }
+    if (-not $verified) { throw "Build provenance of $(Split-Path -Leaf $File) not verified (gh attestation verify): installation refused." }
+    Write-Host 'Build provenance verified.'
 }
+
+$work = Join-Path $root ('download\' + [Guid]::NewGuid().ToString('N').Substring(0, 12))
+$code = 1
+try {
+    if ($env:NEXUS_RELAY_SOURCE) {
+        $package = (Resolve-Path -LiteralPath $env:NEXUS_RELAY_SOURCE).Path
+        Write-Host "Installing NexusRelay from $package..."
+    } else {
+        # This PC's architecture (an x64 PowerShell emulated on ARM still gets the ARM64 build).
+        $arch = $env:PROCESSOR_ARCHITEW6432
+        if (-not $arch) { $arch = $env:PROCESSOR_ARCHITECTURE }
+        $rid = switch ($arch) { 'ARM64' { 'win-arm64' } 'AMD64' { 'win-x64' } default { throw "Unsupported processor architecture: $arch (x64 or ARM64 needed)." } }
+        if ($env:NEXUS_RELEASE_TAG) {
+            if ($env:NEXUS_RELEASE_TAG -notmatch '^v\d+\.\d+\.\d+(-dev\.\d+)?$') { throw "NEXUS_RELEASE_TAG is not a release tag: $env:NEXUS_RELEASE_TAG" }
+            $tag = $env:NEXUS_RELEASE_TAG
+        } else {
+            # Latest tag from the releases/latest redirect (no GitHub API, so no rate limit).
+            $request = [Net.WebRequest]::Create("https://github.com/$repository/releases/latest")
+            $request.Method = 'HEAD'
+            $request.AllowAutoRedirect = $false
+            try { $response = $request.GetResponse() } catch [Net.WebException] { $response = $_.Exception.Response }
+            $location = if ($response) { [string]$response.Headers['Location'] } else { '' }
+            if ($response) { $response.Close() }
+            $tag = ($location -split '/tag/')[-1]
+            if ($tag -notmatch '^v\d+\.\d+\.\d+$') { throw "Latest NexusRelay release not found (redirect: '$location')." }
+        }
+        if ([version]($tag.TrimStart('v') -replace '-dev\.\d+$') -lt $firstNative) { throw "NexusRelay $tag predates this installer: use the get.ps1 of that release." }
+        $name = "NexusRelay-$rid.zip"
+        Write-Host "Downloading NexusRelay $tag ($rid)..."
+        New-Item -ItemType Directory -Force $work | Out-Null
+        $base = "https://github.com/$repository/releases/download/$tag"
+        $zip = Join-Path $work $name
+        Invoke-WebRequest -UseBasicParsing "$base/$name" -OutFile $zip
+        $sums = [Text.Encoding]::UTF8.GetString((Invoke-WebRequest -UseBasicParsing "$base/SHA256SUMS.txt").RawContentStream.ToArray())
+        $actual = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+        if ($actual -ne (Get-ExpectedHash $sums $name)) { throw "$name does not match its SHA-256 in SHA256SUMS.txt: the download is not the published package." }
+        Write-Host 'Package checked against SHA256SUMS.txt.'
+        Confirm-Provenance $zip
+        $package = Join-Path $work 'package'
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        [IO.Compression.ZipFile]::ExtractToDirectory($zip, $package)
+        Get-ChildItem -LiteralPath $package -Recurse -File | Unblock-File
+    }
+    $engine = Join-Path $package 'bin\NexusRelay.exe'
+    if (-not (Test-Path -LiteralPath $engine)) { throw 'Not a NexusRelay release package (bin\NexusRelay.exe missing).' }
+    $code = Invoke-Engine $engine @('--install', '--source', $package, '--mirror', '--register')
+} finally {
+    if (Test-Path -LiteralPath $work) { Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue }
+    $downloads = Join-Path $root 'download'
+    if ((Test-Path -LiteralPath $downloads) -and -not (Get-ChildItem -LiteralPath $downloads -Force)) { Remove-Item -LiteralPath $downloads -Force }
+}
+if ($code) { Write-Host "NexusRelay installation failed (exit code $code)." }
+exit $code

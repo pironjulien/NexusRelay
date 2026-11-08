@@ -6,7 +6,7 @@ using System.Text.RegularExpressions;
 
 namespace NexusRelay.Tests;
 
-/// <summary>Workstation settings, installer helpers (PowerShell) and repository conventions.</summary>
+/// <summary>Workstation settings, the installer (NexusRelay.exe --install), its starters and repository conventions.</summary>
 public sealed partial class InstallerTests : IDisposable
 {
     private readonly Isolation iso = new();
@@ -64,42 +64,26 @@ public sealed partial class InstallerTests : IDisposable
     }
 
     [Fact]
-    public void Installer_json_parser_keeps_iso_strings_verbatim()
-    {
-        string path = Path.Join(iso.Root, "settings.json");
-        File.WriteAllText(path, """{"wake_since": "2026-10-29T22:46:43Z", "codex_project": "2026-10-30", "env": {"timestamp": "2026-10-30T01:00:00+02:00"}}""");
-        var ran = Native.Pwsh(Path.Join(Repo, "tests", "native_restart", "settings.ps1"), "-InputPath", path);
-        var data = JsonNode.Parse(ran.Out)!;
-        Assert.True(JsonNode.DeepEquals(data, new JsonObject { ["cutoff"] = "2026-10-29T22:46:43Z", ["label"] = "2026-10-30", ["nested"] = "2026-10-30T01:00:00+02:00" }), ran.Out + ran.Err);
-    }
-
-    [Fact]
     public void Antigravity_activation_repairs_a_missing_plugin_and_keeps_disabled_choices()
     {
-        string script = Path.Join(Repo, "tests", "native_restart", "activation.ps1");
-        JsonNode Run(JsonNode data)
-        {
-            string path = Path.Join(iso.Root, "config.json");
-            File.WriteAllText(path, data.ToJsonString());
-            var ran = Native.Pwsh(script, "-InputPath", path);
-            return JsonNode.Parse(ran.Out) ?? throw new InvalidOperationException(ran.Err);
-        }
-        var config = JsonNode.Parse("""{"plugins": {"other": {"enabled": true, "nested": "keep"}}, "sidecars": {"nexus-relay/relay": {"enabled": true, "projectId": "fixture-project", "schemaVersion": 1}}, "userSettings": {"keep": "value"}}""")!;
-        var result = Run(config);
-        Assert.True(result["Changed"]!.GetValue<bool>());
-        Assert.True(result["Config"]!["plugins"]!["nexus-relay"]!["enabled"]!.GetValue<bool>());
-        Assert.True(JsonNode.DeepEquals(result["Config"]!["userSettings"], config["userSettings"]));
-        Assert.True(JsonNode.DeepEquals(result["Config"]!["plugins"]!["other"], config["plugins"]!["other"]));
-        Assert.Equal(1, result["Config"]!["sidecars"]!["nexus-relay/relay"]!["schemaVersion"]!.GetValue<int>());
-        Assert.False(Run(result["Config"]!)["Changed"]!.GetValue<bool>());
+        var config = JsonNode.Parse("""{"plugins": {"other": {"enabled": true, "nested": "keep"}}, "sidecars": {"nexus-relay/relay": {"enabled": true, "projectId": "fixture-project", "schemaVersion": 1}}, "userSettings": {"keep": "value"}}""")!.AsObject();
+        var original = config.DeepClone();
+        var result = AntigravityActivation.Apply(config, "fixture-project");
+        Assert.True(result.Changed);
+        Assert.True(result.Config["plugins"]!["nexus-relay"]!["enabled"]!.GetValue<bool>());
+        Assert.True(JsonNode.DeepEquals(result.Config["userSettings"], original["userSettings"]));
+        Assert.True(JsonNode.DeepEquals(result.Config["plugins"]!["other"], original["plugins"]!["other"]));
+        Assert.Equal(1, result.Config["sidecars"]!["nexus-relay/relay"]!["schemaVersion"]!.GetValue<int>());
+        Assert.False(AntigravityActivation.Apply(result.Config.DeepClone().AsObject(), "fixture-project").Changed);
+        Assert.True(AntigravityActivation.Apply(result.Config.DeepClone().AsObject(), "another-project").Changed);  // the project id follows
         foreach (var (section, name) in new[] { ("plugins", "nexus-relay"), ("sidecars", "nexus-relay/relay") })
         {
-            var disabled = result["Config"]!.DeepClone();
+            var disabled = result.Config.DeepClone().AsObject();
             disabled[section]![name]!["enabled"] = false;
-            var preserved = Run(disabled);
-            Assert.True(preserved["Disabled"]!.GetValue<bool>());
-            Assert.False(preserved["Changed"]!.GetValue<bool>());
-            Assert.True(JsonNode.DeepEquals(preserved["Config"], disabled));
+            var preserved = AntigravityActivation.Apply(disabled.DeepClone().AsObject(), "fixture-project");
+            Assert.True(preserved.Disabled);
+            Assert.False(preserved.Changed);
+            Assert.True(JsonNode.DeepEquals(preserved.Config, disabled));
         }
     }
 
@@ -117,24 +101,14 @@ public sealed partial class InstallerTests : IDisposable
         }
     }
 
-    private string Token(string userHome, string explicitFile = "", string legacy = "")
-    {
-        string script = Path.Join(iso.Root, $"token-{Guid.NewGuid():N}.ps1");
-        File.WriteAllText(script, $$"""
-            . '{{Path.Join(Repo, "scripts", "Resolve-NexusToken.ps1")}}'
-            $explicit = @('{{explicitFile}}') | Where-Object { $_ }
-            $file = Resolve-NexusTokenFile -Explicit $explicit -UserHome '{{userHome}}' -Legacy '{{legacy}}'
-            $file
-            [IO.File]::ReadAllText($file).Trim()
-            """);
-        var ran = Native.Pwsh(script);
-        Assert.True(ran.Code == 0, ran.Err);
-        return ran.Out.Trim();
-    }
-
     [Fact]
     public void Shared_token_is_created_once_then_reused_by_every_installer()
     {
+        string Token(string userHome, string? explicitFile = null, string? legacy = null)
+        {
+            string file = SharedToken.ResolveFile([explicitFile], userHome, legacy);
+            return file + "\n" + File.ReadAllText(file).Trim();
+        }
         // Two installers in a row on a blank profile (for instance Android, then Relay) end with the same token.
         string blank = Path.Join(iso.Root, "blank");
         string first = Token(blank), second = Token(blank);
@@ -145,24 +119,23 @@ public sealed partial class InstallerTests : IDisposable
 
         // At the same time: exclusive creation, one winner, one token.
         string racing = Path.Join(iso.Root, "racing");
-        var both = Enumerable.Range(0, 2).Select(_ => Task.Run(() => Token(racing))).ToArray();
+        var both = Enumerable.Range(0, 4).Select(_ => Task.Run(() => Token(racing))).ToArray();
         Task.WaitAll(both, TestContext.Current.CancellationToken);
-        Assert.Equal(both[0].Result, both[1].Result);
+        Assert.Single(both.Select(t => t.Result).Distinct());
 
         // An existing file (NEXUS_MCP_TOKEN_FILE, synced workstation token) is never regenerated.
         string synced = Path.Join(iso.Root, "synced", "token.txt");
         Directory.CreateDirectory(Path.GetDirectoryName(synced)!);
         File.WriteAllText(synced, "workstation-token-workstation-token-0123\n");
-        Assert.Equal($"{synced}\nworkstation-token-workstation-token-0123", Token(blank, synced).ReplaceLineEndings("\n"));
+        Assert.Equal($"{synced}\nworkstation-token-workstation-token-0123", Token(blank, synced));
 
-        // An empty shared file is not a token; the retired relay-only token is carried over, not lost.
+        // An empty shared file is not a token; the retired relay-only token is carried over, not lost, and never chosen.
         string migrated = Path.Join(iso.Root, "migrated");
         Directory.CreateDirectory(Path.Join(migrated, ".nexus", "nexus-relay"));
         File.WriteAllText(Path.Join(migrated, ".nexus", "mcp-token.txt"), "");
         string legacy = Path.Join(migrated, ".nexus", "nexus-relay", "token.txt");
         File.WriteAllText(legacy, new string('a', 64));
-        Assert.EndsWith(new string('a', 64), Token(migrated, legacy, legacy));
-        Assert.Equal(new string('a', 64), File.ReadAllText(Path.Join(migrated, ".nexus", "mcp-token.txt")));
+        Assert.Equal($"{Path.Join(migrated, ".nexus", "mcp-token.txt")}\n{new string('a', 64)}", Token(migrated, legacy, legacy));
     }
 
     [Fact]
@@ -175,7 +148,7 @@ public sealed partial class InstallerTests : IDisposable
         // A live consumer can keep a readable handle while another installer resolves the same existing token.
         // Locking the token itself denies this handle; a stable sibling lock only serializes the installers.
         using var consumer = File.Open(token, FileMode.Open, FileAccess.Read, FileShare.Read);
-        Assert.EndsWith(new string('b', 64), Token(profile));
+        Assert.Equal(token, SharedToken.ResolveFile([], profile, null));
         Assert.Equal(new string('b', 64), File.ReadAllText(token));
     }
 
@@ -244,8 +217,8 @@ public sealed partial class InstallerTests : IDisposable
     [Fact]
     public void Scripts_read_by_windows_powershell_51()
     {
-        // get.ps1 runs install.ps1 under Windows PowerShell 5.1 (Nexus pack): without a BOM it reads UTF-8 as ANSI;
-        // get.ps1 itself, downloaded by irm, stays ASCII.
+        // An older get.ps1 runs install.ps1 under Windows PowerShell 5.1: without a BOM it reads UTF-8 as ANSI; get.ps1
+        // itself stays ASCII.
         byte[] install = File.ReadAllBytes(Path.Join(Repo, "install.ps1"));
         Assert.True(install[0] == 0xEF && install[1] == 0xBB && install[2] == 0xBF);
         Assert.All(File.ReadAllBytes(Path.Join(Repo, "get.ps1")), b => Assert.True(b < 128));
@@ -255,7 +228,8 @@ public sealed partial class InstallerTests : IDisposable
     public void Installer_messages_are_english_unless_windows_shows_french()
     {
         // Rule of the public Nexus products: English by default, French when Windows is displayed in French. Every
-        // message of the installers that carries French text goes through Tr (English first).
+        // message of the starters that carries French text goes through Tr (English first); the engine's installer
+        // follows the UI culture of Windows.
         foreach (string script in new[] { "install.ps1", Path.Join("scripts", "install_commit_guard.ps1") })
         {
             string text = File.ReadAllText(Path.Join(Repo, script), Encoding.UTF8);
@@ -266,6 +240,19 @@ public sealed partial class InstallerTests : IDisposable
                 if (Regex.IsMatch(line, "[éèàêçôù«]")) Assert.True(Regex.IsMatch(line, @"[({]\s*Tr\s"), $"{script}: {line}");
             }
         }
+        bool saved = InstallText.French;
+        try
+        {
+            InstallText.French = false;
+            Assert.Equal("en", InstallText.Tr("en", "fr"));
+            InstallText.French = true;
+            Assert.Equal("fr", InstallText.Tr("en", "fr"));
+        }
+        finally { InstallText.French = saved; }
+        // Every French message of the engine's installer is the second argument of Tr.
+        foreach (string file in new[] { "Installer.cs", "InstallSupport.cs" })
+            foreach (string line in File.ReadAllLines(Path.Join(Repo, "native", file)).Where(l => Regex.IsMatch(l, "[éèàêçôù«]") && !l.TrimStart().StartsWith("//", StringComparison.Ordinal)))
+                Assert.True(Regex.IsMatch(line, @"Tr\(|french\s*\?|^\s*\?\s"""), $"{file}: {line.Trim()}");  // Tr, or the French branch of a choice on the lang setting
     }
 
     [Fact]
@@ -284,6 +271,9 @@ public sealed partial class InstallerTests : IDisposable
         Assert.Equal(RelayPaths.Version, JsonNode.Parse(File.ReadAllText(Path.Join(Repo, "mcpb", "manifest.json")))!["version"]?.ToString());
         foreach (string name in new[] { "plugin/skills/nexus-relay/SKILL.md", "plugin/codex/skills/nexus-relay/SKILL.md", "plugin/antigravity/skills/nexus-relay/SKILL.md" })
             Assert.DoesNotContain("é", File.ReadAllText(Path.Join(Repo, name)));  // English for the public
+        // get.ps1 refuses releases whose engine cannot install itself: its floor is at most this version.
+        var floor = Regex.Match(File.ReadAllText(Path.Join(Repo, "get.ps1")), @"\$firstNative = \[version\]'([\d.]+)'");
+        Assert.True(floor.Success && Version.Parse(floor.Groups[1].Value) <= Version.Parse(RelayPaths.Version));
     }
 
     [Fact]
@@ -292,7 +282,7 @@ public sealed partial class InstallerTests : IDisposable
         // A Marketplace copy cannot name this PC's token (Antigravity expands only ${PLUGIN_ROOT}): like NexusWindows,
         // NexusBrowser and NexusAndroid, a fixed command (cmd.exe) runs the plugin's own launcher, ${PLUGIN_ROOT} in
         // the arguments; the launcher finds the installed engine (engine.txt) and starts its stdio bridge (see
-        // BridgeTests). install.ps1 replaces this declaration with its own and adds the sidecar.
+        // BridgeTests). The installer replaces this declaration with its own and adds the sidecar.
         string bundle = Path.Join(Repo, "plugin", "antigravity");
         var server = JsonNode.Parse(File.ReadAllText(Path.Join(bundle, "mcp_config.json")))!["mcpServers"]!["nexus-relay"]!;
         Assert.Equal("cmd.exe", server["command"]!.ToString());
@@ -300,25 +290,78 @@ public sealed partial class InstallerTests : IDisposable
         Assert.Equal(["start.cmd"], Directory.EnumerateFiles(Path.Join(bundle, "scripts")).Select(Path.GetFileName));  // no script compiled at each start
         Assert.Contains("\r\n", File.ReadAllText(Path.Join(bundle, "scripts", "start.cmd")), StringComparison.Ordinal);  // cmd.exe labels need CRLF
         Assert.True(File.Exists(Path.Join(bundle, "README.md")));
-        string install = File.ReadAllText(Path.Join(Repo, "install.ps1"), Encoding.UTF8);
-        Assert.Contains("& $nativeExe --engine-pointer", install);  // the versioned copy, never bin
-        Assert.Contains("foreach ($retired in @('scripts/bridge.ps1'))", install);  // the old PowerShell bridge left behind by Copy-Tree
-        Assert.True(install.IndexOf("--engine-pointer", StringComparison.Ordinal) < install.IndexOf("Remove-StaleRelayVersions -Versions $versions", StringComparison.Ordinal));
         foreach (string manifest in new[] { "plugin/antigravity/plugin.json", "fr/plugin/antigravity/plugin.json" })
             Assert.InRange(JsonNode.Parse(File.ReadAllText(Path.Join(Repo, manifest)))!["description"]!.ToString().Length, 120, 160);
     }
 
     [Fact]
-    public void Installer_declares_the_restart_request_and_pins_the_mailbox()
+    public void Starters_carry_no_installation_logic_and_updates_run_no_powershell()
     {
-        string install = File.ReadAllText(Path.Join(Repo, "install.ps1"), Encoding.UTF8);
-        Assert.Contains("$daemonRequest = Join-Path $mailbox 'daemon-restart.request'", install);
-        Assert.Contains("restart_request = $daemonRequest", install);
-        Assert.True(install.IndexOf("$daemonRequest = ", StringComparison.Ordinal) < install.IndexOf("$spec = [ordered]@{", StringComparison.Ordinal));
-        Assert.Contains(@"$mailbox = Join-Path $HOME '.nexus\relay'", install);
-        Assert.Contains("$daemonEnv.NEXUS_RELAY_HOME = $mailbox", install);
-        Assert.Contains("exe = $nativeExe", install);
-        Assert.DoesNotContain("python = $nativeExe", install);  // native supervisors read exe
+        // get.ps1 and install.ps1 only download, check, build and start the engine: every installation step is in
+        // NexusRelay.exe --install. The daemon's update starts the engine itself (--update), never PowerShell.
+        string[] logic = ["Register-ScheduledTask", "Start-ScheduledTask", "SetEnvironmentVariable", "robocopy", "--register-hooks", "--register-clients", "mcp_config", "sidecar.json", "daemons\\specs", "Copy-Item"];
+        foreach (string starter in new[] { "get.ps1", "install.ps1" })
+        {
+            string text = File.ReadAllText(Path.Join(Repo, starter));
+            foreach (string step in logic) Assert.False(text.Contains(step, StringComparison.OrdinalIgnoreCase), $"{starter}: {step}");
+            Assert.Contains("--install", text);
+        }
+        string updater = File.ReadAllText(Path.Join(Repo, "native", "NativeUpdater.cs"));
+        Assert.DoesNotContain("powershell", updater, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("\"--update\"", updater);
+        Assert.False(Directory.Exists(Path.Join(Repo, "tests", "native_restart")));
+        Assert.Equal(["install_commit_guard.ps1"], Directory.EnumerateFiles(Path.Join(Repo, "scripts"), "*.ps1").Select(Path.GetFileName));
+        // The release archive ships what an older get.ps1 runs (install.ps1) and the files the engine deploys.
+        string release = File.ReadAllText(Path.Join(Repo, ".github", "workflows", "release.yml"));
+        foreach (string shipped in new[] { "'install.ps1'", "'get.ps1'", "'codex-projet'", "'claude-projet'", "'plugin/antigravity'", "'fr/plugin/antigravity'" })
+            Assert.Contains(shipped, release);
+        Assert.Equal(RelayPaths.Version, Native.Run("--version").Out.Trim());
+    }
+
+    [Fact]
+    public void Release_checksums_are_read_strictly()
+    {
+        string sums = $"{new string('a', 64)}  NexusRelay-win-x64.zip\n{new string('b', 64)} *get.ps1\n";
+        Assert.Equal(new string('a', 64), SelfUpdate.ExpectedHash(sums, "NexusRelay-win-x64.zip"));
+        Assert.Equal(new string('b', 64), SelfUpdate.ExpectedHash(sums, "get.ps1"));
+        Assert.Throws<InvalidDataException>(() => SelfUpdate.ExpectedHash(sums, "NexusRelay-win-arm64.zip"));
+        Assert.Throws<InvalidDataException>(() => SelfUpdate.ExpectedHash(sums + $"{new string('c', 64)}  get.ps1\n", "get.ps1"));
+        Assert.Throws<InvalidDataException>(() => SelfUpdate.ExpectedHash("not a checksum line\n", "get.ps1"));
+        Assert.Matches(SelfUpdate.Tag(), "v1.14.0");
+        Assert.Matches(SelfUpdate.Tag(), "v1.14.0-dev.3");
+        Assert.DoesNotMatch(SelfUpdate.Tag(), "1.14.0");
+        Assert.True(SelfUpdate.Rid() is "win-x64" or "win-arm64");
+    }
+
+    // ------------------------------------------------------------------------------------------- scheduled task
+
+    /// <summary>An in-memory Task Scheduler that refuses what would leave two supervisors: a start while another
+    /// relay task runs, or the removal of a running task.</summary>
+    private sealed class FakeTasks : ITaskStore
+    {
+        public readonly Dictionary<string, (string Xml, string State)> Tasks = [];
+        public readonly List<string> Log = [];
+        public void Add(string name, string exe, string state) => Tasks[name] = (TaskXml.Logon("fixture", exe, "--daemon", "state", @"PC\user"), state);
+        public string? Xml(string name) => Tasks.TryGetValue(name, out var task) ? task.Xml : null;
+        public string State(string name) => Tasks.TryGetValue(name, out var task) ? task.State : "Absent";
+        public void Register(string name, string xml)
+        {
+            Log.Add((Tasks.ContainsKey(name) ? "set " : "register ") + name);
+            Tasks[name] = (xml, Tasks.TryGetValue(name, out var old) ? old.State : "Ready");
+        }
+        public void Stop(string name) { Log.Add("stop " + name); Tasks[name] = (Tasks[name].Xml, "Ready"); }
+        public void Delete(string name)
+        {
+            Assert.False(Tasks[name].State == "Running", $"unregistered while running: {name}");
+            Log.Add("unregister " + name); Tasks.Remove(name);
+        }
+        public void Run(string name)
+        {
+            var running = Tasks.Where(t => t.Value.State == "Running").Select(t => t.Key).ToList();
+            Assert.True(running.Count == 0, $"two supervisors: {name} while {string.Join(", ", running)} runs");
+            Log.Add("start " + name); Tasks[name] = (Tasks[name].Xml, "Running");
+        }
+        public string Summary() => string.Join("|", Tasks.Select(t => $"{t.Key}={t.Value.State} {TaskXml.Command(t.Value.Xml)}"));
     }
 
     [Theory]
@@ -331,81 +374,30 @@ public sealed partial class InstallerTests : IDisposable
     [InlineData("remove", "stop NexusRelay|unregister NexusRelay|unregister Nexus Relay", "Other=Ready other.exe")]
     public void Scheduled_task_renamed_without_ever_two_supervisors(string scenario, string log, string tasks)
     {
-        // The fixture's scheduler refuses a start while another relay task runs and the removal of a running task.
-        var ran = Native.Pwsh(Path.Join(Repo, "tests", "native_restart", "task.ps1"), "-Scenario", scenario);
-        Assert.True(ran.Code == 0, ran.Err + ran.Out);
-        var data = JsonNode.Parse(ran.Out)!;
-        Assert.Equal(log, string.Join("|", (data["log"] as JsonArray ?? []).Select(n => n!.ToString())));
-        Assert.Equal(tasks, string.Join("|", data["tasks"]!.AsObject().Select(p => $"{p.Key}={p.Value}")));
-    }
-
-    [Fact]
-    public void Installer_registers_the_task_only_through_the_migrating_helper()
-    {
-        string install = File.ReadAllText(Path.Join(Repo, "install.ps1"), Encoding.UTF8);
-        Assert.Contains(@". (Join-Path $project 'scripts\RelayTask.ps1')", install);
-        Assert.Contains("Sync-RelayTask -Executable $nativeExe", install);
-        Assert.DoesNotContain("Register-ScheduledTask", install);
-        Assert.DoesNotContain("'Nexus Relay'", install.Replace("@($relayProjectName, 'Nexus Relay')", ""));  // only the kept Antigravity project name
-        string helper = File.ReadAllText(Path.Join(Repo, "scripts", "RelayTask.ps1"));
-        Assert.Contains("$RelayTaskName = 'NexusRelay'", helper);
-        Assert.Contains("$RelayLegacyTaskNames = @('Nexus Relay')", helper);
-        // Every script the installer dot-sources ships in the release archive (its list is explicit).
-        string release = File.ReadAllText(Path.Join(Repo, ".github", "workflows", "release.yml"));
-        foreach (Match used in Regex.Matches(install, @"'scripts\\([\w-]+\.ps1)'"))
-            Assert.Contains($"'{used.Groups[1].Value}'", release);
-    }
-
-    [Fact]
-    public void Installer_recovers_when_stable_fails_health_check_despite_matching_stamp()
-    {
-        string state = Path.Join(iso.Home, ".nexus", "nexus-relay");
-        Directory.CreateDirectory(state);
-        string stable = Path.Join(state, "bin");
-        Directory.CreateDirectory(stable);
-        string oldBackup = Path.Join(state, "bin.old-20261102000000");
-        Directory.CreateDirectory(oldBackup);
-
-        // Copie complète d'une version saine dans bin.old (exécutable, runtimeconfig, DLLs)
-        foreach (var file in Directory.EnumerateFiles(AppContext.BaseDirectory))
+        var store = new FakeTasks();
+        switch (scenario)
         {
-            File.Copy(file, Path.Join(oldBackup, Path.GetFileName(file)));
+            case "legacy": store.Add("Nexus Relay", "old.exe", "Running"); break;
+            case "both": store.Add("Nexus Relay", "old.exe", "Running"); store.Add("NexusRelay", "new.exe", "Ready"); break;
+            case "current": store.Add("NexusRelay", "new.exe", "Running"); break;
+            case "upgrade": store.Add("NexusRelay", "old.exe", "Running"); break;
+            case "shared": store.Add("Nexus Relay", "old.exe", "Running"); break;
+            case "remove": store.Add("Nexus Relay", "old.exe", "Ready"); store.Add("NexusRelay", "new.exe", "Running"); store.Add("Other", "other.exe", "Ready"); break;
         }
-
-        // Calcul exact de nativeKey selon l'algorithme d'install.ps1:53-56
-        var sources = Directory.EnumerateFiles(Path.Join(Repo, "native"), "*.*")
-            .Where(f => new[] { ".cs", ".csproj", ".json" }.Contains(Path.GetExtension(f)))
-            .Append(Path.Join(Repo, "Directory.Build.props"))
-            .OrderBy(f => f)
-            .Select(f => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(f))))
-            .ToList();
-        var digest = System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(string.Join("", sources)));
-        string nativeKey = Convert.ToHexString(digest.AsSpan(0, 8)).ToLowerInvariant();
-
-        // Stable corrompu portant le stamp exact nativeKey : un probe non protégé lèverait
-        // ApplicationFailedException sous $ErrorActionPreference='Stop' et bloquerait la reprise. Ce fichier n'est pas une
-        // image PE : install.ps1 le juge malsain sans le lancer (sinon boîte « Application 16 bits non prise en charge »).
-        File.WriteAllText(Path.Join(stable, "NexusRelay.exe"), "invalid dummy non-PE");
-        File.WriteAllText(Path.Join(stable, "publish.complete"), nativeKey);
-
-        string script = Path.Join(Repo, "install.ps1");
-        // Utilisation de -PromoteOnly pour tester la bascule et la reprise de manière isolée sans toucher aux tâches planifiées
-        var ran = Native.RunFile("pwsh.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script, "-PromoteOnly"],
-            env: new Dictionary<string, string?>
-            {
-                ["USERPROFILE"] = iso.Home,
-                ["HOME"] = iso.Home,
-                ["LOCALAPPDATA"] = Path.Join(iso.Root, "localappdata"),
-            }, timeoutS: 60);
-        Assert.True(ran.Code == 0, ran.Err + ran.Out);
-        Assert.Contains("Promotion", ran.Out);
-
-        // Après exécution : le stable a été réparé depuis le candidat et --schemas réussit
-        var check = Native.RunFile(Path.Join(stable, "NexusRelay.exe"), ["--schemas"]);
-        Assert.Equal(0, check.Code);
-        // Le contrôle final ayant validé la santé, bin.old-* a été nettoyé
-        Assert.Empty(Directory.EnumerateDirectories(state, "bin.old-*"));
+        if (scenario == "remove") RelayTask.Remove(store, [RelayTask.Name, .. RelayTask.Legacy]);
+        else RelayTask.Sync(store, "new.exe", "state", scenario == "shared", @"PC\user");
+        Assert.Equal(log, string.Join("|", store.Log));
+        Assert.Equal(tasks, store.Summary());
+        if (scenario == "fresh")
+        {
+            var task = System.Xml.Linq.XDocument.Parse(store.Tasks["NexusRelay"].Xml).Root!;
+            Assert.Equal("--daemon", task.Descendants(TaskXml.Ns + "Arguments").Single().Value);
+            Assert.Equal("true", task.Descendants(TaskXml.Ns + "Hidden").Single().Value);
+            Assert.Equal(@"PC\user", task.Descendants(TaskXml.Ns + "LogonTrigger").Single().Element(TaskXml.Ns + "UserId")!.Value);
+        }
     }
+
+    // ------------------------------------------------------------------------------------------- engine folders
 
     [Fact]
     public void Processes_started_by_tests_inherit_the_no_error_box_mode()
@@ -417,59 +409,73 @@ public sealed partial class InstallerTests : IDisposable
             "Add-Type -Namespace NexusRelayTests -Name ErrorMode -MemberDefinition '[DllImport(\"kernel32.dll\")] public static extern uint GetErrorMode();'; [NexusRelayTests.ErrorMode]::GetErrorMode()"], timeoutS: 60);
         Assert.True(ran.Code == 0, ran.Err + ran.Out);
         Assert.Equal(NoErrorBoxes.Mode, uint.Parse(ran.Out.Trim(), System.Globalization.CultureInfo.InvariantCulture) & NoErrorBoxes.Mode);
+        Assert.False(InstallNative.Healthy(Path.Join(iso.Root, "absent.exe")));
+        File.WriteAllText(Path.Join(iso.Root, "text.exe"), "not a program image");
+        Assert.False(InstallNative.Healthy(Path.Join(iso.Root, "text.exe")));  // never started
+    }
+
+    /// <summary>The engine files of the test output (the project reference's framework-dependent build).</summary>
+    private static void CopyEngine(string folder)
+    {
+        Directory.CreateDirectory(folder);
+        foreach (string file in Directory.EnumerateFiles(AppContext.BaseDirectory).Where(f => Path.GetFileName(f) is var name && (name.StartsWith("NexusRelay.", StringComparison.Ordinal) && !name.StartsWith("NexusRelay.Tests", StringComparison.Ordinal) || name == "Tomlyn.dll")))
+            File.Copy(file, Path.Join(folder, Path.GetFileName(file)), true);
+    }
+
+    private static Process StartEngine(string exe)
+    {
+        var engine = Process.Start(Native.Start(exe, ["--mcp", "--agent", "claude", "--protocol-fixture"]))!;
+        engine.StandardInput.WriteLine(Native.Rpc("initialize").ToJsonString()); engine.StandardInput.Flush();
+        Assert.True(engine.StandardOutput.ReadLineAsync(TestContext.Current.CancellationToken).AsTask().Wait(30_000, TestContext.Current.CancellationToken), "engine did not answer");
+        return engine;
+    }
+
+    private static string Status(Process engine)
+    {
+        engine.StandardInput.WriteLine(Native.Call("status").ToJsonString()); engine.StandardInput.Flush();
+        var line = engine.StandardOutput.ReadLineAsync(TestContext.Current.CancellationToken).AsTask();
+        Assert.True(line.Wait(30_000, TestContext.Current.CancellationToken), "the engine stopped answering");
+        return line.Result ?? "";
+    }
+
+    private static void Stop(Process engine)
+    {
+        if (!engine.HasExited) { engine.Kill(true); engine.WaitForExit(10_000); }
+        engine.Dispose();
     }
 
     [Fact]
-    public void Installer_never_removes_the_versioned_engine_a_running_process_uses()
+    public void Cleanup_never_removes_the_versioned_engine_a_running_process_uses()
     {
         // NexusFree 1.3.3: a running .NET engine loads its DLLs from its folder on demand; deleting what it has not loaded
-        // yet leaves it answering every call with an empty error. Old versions are cleaned at each install: the one an
-        // engine still runs (here started through another spelling of the path, as from an MSIX-redirected or
-        // elevated view whose process path the installer cannot match) must stay whole, an unused one goes.
+        // yet leaves it answering every call with an empty error. The folder an engine still runs (here started through
+        // another spelling of the path, as from an MSIX-redirected or elevated view) stays whole, an unused one goes.
         string versions = Path.Join(iso.Root, "localappdata", "NexusRelay", "versions");
         string inUse = Path.Join(versions, "0000000000000001"), current = Path.Join(versions, "0000000000000002"), unused = Path.Join(versions, "0000000000000003");
         foreach (string folder in new[] { inUse, current, unused })
         {
-            Directory.CreateDirectory(folder);
-            foreach (string file in Directory.EnumerateFiles(AppContext.BaseDirectory)) File.Copy(file, Path.Join(folder, Path.GetFileName(file)));
-            File.WriteAllText(Path.Join(folder, "engine.lock"), "");  // as install.ps1 writes it in each version
+            CopyEngine(folder);
+            File.WriteAllText(Path.Join(folder, "engine.lock"), "");  // as the installer writes it in each version
         }
         int files = Directory.EnumerateFiles(inUse).Count();
         string alias = Path.Join(iso.Root, "alias");
         Assert.Equal(0, Native.RunFile("cmd.exe", ["/d", "/c", "mklink", "/J", alias, versions]).Code);
-
-        using var engine = Process.Start(Native.Start(Path.Join(alias, "0000000000000001", "NexusRelay.exe"), ["--mcp", "--agent", "claude", "--protocol-fixture"]))!;
+        var engine = StartEngine(Path.Join(alias, "0000000000000001", "NexusRelay.exe"));
         try
         {
-            string Ask(JsonObject request)
-            {
-                engine.StandardInput.WriteLine(request.ToJsonString()); engine.StandardInput.Flush();
-                var line = engine.StandardOutput.ReadLineAsync();
-                Assert.True(line.Wait(30_000), "engine did not answer");
-                return line.Result ?? "";
-            }
-            Assert.Contains("\"result\"", Ask(Native.Rpc("initialize")));
-
-            string script = $". '{Path.Join(Repo, "scripts", "Remove-RelayVersions.ps1")}'; Remove-StaleRelayVersions -Versions '{versions}' -Keep '0000000000000002'";
-            var ran = Native.RunFile("pwsh.exe", ["-NoProfile", "-NonInteractive", "-Command", script], timeoutS: 60);
-            Assert.True(ran.Code == 0, ran.Err + ran.Out);
-
+            EngineFolders.RemoveStale(versions, "0000000000000002", InstallNative.Images.Of());
             Assert.Equal(files, Directory.EnumerateFiles(inUse).Count());  // the running engine's folder is left whole
             Assert.True(Directory.Exists(current));
             Assert.False(Directory.Exists(unused));
             Assert.Equal([inUse, current], Directory.EnumerateDirectories(versions).Order(StringComparer.OrdinalIgnoreCase));  // no leftover beside them
-            string status = Ask(Native.Call("status"));
-            Assert.DoesNotContain("\"isError\":true", status);
+            Assert.DoesNotContain("\"isError\":true", Status(engine));
         }
         finally
         {
-            if (!engine.HasExited) { engine.Kill(true); engine.WaitForExit(10_000); }
+            Stop(engine);
             Directory.Delete(alias);  // the junction only, never its target
         }
     }
-
-    private static string Cleanup(string body) =>
-        $". '{Path.Join(Repo, "scripts", "Remove-RelayVersions.ps1")}'; {body}";
 
     [Fact]
     public void Cleanup_keeps_a_folder_whose_engine_lock_is_held()
@@ -487,19 +493,17 @@ public sealed partial class InstallerTests : IDisposable
         string outside = Path.Join(iso.Root, "held-elsewhere.lock");
         File.WriteAllText(outside, "");
         Assert.True(CreateHardLinkW(Path.Join(held, "engine.lock"), outside, IntPtr.Zero), $"hard link: {Marshal.GetLastPInvokeError()}");
-        string script = Cleanup($"Remove-StaleRelayVersions -Versions '{versions}' -Keep '0000000000000002' -Images ([pscustomobject]@{{ Paths = @(); Unknown = $false }})");
+        var none = new InstallNative.Images([], false);
         using (var engine = new FileStream(outside, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
         {
             // Precondition: Windows would rename this folder, and its lock is held.
             Directory.Move(held, held + ".probe"); Directory.Move(held + ".probe", held);
             Assert.Throws<IOException>(() => new FileStream(Path.Join(held, "engine.lock"), FileMode.Open, FileAccess.ReadWrite, FileShare.None).Dispose());
-            var ran = Native.RunFile("pwsh.exe", ["-NoProfile", "-NonInteractive", "-Command", script], timeoutS: 60);
-            Assert.True(ran.Code == 0, ran.Err + ran.Out);
+            EngineFolders.RemoveStale(versions, "0000000000000002", none);
             Assert.True(File.Exists(Path.Join(held, "NexusRelay.exe")));
             Assert.Equal([held, keep], Directory.EnumerateDirectories(versions).Order(StringComparer.OrdinalIgnoreCase));
         }
-        var after = Native.RunFile("pwsh.exe", ["-NoProfile", "-NonInteractive", "-Command", script], timeoutS: 60);
-        Assert.True(after.Code == 0, after.Err + after.Out);
+        EngineFolders.RemoveStale(versions, "0000000000000002", none);
         Assert.Equal([keep], Directory.EnumerateDirectories(versions));  // released: removed at the next install
     }
 
@@ -509,9 +513,7 @@ public sealed partial class InstallerTests : IDisposable
         string versions = Path.Join(iso.Root, "versions"), old = Path.Join(versions, "0000000000000001");
         Directory.CreateDirectory(old);
         File.WriteAllText(Path.Join(old, "NexusRelay.exe"), "engine");
-        var ran = Native.RunFile("pwsh.exe", ["-NoProfile", "-NonInteractive", "-Command",
-            Cleanup($"Remove-StaleRelayVersions -Versions '{versions}' -Keep 'none' -Images ([pscustomobject]@{{ Paths = @(); Unknown = $true }})")], timeoutS: 60);
-        Assert.True(ran.Code == 0, ran.Err + ran.Out);
+        EngineFolders.RemoveStale(versions, "none", new InstallNative.Images([], true));
         Assert.True(File.Exists(Path.Join(old, "NexusRelay.exe")));
     }
 
@@ -519,25 +521,19 @@ public sealed partial class InstallerTests : IDisposable
     public void Engine_images_are_read_by_QueryFullProcessImageName_and_an_engine_holds_its_lock()
     {
         string folder = Path.Join(iso.Root, "versions", "0000000000000001");
-        Directory.CreateDirectory(folder);
-        foreach (string file in Directory.EnumerateFiles(AppContext.BaseDirectory)) File.Copy(file, Path.Join(folder, Path.GetFileName(file)));
+        CopyEngine(folder);
         File.WriteAllText(Path.Join(folder, "engine.lock"), "");
-        using var engine = Process.Start(Native.Start(Path.Join(folder, "NexusRelay.exe"), ["--mcp", "--agent", "claude", "--protocol-fixture"]))!;
+        var engine = StartEngine(Path.Join(folder, "NexusRelay.exe"));
         try
         {
-            engine.StandardInput.WriteLine(Native.Rpc("initialize").ToJsonString()); engine.StandardInput.Flush();
-            Assert.True(engine.StandardOutput.ReadLineAsync(TestContext.Current.CancellationToken).AsTask().Wait(30_000, TestContext.Current.CancellationToken), "engine did not answer");
             Assert.Throws<IOException>(() => new FileStream(Path.Join(folder, "engine.lock"), FileMode.Open, FileAccess.ReadWrite, FileShare.Delete).Dispose());
-            var ran = Native.RunFile("pwsh.exe", ["-NoProfile", "-NonInteractive", "-Command",
-                Cleanup("$i = Get-RelayEngineImages; \"$($i.Unknown)\"; $i.Paths")], timeoutS: 60);
-            Assert.True(ran.Code == 0, ran.Err + ran.Out);
-            string[] lines = ran.Out.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-            Assert.Contains(Path.Join(folder, "NexusRelay.exe"), lines, StringComparer.OrdinalIgnoreCase);
+            Assert.Contains(Path.Join(folder, "NexusRelay.exe"), InstallNative.Images.Of().Paths, StringComparer.OrdinalIgnoreCase);
+            var read = InstallNative.Read(engine.Id);
+            Assert.False(read.Exited);
+            Assert.NotNull(read.Birth);
+            Assert.True(EngineFolders.InUse(folder, new InstallNative.Images([], false)));  // by its lock alone
         }
-        finally
-        {
-            if (!engine.HasExited) { engine.Kill(true); engine.WaitForExit(10_000); }
-        }
+        finally { Stop(engine); }
     }
 
     [LibraryImport("kernel32.dll", EntryPoint = "CreateHardLinkW", StringMarshalling = StringMarshalling.Utf16, SetLastError = true)]
@@ -547,31 +543,38 @@ public sealed partial class InstallerTests : IDisposable
     [LibraryImport("advapi32.dll", SetLastError = true)]
     private static partial uint SetSecurityInfo(IntPtr handle, int objectType, uint information, IntPtr owner, IntPtr group, IntPtr dacl, IntPtr sacl);
 
-    /// <summary>PowerShell prefix removing SeDebugPrivilege from its own token (no-op when the token lacks it).</summary>
-    private const string DropDebugPrivilege = """
-        Add-Type -TypeDefinition @'
-        using System; using System.Runtime.InteropServices;
-        public static class NexusRelayNoDebug {
-            [StructLayout(LayoutKind.Sequential, Pack = 4)] struct Privileges { public int Count; public long Luid; public int Attributes; }
-            [DllImport("advapi32.dll", SetLastError = true)] static extern bool OpenProcessToken(IntPtr process, uint access, out IntPtr token);
-            [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)] static extern bool LookupPrivilegeValue(string system, string name, out long luid);
-            [DllImport("advapi32.dll", SetLastError = true)] static extern bool AdjustTokenPrivileges(IntPtr token, bool none, ref Privileges state, int length, IntPtr previous, IntPtr size);
-            [DllImport("kernel32.dll")] static extern IntPtr GetCurrentProcess();
-            [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr handle);
-            public static void Drop() {
-                IntPtr token; long luid;
-                if (!OpenProcessToken(GetCurrentProcess(), 0x28, out token)) return;  // TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY
-                try {
-                    if (!LookupPrivilegeValue(null, "SeDebugPrivilege", out luid)) return;
-                    var state = new Privileges { Count = 1, Luid = luid, Attributes = 4 };  // SE_PRIVILEGE_REMOVED
-                    AdjustTokenPrivileges(token, false, ref state, 0, IntPtr.Zero, IntPtr.Zero);
-                } finally { CloseHandle(token); }
-            }
-        }
-        '@
-        [NexusRelayNoDebug]::Drop();
+    [StructLayout(LayoutKind.Sequential, Pack = 4)]
+    private struct Privileges { public int Count; public long Luid; public int Attributes; }
 
-        """;
+    [LibraryImport("advapi32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool OpenProcessToken(IntPtr process, uint access, out IntPtr token);
+
+    [LibraryImport("advapi32.dll", EntryPoint = "LookupPrivilegeValueW", StringMarshalling = StringMarshalling.Utf16, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool LookupPrivilegeValue(string? system, string name, out long luid);
+
+    [LibraryImport("advapi32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool AdjustTokenPrivileges(IntPtr token, [MarshalAs(UnmanagedType.Bool)] bool none, ref Privileges state, int length, IntPtr previous, IntPtr size);
+
+    [LibraryImport("kernel32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool CloseHandle(IntPtr handle);
+
+    /// <summary>Removes SeDebugPrivilege from this test process's token (no-op when the token lacks it): an elevated
+    /// runner may hold it enabled, which opens any process; an ordinary user's installer has it not.</summary>
+    private static void DropDebugPrivilege()
+    {
+        if (!OpenProcessToken(Process.GetCurrentProcess().Handle, 0x28 /* TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY */, out IntPtr token)) return;
+        try
+        {
+            if (!LookupPrivilegeValue(null, "SeDebugPrivilege", out long luid)) return;
+            var state = new Privileges { Count = 1, Luid = luid, Attributes = 4 /* SE_PRIVILEGE_REMOVED */ };
+            AdjustTokenPrivileges(token, false, ref state, 0, IntPtr.Zero, IntPtr.Zero);
+        }
+        finally { CloseHandle(token); }
+    }
 
     /// <summary>Sets a process object's DACL: empty (nobody may open it, its owner included) or, with null, NULL (open).</summary>
     private static unsafe void SetProcessDacl(Process process, byte[]? dacl)
@@ -588,12 +591,6 @@ public sealed partial class InstallerTests : IDisposable
         return binary;
     }
 
-    private static void CopyEngine(string folder)
-    {
-        Directory.CreateDirectory(folder);
-        foreach (string file in Directory.EnumerateFiles(AppContext.BaseDirectory)) File.Copy(file, Path.Join(folder, Path.GetFileName(file)), true);
-    }
-
     [Fact]
     public void Cleanup_removes_nothing_while_a_real_running_engine_cannot_be_queried()
     {
@@ -604,25 +601,21 @@ public sealed partial class InstallerTests : IDisposable
         File.WriteAllText(Path.Join(old, "NexusRelay.exe"), "engine");
         string elsewhere = Path.Join(iso.Root, "unreadable");
         CopyEngine(elsewhere);
-        using var engine = Process.Start(Native.Start(Path.Join(elsewhere, "NexusRelay.exe"), ["--mcp", "--agent", "claude", "--protocol-fixture"]))!;
+        var engine = StartEngine(Path.Join(elsewhere, "NexusRelay.exe"));
         try
         {
-            engine.StandardInput.WriteLine(Native.Rpc("initialize").ToJsonString()); engine.StandardInput.Flush();
-            Assert.True(engine.StandardOutput.ReadLineAsync(TestContext.Current.CancellationToken).AsTask().Wait(30_000, TestContext.Current.CancellationToken), "engine did not answer");
             SetProcessDacl(engine, EmptyDacl());
-            // An elevated runner may hold SeDebugPrivilege enabled, which opens any process: the cleanup's PowerShell
-            // drops it first, as an ordinary user has it.
-            var ran = Native.RunFile("pwsh.exe", ["-NoProfile", "-NonInteractive", "-Command", DropDebugPrivilege + Cleanup(
-                $"\"probe=$($null -eq [NexusRelayProcessImage]::Read({engine.Id}))\"; \"unknown=$((Get-RelayEngineImages).Unknown)\"; " +
-                $"Remove-StaleRelayVersions -Versions '{versions}' -Keep 'none'")], timeoutS: 60);
-            Assert.True(ran.Code == 0, ran.Err + ran.Out);
-            Assert.Contains("probe=True", ran.Out, StringComparison.Ordinal);  // precondition: the engine cannot be queried
-            Assert.Contains("unknown=True", ran.Out, StringComparison.Ordinal);
+            DropDebugPrivilege();
+            Assert.Null(InstallNative.Read(engine.Id).Image);  // precondition: the engine cannot be queried
+            var images = InstallNative.Images.Of();
+            Assert.True(images.Unknown);
+            EngineFolders.RemoveStale(versions, "none", images);
             Assert.True(File.Exists(Path.Join(old, "NexusRelay.exe")));
         }
         finally
         {
-            if (!engine.HasExited) { SetProcessDacl(engine, null); engine.Kill(true); engine.WaitForExit(10_000); }
+            if (!engine.HasExited) SetProcessDacl(engine, null);
+            Stop(engine);
         }
     }
 
@@ -634,58 +627,9 @@ public sealed partial class InstallerTests : IDisposable
         string bin = Path.Join(iso.Home, ".nexus", "nexus-relay", "bin");
         CopyEngine(bin);
         File.WriteAllText(Path.Join(bin, "engine.lock"), "");
-        using var engine = Process.Start(Native.Start(Path.Join(bin, "NexusRelay.exe"), ["--mcp", "--agent", "claude", "--protocol-fixture"]))!;
-        try
-        {
-            engine.StandardInput.WriteLine(Native.Rpc("initialize").ToJsonString()); engine.StandardInput.Flush();
-            Assert.True(engine.StandardOutput.ReadLineAsync(TestContext.Current.CancellationToken).AsTask().Wait(30_000, TestContext.Current.CancellationToken), "engine did not answer");
-            new FileStream(Path.Join(bin, "engine.lock"), FileMode.Open, FileAccess.ReadWrite, FileShare.None).Dispose();
-        }
-        finally
-        {
-            if (!engine.HasExited) { engine.Kill(true); engine.WaitForExit(10_000); }
-        }
-    }
-
-    [Fact]
-    public void Update_replaces_the_stable_copy_while_a_process_started_from_it_waits()
-    {
-        // 1.13.10: a Stop hook (--await-replies, up to 55 min) ran from bin and held bin\engine.lock; the next update
-        // failed to rename bin aside and stopped before the pointer, the task and the clients. Here a 1.13.10-like
-        // waiter runs from bin (its images mapped there) and holds bin\engine.lock: the update must still succeed.
-        string state = Path.Join(iso.Home, ".nexus", "nexus-relay"), bin = Path.Join(state, "bin");
-        CopyEngine(bin);
-        File.WriteAllText(Path.Join(bin, "engine.lock"), "");
-        File.WriteAllText(Path.Join(bin, "publish.complete"), "0000000000000000");  // an older version
-        var env = new Dictionary<string, string?> { ["USERPROFILE"] = iso.Home, ["HOME"] = iso.Home, ["LOCALAPPDATA"] = Path.Join(iso.Root, "localappdata") };
-        string[] promote = ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", Path.Join(Repo, "install.ps1"), "-PromoteOnly"];
-        using var waiter = Process.Start(Native.Start(Path.Join(bin, "NexusRelay.exe"), ["--mcp", "--agent", "claude", "--protocol-fixture"]))!;
-        var heldLock = new FileStream(Path.Join(bin, "engine.lock"), FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-        try
-        {
-            waiter.StandardInput.WriteLine(Native.Rpc("initialize").ToJsonString()); waiter.StandardInput.Flush();
-            Assert.True(waiter.StandardOutput.ReadLineAsync(TestContext.Current.CancellationToken).AsTask().Wait(30_000, TestContext.Current.CancellationToken), "engine did not answer");
-            Assert.ThrowsAny<IOException>(() => Directory.Move(bin, bin + ".probe"));  // precondition: Windows refuses the rename
-
-            var ran = Native.RunFile("pwsh.exe", promote, env: env, timeoutS: 300);
-            Assert.True(ran.Code == 0, ran.Err + ran.Out);
-            Assert.Equal(NativeKey(), File.ReadAllText(Path.Join(bin, "publish.complete")));
-            Assert.Equal(0, Native.RunFile(Path.Join(bin, "NexusRelay.exe"), ["--schemas"]).Code);
-            waiter.StandardInput.WriteLine(Native.Call("status").ToJsonString()); waiter.StandardInput.Flush();
-            var status = waiter.StandardOutput.ReadLineAsync(TestContext.Current.CancellationToken).AsTask();
-            Assert.True(status.Wait(30_000, TestContext.Current.CancellationToken), "the waiting engine stopped answering");
-            Assert.DoesNotContain("\"isError\":true", status.Result);  // its files, moved aside, stay whole
-        }
-        finally
-        {
-            heldLock.Dispose();
-            if (!waiter.HasExited) { waiter.Kill(true); waiter.WaitForExit(10_000); }
-        }
-        // Once the waiter is gone: the next run removes the old lock from bin and the copy set aside.
-        var after = Native.RunFile("pwsh.exe", promote, env: env, timeoutS: 300);
-        Assert.True(after.Code == 0, after.Err + after.Out);
-        Assert.False(File.Exists(Path.Join(bin, "engine.lock")));
-        Assert.Empty(Directory.EnumerateDirectories(state, "bin.old-*"));
+        var engine = StartEngine(Path.Join(bin, "NexusRelay.exe"));
+        try { new FileStream(Path.Join(bin, "engine.lock"), FileMode.Open, FileAccess.ReadWrite, FileShare.None).Dispose(); }
+        finally { Stop(engine); }
     }
 
     [Fact]
@@ -719,23 +663,266 @@ public sealed partial class InstallerTests : IDisposable
         Assert.True(stable.Code == 0, stable.Err + stable.Out);
     }
 
-    private static string NativeKey()
-    {
-        var sources = Directory.EnumerateFiles(Path.Join(Repo, "native"), "*.*")
-            .Where(f => new[] { ".cs", ".csproj", ".json" }.Contains(Path.GetExtension(f)))
-            .Append(Path.Join(Repo, "Directory.Build.props"))
-            .OrderBy(f => f)
-            .Select(f => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(f))))
-            .ToList();
-        var digest = System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(string.Join("", sources)));
-        return Convert.ToHexString(digest.AsSpan(0, 8)).ToLowerInvariant();
-    }
-
     [Fact]
     public void No_build_output_in_the_synchronized_repository()
     {
         foreach (string folder in new[] { "native", Path.Join("tests", "NexusRelay.Tests"), Path.Join("tests", "native_lifetime") })
             foreach (string output in new[] { "bin", "obj" })
                 Assert.False(Directory.Exists(Path.Join(Repo, folder, output)), Path.Join(folder, output));
+    }
+
+    // ------------------------------------------------------------------------------------------- the installer
+
+    private string LocalAppData => Path.Join(iso.Root, "localappdata");
+    private string State => Path.Join(iso.Home, ".nexus", "nexus-relay");
+    private string Versions => Path.Join(LocalAppData, "NexusRelay", "versions");
+    private string SpecPath => Path.Join(iso.Home, ".nexus", "daemons", "specs", "nexus-relay.json");
+
+    /// <summary>A release package as get.ps1 unpacks it: the engine in bin\ (the test build; extra marks one release
+    /// apart from another), and what the engine deploys.</summary>
+    private string Package(string name, string? extra = null)
+    {
+        string package = Path.Join(iso.Root, "packages", name);
+        CopyEngine(Path.Join(package, "bin"));
+        if (extra is not null) File.WriteAllText(Path.Join(package, "bin", "release.txt"), extra);
+        foreach (string folder in new[] { Path.Join("plugin", "antigravity"), Path.Join("fr", "plugin", "antigravity"), "codex-projet", "claude-projet", Path.Join("fr", "codex-projet"), Path.Join("fr", "claude-projet") })
+            InstallFiles.CopyTree(Path.Join(Repo, folder), Path.Join(package, folder));
+        File.Copy(Path.Join(Repo, "get.ps1"), Path.Join(package, "get.ps1"), true);
+        return package;
+    }
+
+    private sealed class Run : IDisposable
+    {
+        public readonly FakeTasks Tasks = new();
+        public readonly Dictionary<string, string?> UserVariables = [];
+        public readonly StringWriter Out = new();
+        public void Dispose() => Out.Dispose();
+        public string? FailAt;
+        public Installer.Host Host() => new()
+        {
+            Tasks = Tasks, UserVariable = n => UserVariables.GetValueOrDefault(n), SetUserVariable = (n, v) => UserVariables[n] = v,
+            OnPath = _ => null, UserId = @"PC\user", Out = Out,
+            Step = step => { if (step == FailAt) throw new IOException($"fixture failure at {step}"); },
+        };
+    }
+
+    private int Port { get; } = Native.FreePort();
+
+    private void Install(string package, Run run, bool mirror = true, bool register = false, bool promoteOnly = false) =>
+        Assert.Equal(0, new Installer(new Installer.Options { Source = package, Mirror = mirror, Register = register, PromoteOnly = promoteOnly, Port = Port }, run.Host()).Run());
+
+    private void Sandbox(bool antigravity = true)
+    {
+        iso.Set("LOCALAPPDATA", LocalAppData);
+        iso.Set("NEXUS_RELAY_ROOT", null);
+        string token = Path.Join(iso.Home, ".nexus", "mcp-token.txt");
+        Directory.CreateDirectory(Path.GetDirectoryName(token)!);
+        File.WriteAllText(token, new string('c', 64));
+        iso.Set("NEXUS_MCP_TOKEN_FILE", token);
+        if (antigravity) Directory.CreateDirectory(Path.Join(iso.Home, ".gemini", "config"));
+        Directory.CreateDirectory(State);
+        File.WriteAllText(Path.Join(State, "settings.json"), """{"wake_since": "2026-10-29T22:46:43Z"}""");
+    }
+
+    private JsonObject Spec() => JsonNode.Parse(File.ReadAllText(SpecPath))!.AsObject();
+    private static string KeyOf(string exe) => Path.GetFileName(Path.GetDirectoryName(exe))!;
+
+    [Fact]
+    public void Fresh_install_places_the_engine_the_daemon_the_task_and_antigravity()
+    {
+        Sandbox();
+        string package = Package("one");
+        using var run = new Run();
+        Install(package, run);
+
+        string app = Path.Join(LocalAppData, "NexusRelay", "app");
+        Assert.True(File.Exists(Path.Join(app, "get.ps1")) && File.Exists(Path.Join(app, "bin", "NexusRelay.exe")));  // the package became the app folder
+        var spec = Spec();
+        string exe = spec["exe"]!.ToString();
+        Assert.StartsWith(Versions + "\\", exe, StringComparison.OrdinalIgnoreCase);
+        string key = KeyOf(exe);
+        Assert.Equal(key, File.ReadAllText(Path.Join(Versions, key, "publish.complete")));
+        Assert.True(File.Exists(Path.Join(Versions, key, "engine.lock")));
+        Assert.Equal(Port, spec["port"]!.GetValue<int>());
+        string mailbox = Path.Join(iso.Home, ".nexus", "relay");
+        Assert.Equal(Path.Join(mailbox, "daemon-restart.request"), spec["restart_request"]!.ToString());
+        Assert.Equal(mailbox, spec["env"]!["NEXUS_RELAY_HOME"]!.ToString());
+        Assert.Equal(app, spec["env"]!["NEXUS_RELAY_SOURCE_ROOT"]!.ToString());
+        Assert.Equal("2026-10-29T22:46:43Z", spec["env"]!["NEXUS_RELAY_WAKE_SINCE"]!.ToString());  // ISO strings kept verbatim
+        Assert.Null(spec["python"]);
+        var settings = JsonNode.Parse(File.ReadAllText(Path.Join(State, "settings.json")))!;
+        Assert.Equal(app, settings["installed_source"]!.ToString());
+        Assert.Equal("native", settings["runtime"]!.ToString());
+        Assert.Equal("2026-10-29T22:46:43Z", settings["wake_since"]!.ToString());
+
+
+        Assert.Equal($"{RelayPaths.Version}|{exe}\r\n", File.ReadAllText(Path.Join(State, "engine.txt")));  // the versioned copy, never bin
+        Assert.Equal(key, File.ReadAllText(Path.Join(State, "bin", "publish.complete")));
+        Assert.Equal(0, Native.RunFile(Path.Join(State, "bin", "NexusRelay.exe"), ["--schemas"]).Code);
+        Assert.False(File.Exists(Path.Join(State, "bin", "engine.lock")));
+        Assert.Equal($"NexusRelay=Running {exe}", run.Tasks.Summary());
+        Assert.Equal(key, File.ReadAllText(Path.Join(State, "installed.stamp")));  // a package without install.ps1: the key alone
+        Assert.True(File.Exists(Path.Join(mailbox, "codex-projet", "AGENTS.md")) && File.Exists(Path.Join(mailbox, "NexusRelay", "CLAUDE.md")));
+
+        string plugin = Path.Join(iso.Home, ".gemini", "config", "plugins", "nexus-relay");
+        var mcp = JsonNode.Parse(File.ReadAllText(Path.Join(plugin, "mcp_config.json")))!["mcpServers"]!["nexus-relay"]!;
+        Assert.Equal($"http://127.0.0.1:{Port}/mcp?agent=antigravity", mcp["serverUrl"]!.ToString());
+        Assert.Equal("Bearer " + new string('c', 64), mcp["headers"]!["Authorization"]!.ToString());
+        var sidecar = JsonNode.Parse(File.ReadAllText(Path.Join(plugin, "sidecars", "relay", "sidecar.json")))!;
+        Assert.Equal(exe, sidecar["command"]!.ToString());
+        Assert.Equal(["--sidecar"], sidecar["args"]!.AsArray().Select(a => a!.ToString()));
+        var project = JsonNode.Parse(File.ReadAllText(Directory.EnumerateFiles(Path.Join(iso.Home, ".gemini", "config", "projects"), "*.json").Single()))!;
+        Assert.Equal("NexusRelay", project["name"]!.ToString());
+        var config = JsonNode.Parse(File.ReadAllText(Path.Join(iso.Home, ".gemini", "config", "config.json")))!;
+        Assert.Equal(project["id"]!.ToString(), config["sidecars"]!["nexus-relay/relay"]!["projectId"]!.ToString());
+
+        // Run again: nothing changes, the task is left as is, no extra engine folder.
+        string specText = File.ReadAllText(SpecPath);
+        run.Tasks.Log.Clear();
+        Install(package, run);
+        Assert.Equal(specText, File.ReadAllText(SpecPath));
+        Assert.Empty(run.Tasks.Log);
+        Assert.Equal([key], Directory.EnumerateDirectories(Versions).Select(Path.GetFileName));
+    }
+
+    [Fact]
+    public void Register_sets_the_user_token_and_declares_the_chosen_clients_only()
+    {
+        Sandbox(antigravity: false);
+        iso.Set("NEXUS_PACK", "1");
+        iso.Set("NEXUS_PACK_TARGETS", "codex");
+        Directory.CreateDirectory(Path.Join(iso.Home, ".claude"));
+        Directory.CreateDirectory(iso.CodexHome);
+        Directory.CreateDirectory(Path.Join(iso.Home, ".codex"));
+        File.WriteAllText(Path.Join(iso.Home, ".claude.json"), """{"theme": "dark"}""");
+        using var run = new Run();
+        Install(Package("one"), run, register: true);
+        Assert.Equal(new string('c', 64), run.UserVariables["NEXUS_MCP_TOKEN"]);
+        Assert.Equal("codex", JsonNode.Parse(File.ReadAllText(Path.Join(State, "settings.json")))!["host"]!.ToString());  // only Codex chosen
+        Assert.Equal("""{"theme": "dark"}""", File.ReadAllText(Path.Join(iso.Home, ".claude.json")).Trim());  // Claude Code untouched
+        Assert.Contains("nexus-relay", File.ReadAllText(Path.Join(iso.CodexHome, "config.toml")), StringComparison.Ordinal);
+        Assert.DoesNotContain(new string('c', 64), File.ReadAllText(Path.Join(iso.CodexHome, "config.toml")), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Update_while_an_engine_runs_keeps_its_folder_until_it_stops()
+    {
+        Sandbox();
+        using var run = new Run();
+        Install(Package("one", "1"), run);
+        string first = Spec()["exe"]!.ToString();
+        var engine = StartEngine(first);  // the daemon of the installed version, holding its engine.lock
+        try
+        {
+            Install(Package("two", "2"), run);
+            string second = Spec()["exe"]!.ToString();
+            Assert.NotEqual(KeyOf(first), KeyOf(second));
+            Assert.True(File.Exists(first));  // still running: left whole
+            Assert.Equal(KeyOf(second), File.ReadAllText(Path.Join(State, "bin", "publish.complete")));
+            Assert.Equal($"NexusRelay=Running {second}", run.Tasks.Summary());  // the supervisor of the new version
+            Assert.Contains("set NexusRelay", run.Tasks.Log);
+            Assert.True(File.ReadAllText(Path.Join(State, "engine.txt")).Contains(KeyOf(second), StringComparison.Ordinal));
+            Assert.DoesNotContain("\"isError\":true", Status(engine));  // the running engine keeps answering
+        }
+        finally { Stop(engine); }
+        Install(Package("two", "2"), run);
+        Assert.Equal([KeyOf(Spec()["exe"]!.ToString())], Directory.EnumerateDirectories(Versions).Select(Path.GetFileName));  // gone once stopped
+    }
+
+    [Theory]
+    [InlineData("spec")]
+    [InlineData("task")]
+    [InlineData("antigravity")]
+    [InlineData("hooks")]
+    public void A_failed_update_puts_the_previous_installation_back(string failAt)
+    {
+        Sandbox();
+        using var run = new Run();
+        Install(Package("one", "1"), run);
+        string app = Path.Join(LocalAppData, "NexusRelay", "app");
+        File.WriteAllText(Path.Join(app, "mark-of-one.txt"), "one");
+        string first = Spec()["exe"]!.ToString();
+        string specText = File.ReadAllText(SpecPath), pointer = File.ReadAllText(Path.Join(State, "engine.txt"));
+        string sidecarPath = Path.Join(iso.Home, ".gemini", "config", "plugins", "nexus-relay", "sidecars", "relay", "sidecar.json");
+        string sidecarText = File.ReadAllText(sidecarPath);
+        string tasks = run.Tasks.Summary();
+
+        run.FailAt = failAt;
+        var error = Assert.Throws<IOException>(() => new Installer(new Installer.Options { Source = Package("two", "2"), Mirror = true, Port = Port }, run.Host()).Run());
+        Assert.Contains(failAt, error.Message, StringComparison.Ordinal);
+        Assert.Equal(specText, File.ReadAllText(SpecPath));
+        Assert.Equal(pointer, File.ReadAllText(Path.Join(State, "engine.txt")));
+        Assert.Equal(sidecarText, File.ReadAllText(sidecarPath));
+        Assert.Equal(KeyOf(first), File.ReadAllText(Path.Join(State, "bin", "publish.complete")));
+        Assert.Equal(0, Native.RunFile(Path.Join(State, "bin", "NexusRelay.exe"), ["--schemas"]).Code);
+        Assert.Equal(tasks, run.Tasks.Summary());
+        Assert.True(File.Exists(Path.Join(app, "mark-of-one.txt")), run.Out + string.Join(", ", Directory.EnumerateFileSystemEntries(Path.Join(LocalAppData, "NexusRelay"))));  // the previous app folder is back
+        Assert.False(File.Exists(Path.Join(app, "bin", "release.txt")) && File.ReadAllText(Path.Join(app, "bin", "release.txt")) == "2");
+        Assert.True(File.Exists(first));
+        Assert.Contains("WARNING: ", run.Out.ToString(), StringComparison.Ordinal);
+        Assert.Empty(Directory.EnumerateDirectories(State, "bin.new-*"));
+        Assert.DoesNotContain(Directory.EnumerateDirectories(Path.Join(LocalAppData, "NexusRelay")), d => Path.GetFileName(d).StartsWith("app.", StringComparison.Ordinal));
+
+        // The next attempt succeeds and leaves no copy set aside; the app folder is the new package.
+        run.FailAt = null;
+        Install(Package("two", "2"), run);
+        Assert.Equal("2", File.ReadAllText(Path.Join(app, "bin", "release.txt")));
+        Assert.False(File.Exists(Path.Join(app, "mark-of-one.txt")));
+        Assert.Equal(["app", "versions"], Directory.EnumerateDirectories(Path.Join(LocalAppData, "NexusRelay")).Select(Path.GetFileName).Order(StringComparer.Ordinal));
+        Assert.NotEqual(KeyOf(first), KeyOf(Spec()["exe"]!.ToString()));
+        Assert.Empty(Directory.EnumerateDirectories(State, "bin.old-*"));
+    }
+
+    [Fact]
+    public void Installer_recovers_when_stable_fails_health_check_despite_matching_stamp()
+    {
+        Sandbox();
+        string package = Package("one");
+        string key = EngineFolders.Digest(Path.Join(package, "bin"));
+        string stable = Path.Join(State, "bin");
+        Directory.CreateDirectory(stable);
+        CopyEngine(Path.Join(State, "bin.old-20261102000000"));  // a healthy copy set aside earlier
+        // A corrupted stable copy carrying the exact stamp: not a program image, so judged unhealthy without being
+        // started (no "16-bit application not supported" box).
+        File.WriteAllText(Path.Join(stable, "NexusRelay.exe"), "invalid dummy non-PE");
+        File.WriteAllText(Path.Join(stable, "publish.complete"), key);
+        using var run = new Run();
+        Install(package, run, mirror: false, promoteOnly: true);
+        Assert.Contains("Promotion", run.Out.ToString(), StringComparison.Ordinal);
+        Assert.Equal(0, Native.RunFile(Path.Join(stable, "NexusRelay.exe"), ["--schemas"]).Code);
+        Assert.Empty(Directory.EnumerateDirectories(State, "bin.old-*"));  // validated: copies set aside removed
+    }
+
+    [Fact]
+    public void Update_replaces_the_stable_copy_while_a_process_started_from_it_waits()
+    {
+        // 1.13.10: a Stop hook (--await-replies, up to 55 min) ran from bin and held bin\engine.lock; the next update
+        // failed to rename bin aside and stopped before the pointer, the task and the clients. Here a 1.13.10-like
+        // waiter runs from bin (its images mapped there) and holds bin\engine.lock: the update must still succeed.
+        Sandbox();
+        string bin = Path.Join(State, "bin");
+        CopyEngine(bin);
+        File.WriteAllText(Path.Join(bin, "engine.lock"), "");
+        File.WriteAllText(Path.Join(bin, "publish.complete"), "0000000000000000");  // an older version
+        string package = Package("one");
+        var waiter = StartEngine(Path.Join(bin, "NexusRelay.exe"));
+        var heldLock = new FileStream(Path.Join(bin, "engine.lock"), FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        try
+        {
+            Assert.ThrowsAny<IOException>(() => Directory.Move(bin, bin + ".probe"));  // precondition: Windows refuses the rename
+            { using var once = new Run(); Install(package, once, mirror: false, promoteOnly: true); }
+            Assert.Equal(EngineFolders.Digest(Path.Join(package, "bin")), File.ReadAllText(Path.Join(bin, "publish.complete")));
+            Assert.Equal(0, Native.RunFile(Path.Join(bin, "NexusRelay.exe"), ["--schemas"]).Code);
+            Assert.DoesNotContain("\"isError\":true", Status(waiter));  // its files, moved aside, stay whole
+        }
+        finally
+        {
+            heldLock.Dispose();
+            Stop(waiter);
+        }
+        // Once the waiter is gone: the next run removes the old lock from bin and the copy set aside.
+        { using var once = new Run(); Install(package, once, mirror: false, promoteOnly: true); }
+        Assert.False(File.Exists(Path.Join(bin, "engine.lock")));
+        Assert.Empty(Directory.EnumerateDirectories(State, "bin.old-*"));
     }
 }

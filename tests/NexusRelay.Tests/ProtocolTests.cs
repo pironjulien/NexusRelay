@@ -233,17 +233,21 @@ public sealed class ProtocolTests : IDisposable
     [Fact]
     public void Targeted_installer_restart_preserves_another_instance_on_another_port()
     {
+        // The installer asks only the process named by the ownership marker, running the installed engine and owning
+        // the port, to restart: never another instance (here the first daemon, on another port).
         using var first = new Daemon();
         using var second = new Daemon();
-        string probe = Path.Join(Paths.Repo(), "tests", "native_restart", "probe.ps1");
-        string[] common = ["-Mailbox", iso.Relay, "-Executable", Native.Exe];
-        var wrong = JsonNode.Parse(Native.Pwsh(probe, [.. common, "-Port", first.Port.ToString(System.Globalization.CultureInfo.InvariantCulture), "-Request"]).Out)!;
-        Assert.False(wrong["ok"]!.GetValue<bool>());
-        Assert.Contains("port", wrong["reason"]!.ToString());
+        string request = Path.Join(iso.Relay, "daemon-restart.request");
+        var wrong = Assert.Throws<InvalidOperationException>(() => RestartOwner.Find(iso.Relay, "daemon", Native.Exe, first.Port));
+        Assert.Contains("port", wrong.Message, StringComparison.Ordinal);
+        Assert.Throws<InvalidOperationException>(() => RestartOwner.Find(iso.Relay, "daemon", Path.Join(iso.Root, "other", "NexusRelay.exe"), second.Port));
         Assert.False(first.Process.HasExited || second.Process.HasExited);
-        var correct = JsonNode.Parse(Native.Pwsh(probe, [.. common, "-Port", second.Port.ToString(System.Globalization.CultureInfo.InvariantCulture), "-Request", "-ConnectionOnly"]).Out)!;
-        Assert.True(correct["ok"]!.GetValue<bool>(), correct.ToJsonString());
-        Assert.Equal(second.Process.Id, correct["pid"]!.GetValue<int>());
+        Assert.False(File.Exists(request));
+        Assert.Equal(second.Process.Id, InstallNative.TcpListener(second.Port));
+        var owner = RestartOwner.Find(iso.Relay, "daemon", Native.Exe, second.Port)!;
+        Assert.Equal(second.Process.Id, owner.Pid);
+        Assert.True(RestartOwner.Request(request, owner, "force", "sha256:fixture "));
+        Assert.StartsWith($"force pid:{second.Process.Id} sha256:fixture ", File.ReadAllText(request), StringComparison.Ordinal);
         Assert.True(second.Process.WaitForExit(10_000));
         Assert.Equal(0, second.Process.ExitCode);
         Thread.Sleep(2100);  // the other watcher gets a full polling cycle and must remain alive

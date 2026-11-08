@@ -58,7 +58,10 @@ public static class NativeUpdater
         bool entered = false;
         try
         {
-            DetachedProcess.Start(Path.Join(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe"), ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", Path.Join(Source, "scripts", "update-native.ps1"), "-Root", Source], () => entered = true, show: 0);
+            // The engine updates itself (NexusRelay.exe --update: download, checks, the new package's own --install),
+            // started by Explorer outside the daemon's job so that it survives the daemon's restart. No script host.
+            string self = Environment.ProcessPath ?? throw new InvalidOperationException("Engine path unknown");
+            DetachedProcess.Start(self, ["--update"], () => entered = true, show: 0);
         }
         catch (Exception e) // Boundary: any launch failure is reported as the update status, never thrown to the HTTP caller.
         {

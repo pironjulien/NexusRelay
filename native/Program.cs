@@ -20,6 +20,14 @@ public static class Program
             Console.WriteLine(StdioBridge.WritePointer(self));
             return 0;
         }
+        if (args.Length == 1 && args[0] == "--version") { Console.WriteLine(RelayPaths.Version); return 0; }
+        if (args.Length >= 1 && args[0] == "--install") return Installer.RunCli(args);
+        if (args.Length == 1 && args[0] == "--update") return SelfUpdate.Run();
+        if (args.Length == 1 && args[0] == "--remove-task")
+        {
+            foreach (string name in RelayTask.Remove(new WindowsTaskStore(), [RelayTask.Name, .. RelayTask.Legacy])) Console.WriteLine($"Scheduled task '{name}' removed.");
+            return 0;
+        }
         if (args.Length >= 1 && args[0] == "--settings") return RelaySettings.RunCli(args);
         if (args.Length >= 1 && args[0] is "--register-hooks" or "--register-clients") return Registration.RunCli(args);
         if (args.Contains("--router-status", StringComparer.Ordinal)) { Console.WriteLine(CodexRouter.Inspect().ToJsonString()); return 0; }

@@ -6,14 +6,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.14.0] - 2026-11-08
+
 ### Changed
+- Installation and updates are in the engine: `NexusRelay.exe --install` (C#) does every step the PowerShell
+  installer did, with the same result on the PC: app folder, immutable engine copy in `versions`, stable copy `bin`
+  checked before and after its switch, settings, shared token, host, daemon spec, cooperative restart requests of the
+  daemon and the sidecar (ownership checked through the Windows TCP table and the process image), scheduled task
+  "NexusRelay" through the Task Scheduler API, Antigravity plugin, sidecar and project, edit hooks, user variable
+  `NEXUS_MCP_TOKEN` and the clients declared. Its messages are in English, and in French when Windows is displayed in
+  French.
+- `get.ps1` is a minimal starter: it downloads the release package, checks it against `SHA256SUMS.txt` and, when the
+  GitHub CLI is signed in, its build provenance, then starts the package's own engine. `install.ps1` only builds the
+  engine of a clone (and runs `test.ps1` before anything is installed), or starts the engine of an unpacked release
+  (what the `get.ps1` of an earlier version runs).
+- The daemon's update (`POST /api/update`) starts the engine itself (`NexusRelay.exe --update`: download, checks, the
+  new package's `--install`), no longer Windows PowerShell with `-ExecutionPolicy Bypass` on a script.
+- A failed installation or update puts the previous one back: app folder, stable copy, spec, settings, engine
+  pointer, Antigravity plugin, sidecar and configuration, scheduled task; the daemon and the sidecar are asked to
+  restart on the restored engine. Old engine folders are removed only once the run has succeeded, and never while an
+  engine runs from them.
+- Uninstalling the task: `NexusRelay.exe --remove-task` (was `scripts\RelayTask.ps1 -Remove`).
 - Restarting the Codex app finds its package natively (the user's package folder, confirmed by the Windows package
   API) instead of starting a hidden PowerShell child.
-- The installer (`install.ps1`) and the commit guard installer (`scripts/install_commit_guard.ps1`) speak English,
-  and French when Windows is displayed in French; they were French only. The `lang` setting still chooses the language
-  of the instructions deployed for the agents, which now includes the description of the Antigravity sidecar.
+- The commit guard installer (`scripts/install_commit_guard.ps1`) speaks English, and French when Windows is
+  displayed in French; it was French only. The `lang` setting still chooses the language of the instructions deployed
+  for the agents, which now includes the description of the Antigravity sidecar.
 
 ### Removed
+- `scripts\update-native.ps1`, `RelayTask.ps1`, `Restart-Relay.ps1`, `Remove-RelayVersions.ps1`,
+  `Resolve-NexusToken.ps1`, `Resolve-RelayPath.ps1` and `Configure-AntigravityRelay.ps1`, and their test fixtures:
+  their logic is in the engine, covered by xUnit tests (fresh install, update while an engine runs, failure then
+  restore at each step, scheduled task migration, restart ownership, token, cleanup of old versions).
+- `NEXUS_RELAY_DOWNLOAD_ONLY`, a test variable of `get.ps1` that nothing used.
 - `native/QUALIFICATION.md`, the October qualification report of the switch from Python, which no longer described
   the product (the Git history keeps it).
 - The daemon supervisor no longer reads the retired `python` key of its spec: every native install writes `exe`.
@@ -806,7 +831,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - English tool descriptions with titles and MCP annotations; `reply` accepts `done`/`refused`/`failed` and
   `agree`/`disagree`.
 
-[Unreleased]: https://github.com/pironjulien/NexusRelay/compare/v1.13.11...HEAD
+[Unreleased]: https://github.com/pironjulien/NexusRelay/compare/v1.14.0...HEAD
+[1.14.0]: https://github.com/pironjulien/NexusRelay/compare/v1.13.11...v1.14.0
 [1.13.11]: https://github.com/pironjulien/NexusRelay/compare/v1.13.10...v1.13.11
 [1.13.10]: https://github.com/pironjulien/NexusRelay/compare/v1.13.9...v1.13.10
 [1.13.9]: https://github.com/pironjulien/NexusRelay/compare/v1.13.8...v1.13.9

@@ -2,8 +2,8 @@ namespace NexusRelay;
 
 /// <summary>
 /// Marks this engine's versioned folder (%LOCALAPPDATA%\NexusRelay\versions\&lt;fingerprint&gt;) as in use for the whole
-/// life of the process. install.ps1 writes an empty engine.lock in each versioned folder; every engine opens the one
-/// beside it without delete sharing and never closes it, so the cleanup of old versions (scripts\Remove-RelayVersions.ps1)
+/// life of the process. The installer writes an empty engine.lock in each versioned folder; every engine opens the one
+/// beside it without delete sharing and never closes it, so the cleanup of old versions (EngineFolders, InstallSupport.cs)
 /// sees the folder in use whatever spelling of the path started the process (junction, MSIX redirection, elevated view).
 /// Never the stable copy (~\.nexus\nexus-relay\bin, and its bin.new-* / bin.old-* siblings): every update replaces it,
 /// so nothing may hold a file in it (1.13.10 copied the lock there, and a waiting Stop hook blocked the next update).
