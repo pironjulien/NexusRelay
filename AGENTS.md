@@ -1,5 +1,29 @@
 # Development instructions
 
+## Working with peers
+
+These rules apply to Claude, Codex and Antigravity alike.
+
+- Reach a peer through the relay only (`send`/`reply`). Never its CLI (`codex exec`…) or app-server, not even in the
+  background, and never a "message to paste" for the user: both put the user's accounts at risk or make the user the
+  relay.
+- Each wake starts from an empty context: state the task (or "review only"), the repository path, the commit SHAs and
+  the expected result. A woken peer never asks the user a question (no question box, no sub-agent): the user does not
+  read relay chats. If a peer shows the user a question, fix the relay rather than working around it.
+- A silent peer is restarted before giving up: `status()` / `track(id)`, then check its process and window; start the
+  app if it is closed; if it is frozen (no redraw, input refused), close it cleanly (never kill the whole process tree)
+  and start it again, then resend through the relay. Trigger: a first failed wake, or a ring not taken within 5 min.
+  Hand back only after that attempt, saying what was tried.
+- An agreement between agents fixes a plan, never the user's go-ahead. A trial that drives the user's apps (sending,
+  picking a model, even a "mini-run") waits for the user's explicit approval and never starts during a pause the user
+  decided. Close a debate with "plan only, nothing runs without the user's go-ahead".
+- Cross review only when the user asks for one (or in the cases of the nexus-relay skill), never after every change.
+  Both peers, independent opinions. Never trust a report ("100 % done"): read the diff, rerun the tests, prove each
+  defect with a test that fails on the old code. Never ask a model to grade the other agents (it caused an
+  oscillation loop).
+- The three agents may edit each other's configuration (CLAUDE.md, GEMINI.md, AGENTS.md, scripts) when useful, and
+  say so; flag a risky behaviour without turning it into a restrictive rule.
+
 ## Pitfalls
 
 - Claude is woken through the local per-session inbox of Claude Code (named pipe, `~\.claude\sessions\<pid>.json` and
