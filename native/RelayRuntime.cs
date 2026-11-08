@@ -192,6 +192,8 @@ public sealed class RelayRuntime : IDisposable
             else box.Release(item.Message.Id, item.Attempt, "native-codex");
         }
         string? status = result["status"]?.ToString();
+        Journal.Note(messages[0].Sender, "wake", agent, Journal.WakeIssues.GetValueOrDefault(status ?? "", "✗"), (Reservations.Now() - now) * 1000,
+            status is "started" ? null : result["reason"]?.ToString(), messages[0].Id, result["via"]?.ToString(), AppTransport.Truth(result["activated"]));
         int failed = status is "deferred" or "failed" ? (holds[group.Key]?["streak"]?.GetValue<int>() ?? 0) + 1 : 0;
         holds[group.Key] = new JsonObject { ["status"] = status, ["streak"] = failed, ["tried"] = now, ["reason"] = result["reason"]?.DeepClone() };
         result["at"] = RelayBox.NowIso(); result["tried"] = now; result["topic"] = group.Key; result["holds"] = holds.DeepClone(); result["streak"] = failed;
@@ -247,6 +249,7 @@ public sealed class RelayRuntime : IDisposable
             string? reason = turn.Finished && turn.At is double ended && now - ended >= 5 ? turn.Error ?? "Turn ended without a Relay reply" : !turn.Finished && turn.Last is double last && now - last >= 1200 ? "Turn silent for twenty minutes" : null;
             if (reason is null || box.Events(message.Id).Count != events.Count || box.Replies(message.Id).Any(r => r.Sender == "codex") || AppSessions.CodexTurn(chat.Path, since) != turn) continue;
             box.Event(message.Id, "arrêt sur erreur", new() { ["conversation"] = id, ["reason"] = reason, ["via"] = "journal Codex" });
+            Journal.Note(message.Sender, "tour", "codex", "✗", null, reason, message.Id, "journal Codex");
             var ring = box.RingState(message.Id) ?? new(); ring["agent"] = "codex"; ring["incident"] = reason; ring["incident_at"] = RelayBox.NowIso(); ring["halt"] = true; box.SetRingState(message.Id, ring);
             if (wake["conversation"]?.ToString() == id && box.TopicState(message.Topic, "codex")?["conversation"]?.ToString() == id && latest.GetValueOrDefault(id!) <= since + 3)
                 box.SetTopicState(message.Topic, "codex", new() { ["conversation"] = null, ["dropped"] = id, ["at"] = RelayBox.NowIso(), ["why"] = reason });

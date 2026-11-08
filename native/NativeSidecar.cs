@@ -130,6 +130,7 @@ public sealed class NativeSidecar(RelayBox box, NativeAgentApi api)
     }
     public JsonObject Deliver(string topic, List<RelayMessage> messages)
     {
+        double started = Reservations.Now();
         var owned = messages.Select(m => (Message: m, Attempt: Attempt(box, m))).Where(item => box.Claim(item.Message.Id, item.Attempt, "sidecar")).ToList();
         if (!owned.Any(item => !item.Message.Info))
         {
@@ -170,6 +171,7 @@ public sealed class NativeSidecar(RelayBox box, NativeAgentApi api)
                 box.SetClaim(item.Message.Id, item.Attempt, "sidecar", "delivered", new() { ["conversation"] = conversation });
                 box.Event(item.Message.Id, "livré", new() { ["conversation"] = conversation, ["via"] = "sidecar", ["attempt"] = item.Attempt }); failures.Remove(item.Message.Id);
             }
+            Journal.Note(messages[0].Sender, "livraison", "antigravity", "✓", (Reservations.Now() - started) * 1000, null, messages[0].Id, "sidecar");
             return new() { ["status"] = "delivered", ["conversation"] = conversation };
         }
         catch (Exception exception)
@@ -183,6 +185,7 @@ public sealed class NativeSidecar(RelayBox box, NativeAgentApi api)
                 else { box.Release(item.Message.Id, item.Attempt, "sidecar"); failures[item.Message.Id] = Reservations.Now(); }
                 box.Event(item.Message.Id, uncertain ? "livraison incertaine" : "livraison ratée", new() { ["via"] = "sidecar", ["attempt"] = item.Attempt, ["reason"] = exception.Message });
             }
+            Journal.Note(messages[0].Sender, "livraison", "antigravity", uncertain ? "~" : "✗", (Reservations.Now() - started) * 1000, exception.Message, messages[0].Id, "sidecar");
             return AppTransport.Result(uncertain ? "uncertain" : "failed", exception.Message);
         }
     }
@@ -201,7 +204,7 @@ public sealed class NativeSidecar(RelayBox box, NativeAgentApi api)
             var message = box.Get(id);
             if (message is null || !CodexSpace.AcceptsCreated(message.Created) || RelayPaths.RelayHost() != "all" && message.Sender != RelayPaths.RelayHost()) continue;
             var turn = AppSessions.AntigravityError(conversation) ?? AppSessions.AntigravityTurn(conversation);
-            if (turn.Error is not null && (turn.At is null || turn.At >= since - 5)) { box.Event(id, "arrêt sur erreur", new() { ["conversation"] = conversation, ["reason"] = turn.Error, ["via"] = "sidecar" }); watched.Add((id, attempt)); }
+            if (turn.Error is not null && (turn.At is null || turn.At >= since - 5)) { box.Event(id, "arrêt sur erreur", new() { ["conversation"] = conversation, ["reason"] = turn.Error, ["via"] = "sidecar" }); Journal.Note(message.Sender, "tour", "antigravity", "✗", null, turn.Error, id, "sidecar"); watched.Add((id, attempt)); }
         }
     }
     public static readonly TimeSpan IdleStep = TimeSpan.FromSeconds(5);

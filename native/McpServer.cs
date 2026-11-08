@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
@@ -594,15 +595,18 @@ public sealed partial class McpServer
     public static JsonObject CallToolPayload(string toolName, JsonObject args, string? explicitAgent = null)
     {
         var late = new List<RelayMessage>();
+        var watch = Stopwatch.StartNew();
+        string? me = null; RelayBox? box = null;
         try
         {
-            var me = ResolveAgent(explicitAgent);
-            var box = new RelayBox();
+            me = ResolveAgent(explicitAgent);
+            box = new RelayBox();
             if (toolName != "wait_reply") late = CollectLateReplies(me, box);
             var result = ExecuteTool(toolName, args, me, box);
             if (toolName == "wait_reply") late = CollectLateReplies(me, box);
             if (result["status"] is null)
                 result["status"] = "success";
+            Journal.Tool(me, toolName, args, result, watch, box);
             return WithLate(result, late);
         }
         catch (Exception ex) when (ex is RelayError or ArgumentException or IOException or TimeoutException)
@@ -612,6 +616,7 @@ public sealed partial class McpServer
                 ["status"] = "error",
                 ["error"] = ex.Message,
             };
+            Journal.Tool(me, toolName, args, err, watch, box);
             return WithLate(err, late);
         }
     }

@@ -6,6 +6,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.14.1] - 2026-11-08
+
+### Fixed
+- The common journal of the Nexus tools is written again (`%USERPROFILE%\.nexus\journal\relay\<agent>\<YYYY-MM>.jsonl`,
+  format v1): the move to the native engine (30/10) had dropped it with the Python engine, so NexusSystem and `NexusJournal revue`
+  saw no relay activity since 30/10. One line per `send`, `read`, `reply`, `wait_reply`, `cancel`, `close`, wake
+  (`wake`, `✗` with its short cause for a failed one), Antigravity delivery (`livraison`) and peer turn stopped on an
+  error (`tour`); `outil` is the engine version, `ms` the duration, `erreur` a short cause, never the text of a message.
+  A test checks that each action writes its line in the common format.
+
 ## [1.14.0] - 2026-11-08
 
 ### Changed
@@ -831,7 +841,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - English tool descriptions with titles and MCP annotations; `reply` accepts `done`/`refused`/`failed` and
   `agree`/`disagree`.
 
-[Unreleased]: https://github.com/pironjulien/NexusRelay/compare/v1.14.0...HEAD
+[Unreleased]: https://github.com/pironjulien/NexusRelay/compare/v1.14.1...HEAD
+[1.14.1]: https://github.com/pironjulien/NexusRelay/compare/v1.14.0...v1.14.1
 [1.14.0]: https://github.com/pironjulien/NexusRelay/compare/v1.13.11...v1.14.0
 [1.13.11]: https://github.com/pironjulien/NexusRelay/compare/v1.13.10...v1.13.11
 [1.13.10]: https://github.com/pironjulien/NexusRelay/compare/v1.13.9...v1.13.10
