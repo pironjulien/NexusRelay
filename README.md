@@ -17,7 +17,6 @@ one agent to another and the answers come back, without you copy-pasting between
 [![.NET 10](https://img.shields.io/badge/.NET-10-512BD4?style=flat-square)](native/NexusRelay.csproj)
 [![Windows 10 | 11](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?style=flat-square)](#requirements)
 [![MCP](https://img.shields.io/badge/MCP-server-7ee2a8?style=flat-square)](https://registry.modelcontextprotocol.io/)
-[![Status: experimental](https://img.shields.io/badge/status-experimental-orange?style=flat-square)](#status)
 
 [![Website](https://img.shields.io/badge/%F0%9F%8C%90_Website-julienpiron.fr-1f6feb?style=for-the-badge)](https://julienpiron.fr/nexusrelay/)
 [![Get it with NexusSystem](https://img.shields.io/badge/%F0%9F%93%A6_Get_it-NexusSystem-0078D4?style=for-the-badge)](https://github.com/pironjulien/NexusSystem)
@@ -28,8 +27,8 @@ one agent to another and the answers come back, without you copy-pasting between
 
 <a id="status"></a>
 
-> [!WARNING]
-> **Experimental, Windows only.** Waking Codex drives the Codex desktop app through its local debugging port, and
+> [!IMPORTANT]
+> **Windows only.** Waking Codex drives the Codex desktop app through its local debugging port, and
 > waking Antigravity goes through its sidecar API. Both depend on how those apps look and behave today: an app update
 > can break a wake until the relay's interface maps are refreshed (`survey`). Use at your own risk.
 
