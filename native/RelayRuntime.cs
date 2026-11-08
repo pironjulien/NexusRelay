@@ -53,10 +53,11 @@ public sealed class RelayRuntime : IDisposable
     private void RecoverDelivery(RelayMessage message)
     {
         var claims = box.Claims(message.Id).Where(c => c.Claim["owner"]?.ToString() == "native-codex").ToList();
-        if (claims.Any(c => RelayBox.ClaimLabel(c.Claim) is "uncertain" or "submitting"))
+        if (claims.Any(c => RelayBox.ClaimLabel(c.Claim) is "uncertain" or "submitting") && !ResolveUncertain(message, claims))
         {
             box.SetRingState(message.Id, new() { ["attempt"] = claims.Max(c => c.Attempt), ["status"] = "uncertain", ["recheck_at"] = Reservations.Now() + 300 }); return;
         }
+        claims = box.Claims(message.Id).Where(c => c.Claim["owner"]?.ToString() == "native-codex").ToList();
         foreach (var (attempt, claim) in claims)
         {
             string phase = RelayBox.ClaimLabel(claim);
@@ -71,6 +72,37 @@ public sealed class RelayRuntime : IDisposable
         }
         if (box.RingState(message.Id) is null && box.Events(message.Id).LastOrDefault(e => e["kind"]?.ToString() == "réveil" && e["status"]?.ToString() is "started" or "uncertain") is JsonObject last)
             box.SetRingState(message.Id, new() { ["attempt"] = 1, ["status"] = last["status"]?.DeepClone(), ["recheck_at"] = Reservations.Now() + 300 });
+    }
+    /// <summary>
+    /// An uncertain Codex wake is settled by Codex's journal, never by a guess (08/11: Julien came back to Codex during the
+    /// 20 s check, the text stayed in the chat's draft and the request was never delivered nor replayed). Received: delivered.
+    /// Absent from every journal two minutes after Enter: not delivered, so the bounded retry may wake again. Otherwise it
+    /// stays uncertain. A submission still running in this process is never judged.
+    /// </summary>
+    private bool ResolveUncertain(RelayMessage message, List<(int Attempt, JsonObject Claim)> claims)
+    {
+        const double Grace = 120;
+        double now = Reservations.Now();
+        var open = claims.Where(c => RelayBox.ClaimLabel(c.Claim) is "uncertain" or "submitting").ToList();
+        if (open.Any(c => RelayBox.ClaimLabel(c.Claim) == "submitting" || AppSessions.Epoch(c.Claim["submitted"]?.ToString()) is null)) return false;
+        double since = open.Min(c => AppSessions.Epoch(c.Claim["submitted"]?.ToString())!.Value);
+        bool? received = AppSessions.CodexReceived(message.Id, since);
+        int attempt = open.Max(c => c.Attempt);
+        if (received == true)
+        {
+            foreach (var (a, _) in open) box.SetClaim(message.Id, a, "native-codex", "delivered", new() { ["proof"] = "codex journal" });
+            box.SetRingState(message.Id, new() { ["agent"] = "codex", ["attempt"] = attempt, ["max"] = 3, ["status"] = "started", ["recheck_at"] = now + 300, ["proof"] = "codex journal" });
+            box.Event(message.Id, "livraison confirmée", new() { ["via"] = "codex journal" });
+            return true;
+        }
+        if (received == false && now - since >= Grace)
+        {
+            foreach (var (a, _) in open) box.SetClaim(message.Id, a, "native-codex", "not_delivered", new() { ["proof"] = "absent from codex journal" });
+            box.SetRingState(message.Id, new() { ["agent"] = "codex", ["attempt"] = attempt, ["max"] = 3, ["status"] = "not_delivered", ["recheck_at"] = now });
+            box.Event(message.Id, "livraison non reçue", new() { ["via"] = "codex journal", ["reason"] = "Absent from Codex's journal: a new wake is allowed" });
+            return true;
+        }
+        return false;
     }
     private static readonly string[] Workers = ["codex", "antigravity", "claude", "rangement"];
     public static bool NeedsWake(RelayMessage message)

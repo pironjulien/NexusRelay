@@ -251,6 +251,53 @@ public sealed class EngineTests : IDisposable
     }
 
     [Fact]
+    public void Uncertain_codex_wake_is_settled_by_the_codex_journal_and_a_leftover_draft_is_recognized()
+    {
+        iso.Set("NEXUS_RELAY_HOST", "claude");
+        var box = new RelayBox(); int calls = 0;
+        using var runtime = new RelayRuntime(box, (_, messages, submit) => { calls++; submit(); return new() { ["status"] = "started", ["via"] = "test adapter" }; }, () => { });
+        RelayMessage Uncertain(string text, double agoSeconds)
+        {
+            var message = box.Post("claude", "codex", text, "journal-proof");
+            Assert.True(box.Claim(message.Id, 1, "native-codex"));
+            box.SetClaim(message.Id, 1, "native-codex", "submitting", new() { ["submitted"] = DateTimeOffset.UtcNow.AddSeconds(-agoSeconds).ToString("o") });
+            box.SetClaim(message.Id, 1, "native-codex", "uncertain");
+            return message;
+        }
+        // Enter did not take (08/11): nothing in Codex's journal two minutes later, so the wake may be sent again.
+        var lost = Uncertain("Lost in the draft", 200);
+        runtime.Recover();
+        Assert.True(runtime.Step("codex") is not null && calls == 1, "An uncertain wake absent from Codex's journal must be retried");
+        Assert.Equal("not_delivered", box.ClaimOf(lost.Id, 1)?["phase"]?.ToString());
+        Assert.Equal(2, box.RingState(lost.Id)?["attempt"]?.GetValue<int>());
+        box.MarkRead(lost);
+        // Codex's journal holds the user turn: delivered, never sent twice.
+        var received = Uncertain("Delivered while Julien came back", 200);
+        string folder = Path.Join(iso.CodexHome, "sessions", "2026", "11", "08");
+        Directory.CreateDirectory(folder);
+        string wake = AppAutomation.WakeText([received.Id]);
+        string Json(string s) => s.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("\"", "\\\"", StringComparison.Ordinal); // as Codex writes its journal
+        File.WriteAllText(Path.Join(folder, "rollout-test.jsonl"),
+            "{\"type\":\"event_msg\",\"payload\":{\"type\":\"item_completed\",\"text\":\"" + Json($"status lists read(id=\"{received.Id}\")") + "\"}}\n" +
+            "{\"type\":\"response_item\",\"payload\":{\"type\":\"message\",\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"" + Json(wake) + "\"}]}}\n");
+        runtime.Recover();
+        Assert.True(runtime.Step("codex") is null && calls == 1, "A wake found in Codex's journal must not be sent again");
+        Assert.Equal("delivered", box.ClaimOf(received.Id, 1)?["phase"]?.ToString());
+        Assert.Equal("started", box.RingState(received.Id)?["status"]?.ToString());
+        box.MarkRead(received);
+        // Too early to judge: stays uncertain.
+        var fresh = Uncertain("Just sent", 10);
+        runtime.Recover();
+        Assert.True(runtime.Step("codex") is null && calls == 1 && box.RingState(fresh.Id)?["status"]?.ToString() == "uncertain", "Within the grace period the wake stays uncertain");
+        // Only Relay's exact wake text is its own leftover; anything else in the draft is Julien's.
+        Assert.True(AppAutomation.IsRelayDraft(AppAutomation.WakeText(["a-1", "b-2"])));
+        Assert.True(AppAutomation.IsRelayDraft("  " + wake + "\n"));
+        Assert.False(AppAutomation.IsRelayDraft(wake + " et aussi regarde FMW"));
+        Assert.False(AppAutomation.IsRelayDraft("Salut, read(id=\"x\")"));
+        Assert.False(AppAutomation.IsRelayDraft(""));
+    }
+
+    [Fact]
     public void Tidy_project_matching_ownership_folding_restart_and_app_guards()
     {
         var box = new RelayBox();

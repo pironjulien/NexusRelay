@@ -2,7 +2,7 @@
   "$schema": "https://antigravity.google/schemas/v1/plugin.json",
   "name": "nexus-relay",
   "displayName": "NexusRelay",
-  "version": "1.15.0",
+  "version": "1.15.1",
   "description": "Un salon local où Antigravity, Claude Code et Codex travaillent ensemble sur le même PC : messages, relectures croisées, réservations de fichiers.",
   "logo": "logo.png",
   "suggestedPrompts": [

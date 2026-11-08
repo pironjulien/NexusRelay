@@ -6,6 +6,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.15.1] - 2026-11-08
+
+### Fixed
+- An uncertain Codex wake is now settled by Codex's own journal instead of staying stuck: when the user came back to
+  Codex during the send check, the wake text stayed in the topic chat's draft, the request was never delivered, never
+  replayed, and every later wake of the topic waited behind that draft. Two minutes after Enter, a wake found as a user
+  turn in Codex's journal counts as delivered (never sent twice); one absent from every journal counts as not delivered
+  and the bounded retry may wake again.
+- A draft that is exactly Relay's own wake text is recognized as Relay's leftover and cleared in the verified topic
+  chat before the new wake; any other draft is still the user's and is never touched.
+
 ## [1.15.0] - 2026-11-08
 
 ### Changed
@@ -863,7 +874,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - English tool descriptions with titles and MCP annotations; `reply` accepts `done`/`refused`/`failed` and
   `agree`/`disagree`.
 
-[Unreleased]: https://github.com/pironjulien/NexusRelay/compare/v1.14.1...HEAD
+[Unreleased]: https://github.com/pironjulien/NexusRelay/compare/v1.15.1...HEAD
+[1.15.1]: https://github.com/pironjulien/NexusRelay/compare/v1.15.0...v1.15.1
+[1.15.0]: https://github.com/pironjulien/NexusRelay/compare/v1.14.1...v1.15.0
 [1.14.1]: https://github.com/pironjulien/NexusRelay/compare/v1.14.0...v1.14.1
 [1.14.0]: https://github.com/pironjulien/NexusRelay/compare/v1.13.11...v1.14.0
 [1.13.11]: https://github.com/pironjulien/NexusRelay/compare/v1.13.10...v1.13.11

@@ -2,8 +2,18 @@ using System.Text.Json.Nodes;
 
 namespace NexusRelay;
 
-public static class AppAutomation
+public static partial class AppAutomation
 {
+    [System.Text.RegularExpressions.GeneratedRegex("read\\(id=\"([^\"]+)\"\\)")]
+    private static partial System.Text.RegularExpressions.Regex WakeIds();
+    /// <summary>A draft that is exactly a Relay wake text is Relay's own leftover (Enter that did not take), never Julien's.</summary>
+    public static bool IsRelayDraft(string? draft)
+    {
+        if (string.IsNullOrWhiteSpace(draft)) return false;
+        var ids = WakeIds().Matches(draft).Select(m => m.Groups[1].Value).ToList();
+        return ids.Count > 0 && draft.Trim() == WakeText(ids).Trim();
+    }
+    private const string ClearComposer = "(()=>{const e=" + Composer + ";if(!e)return false;e.focus();document.execCommand('selectAll');document.execCommand('delete');return true})()";
     public const string Composer = "[...document.querySelectorAll('[contenteditable=true],textarea')].filter(e=>e.getClientRects().length).pop()";
     public const string ComposerText = "(()=>{const e=" + Composer + ";return e?(e.value??e.innerText):null})()";
     private const string View = "[...document.querySelectorAll('[aria-current=page]')].map(e=>(e.getAttribute('aria-label')||e.innerText).trim())";
@@ -130,7 +140,13 @@ public static class AppAutomation
             }
             bool ContextValid() => !explicitSpace || ProjectMatches(ProjectEvidence(page), space) && (known is not null ? Selected(page) == known.Id : Selected(page) is null && (page.Eval(CurrentProject)?.ToString() ?? "").EndsWith(": " + space["label"], StringComparison.Ordinal));
             if (!AppTransport.Wait(() => page.Eval(ComposerText) is not null)) return Outcome("failed", "Codex input field missing");
-            if (!string.IsNullOrWhiteSpace(page.Eval(ComposerText)?.ToString())) return Outcome("deferred", "Codex draft is not empty; nothing overwritten");
+            if (page.Eval(ComposerText)?.ToString() is string draft && !string.IsNullOrWhiteSpace(draft))
+            { // 08/11: a wake whose Enter did not take left its text in the topic chat's draft, and every later wake of the topic waited behind it.
+                if (!IsRelayDraft(draft) || !ContextValid() || Present()) return Outcome("deferred", "Codex draft is not empty; nothing overwritten");
+                if (page.Eval(ComposerText)?.ToString() != draft) return Outcome("deferred", "Codex draft changed; nothing overwritten");
+                page.Eval(ClearComposer);
+                if (!AppTransport.Wait(() => string.IsNullOrWhiteSpace(page.Eval(ComposerText)?.ToString()), 2)) return Outcome("deferred", "Relay's leftover draft could not be cleared");
+            }
             if (!ContextValid()) return Outcome("failed", "Project context changed before insertion; nothing typed");
             if (Present()) return Outcome("deferred", "Julien returned to Codex");
             page.Eval($"(()=>{{const e={Composer};e.focus();return true}})()");

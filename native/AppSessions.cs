@@ -119,6 +119,30 @@ public static partial class AppSessions
         }
         catch (IOException) { return new(false, null); }
     }
+    /// <summary>
+    /// Proof of a Codex wake from Codex's own journal: the user turn carrying read(id="…") is written as soon as Enter takes
+    /// effect, in whatever chat received it. True: received; false: no journal written since <paramref name="since"/> holds it;
+    /// null: a journal could not be read. A tool output quoting the id (status, read) is not a user turn and does not count.
+    /// </summary>
+    public static bool? CodexReceived(string messageId, double since)
+    {
+        string needle = "read(id=\\\"" + messageId + "\\\")";
+        var after = DateTimeOffset.FromUnixTimeMilliseconds((long)((since - 5) * 1000)).UtcDateTime;
+        try
+        {
+            foreach (string file in Lists.CodexSessionFolders.Select(f => System.IO.Path.Join(CodexHome, f)).Where(Directory.Exists)
+                .SelectMany(f => Directory.EnumerateFiles(f, "rollout-*.jsonl", SearchOption.AllDirectories)).Where(f => File.GetLastWriteTimeUtc(f) >= after))
+            {
+                using var stream = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+                using var reader = new StreamReader(stream, Encoding.UTF8);
+                while (reader.ReadLine() is string line)
+                    if (line.Contains(needle, StringComparison.Ordinal) && line.Contains("\"type\":\"response_item\"", StringComparison.Ordinal) && line.Contains("\"role\":\"user\"", StringComparison.Ordinal))
+                        return true;
+            }
+            return false;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return null; }
+    }
     public static AppTurn AntigravityTurn(string conversation)
     {
         if (!RelayPaths.IsConversationId(conversation)) return new(false, null);
