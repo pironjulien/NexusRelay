@@ -45,8 +45,8 @@ A received request is answered through `read(id)` then `reply(id, text)` to its 
   an edit whose expected text changed meanwhile is refused (read the file again and redo it). For long multi-file work
   a peer might overlap, `reserve(paths, reason)` first (absolute paths, folders or patterns; refused with who, why and
   until when if another agent holds them), then `release()` when done; `reservations()` lists who holds
-  what. The same tools also answer to the mcp_agent_mail names `file_reservation_paths`, `release_file_reservations`
-  and `list_file_reservations`.
+  what. The same tools also answer to the mcp_agent_mail names `file_reservation_paths` and
+  `release_file_reservations`.
 - `search(query, topic=…, sender=…)` searches the whole room history (without marking anything read);
   `summary(topic)` summarizes a topic (participants, open requests, outcomes, last messages) without rereading it all.
 - One conversation per topic in Codex and Antigravity, kept from one request to the next (context, cache). A topic is

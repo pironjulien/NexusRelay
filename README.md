@@ -172,11 +172,11 @@ one in service.
 
 | Tool | What it does |
 |---|---|
-| `send` | Post a message to `codex` or `antigravity` in a topic (attachments, optional deadline); `to=["codex", "antigravity"]` asks both (cross review) |
+| `send` | Post a message to `claude`, `codex` or `antigravity` in a topic (attachments, optional deadline); `to=["codex", "antigravity"]` asks both (cross review) |
 | `wait_reply` | Wait for the answer (600 s max per call); with a list of ids, waits for all of them |
 | `cancel` | Withdraw a request the recipient has not taken yet (no more wakes; refused once read, in progress or answered) |
 | `reply` | Answer a message, with its outcome: done, refused, failed |
-| `progress` | Tell the host you are working on it (wakes nobody) |
+| `progress` | Tell the sender you are working on it (wakes nobody) |
 | `inbox`, `read` | Unread messages; read one |
 | `track` | Where a message is: posted, rings, read, in progress, answered, late |
 | `close` | Close a topic (its conversations are archived) |
@@ -289,7 +289,7 @@ the daemon's environment win.
 | `NEXUS_RELAY_CODEX_ROUTER_START` | `codex_router_start` | none | Commands that start that router, tried in order (`;`-separated) |
 | `NEXUS_RELAY_HOME` | — | `~\.nexus\relay` | Room location |
 | `NEXUS_RELAY_CODEX_PORT`, `NEXUS_RELAY_AGY_PORT` | — | `9223`, `9227` | Debugging ports of Codex and Antigravity |
-| `NEXUS_JOURNAL_HOME` | — | `%LOCALAPPDATA%\NexusJournal` | Action log |
+| `NEXUS_JOURNAL_HOME` | — | `~\.nexus\journal` | Action log |
 | `NEXUS_RELAY_UPDATE_CHECK` | — | on | `0`: never look up the latest version |
 | `NEXUS_RELAY_HOST` | `host` | `all` | Who opens exchanges: `all` (every AI app, the default) or a single host (`claude`, `codex` or `antigravity`, never woken) |
 | `NEXUS_RELAY_LANG` | `lang` | `en` | Language of the texts agents receive (tool results, errors, wake text) and of the deployed instructions: `en` or `fr` |
@@ -344,12 +344,12 @@ install made by `get.ps1` (`%LOCALAPPDATA%\NexusRelay\app`) updates itself; a gi
 - **What is stored**: messages and attachments in `~\.nexus\relay\v1` (plain JSON, readable by your user account),
   a search index of those messages in `~\.nexus\relay\v1\index` (SQLite, rebuilt from the messages if deleted),
   interface maps of both apps in `~\.nexus\relay\v1\cartes` (element roles and visible labels, which can include
-  conversation titles shown on screen), and one line per action in `%LOCALAPPDATA%\NexusJournal\relay` (never a
+  conversation titles shown on screen), and one line per action in `~\.nexus\journal\relay` (never a
   message's text).
 - **How to remove everything**: remove the scheduled task (`NexusRelay.exe --remove-task`, from
   `~\.nexus\nexus-relay\bin`, removes "NexusRelay" and the older "Nexus Relay") and stop the `NexusRelay.exe` processes,
   then delete `~\.nexus\relay`, `~\.nexus\nexus-relay`, `%LOCALAPPDATA%\NexusRelay`,
-  `~\.nexus\daemons\specs\nexus-relay.json`, `%LOCALAPPDATA%\NexusJournal\relay`, the `nexus-relay` plugin in
+  `~\.nexus\daemons\specs\nexus-relay.json`, `~\.nexus\journal\relay`, the `nexus-relay` plugin in
   `~\.gemini\config\plugins` and its `sidecars` entry in `~\.gemini\config\config.json`.
 
 To report a vulnerability, see [SECURITY.md](SECURITY.md).
@@ -358,8 +358,8 @@ To report a vulnerability, see [SECURITY.md](SECURITY.md).
 
 - Windows only; tested with Codex desktop 26.1021 and Antigravity 2.26.
 - Interface automation is fragile by nature: after an app update, run `survey(app)` and `selftest`.
-- The host is never woken: it waits for answers with `wait_reply`. Claude Code cannot be woken at all, so with another
-  host, a message to Claude waits in its inbox.
+- The host is never woken: it waits for answers with `wait_reply`. Claude Code is woken only through its relay
+  session (see *Waking Claude*); without it, a message to Claude waits in its inbox.
 
 ## Development
 
