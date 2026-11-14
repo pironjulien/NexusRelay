@@ -6,6 +6,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.15.2] - 2026-11-14
+
+### Fixed
+- A stale request is no longer delivered late: a request past its due time (`due_min`), or not delivered within
+  12 hours (the delay after which an idle topic is archived), now expires instead of waking its recipient. Neither
+  the relay's wakes nor Antigravity's sidecar deliver it any more; it is marked `expired` with its reason, shown by
+  `track`, `status` (incidents) and the topic summary, `wait_reply` returns `expired`, Claude's Stop hook reports it
+  closed, and a recipient that opens it anyway is told it is obsolete (`reply` is refused). Before, a request due on
+  11/11 stayed queued while Antigravity's sidecar was down and was handed over three days later in a new
+  conversation, where Antigravity worked on an obsolete question.
+- Antigravity conversations abandoned long ago no longer count as an agent at work: a last step that is itself over
+  (`DONE`, `ERROR`, not a response asking for tools) with nothing after it for 30 minutes means the turn was given up.
+  Three conversations stopped on 29/10 by a failed hook or a system message, never archived, kept "an agent is working"
+  true for good, so every wake of an Antigravity without its sidecar was postponed (17 times for the request above)
+  instead of restarting it. A step still running, or a response waiting for its tools, keeps the turn busy whatever
+  its age.
+
 ## [1.15.1] - 2026-11-08
 
 ### Fixed
@@ -874,7 +891,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - English tool descriptions with titles and MCP annotations; `reply` accepts `done`/`refused`/`failed` and
   `agree`/`disagree`.
 
-[Unreleased]: https://github.com/pironjulien/NexusRelay/compare/v1.15.1...HEAD
+[Unreleased]: https://github.com/pironjulien/NexusRelay/compare/v1.15.2...HEAD
+[1.15.2]: https://github.com/pironjulien/NexusRelay/compare/v1.15.1...v1.15.2
 [1.15.1]: https://github.com/pironjulien/NexusRelay/compare/v1.15.0...v1.15.1
 [1.15.0]: https://github.com/pironjulien/NexusRelay/compare/v1.14.1...v1.15.0
 [1.14.1]: https://github.com/pironjulien/NexusRelay/compare/v1.14.0...v1.14.1

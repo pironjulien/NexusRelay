@@ -404,6 +404,13 @@ public sealed partial class McpServer
                 $"request cancelled by {message.Sender} at {at}: nothing to do, do not answer it",
                 $"demande annulée par {message.Sender} le {at} : rien à faire, n'y réponds pas"));
         }
+        if (RelayExpiry.Event(box, message) is JsonObject expired)
+        {
+            var at = expired["at"]?.GetValue<string>() ?? "";
+            throw new RelayError(RelayPaths.Tr(
+                $"request expired at {at} ({expired["reason"]}): obsolete, nothing to do, do not answer it",
+                $"demande expirée le {at} ({expired["reason"]}) : obsolète, rien à faire, n'y réponds pas"));
+        }
     }
 
     private static string? OutcomeOf(RelayBox box, RelayMessage message)
@@ -438,6 +445,11 @@ public sealed partial class McpServer
         {
             var at = cancelled["at"]?.GetValue<string>() ?? "";
             return RelayPaths.Tr($"cancelled at {at}", $"annulé le {at}");
+        }
+        if (RelayExpiry.Event(box, message) is JsonObject expired)
+        {
+            var at = expired["at"]?.GetValue<string>() ?? "";
+            return RelayPaths.Tr($"expired at {at}, never delivered: {expired["reason"]}", $"expirée le {at}, jamais livrée : {expired["reason"]}");
         }
         var outcome = OutcomeOf(box, message);
         if (outcome is not null)
@@ -848,6 +860,8 @@ public sealed partial class McpServer
         var rendered = RenderMessage(message, nonce, full: true);
         if (cancelled is not null)
             rendered["cancelled"] = cancelled["at"]?.GetValue<string>();
+        if (RelayExpiry.Event(box, message) is JsonObject expired)
+            rendered["expired"] = RelayPaths.Tr($"{expired["at"]}: {expired["reason"]} — obsolete, do not act on it", $"{expired["at"]} : {expired["reason"]} — obsolète, ne pas y donner suite");
         return new JsonObject
         {
             ["message"] = rendered,
@@ -1107,7 +1121,7 @@ public sealed partial class McpServer
                         results[id] = result;
                         continue;
                     }
-                    string? status = RestartPending ? "restarting" : CancelledEvent(box, original) is not null ? "cancelled" : Reservations.Now() >= deadline ? "timeout" : null;
+                    string? status = RestartPending ? "restarting" : CancelledEvent(box, original) is not null ? "cancelled" : RelayExpiry.Event(box, original) is not null ? "expired" : Reservations.Now() >= deadline ? "timeout" : null;
                     string? reason = null;
                     if (status is null && checkAvailability && Unavailable(box, original) is string unavailable) { status = "unavailable"; reason = unavailable; }
                     if (status is null) continue;
@@ -1422,7 +1436,7 @@ public sealed partial class McpServer
         {
             ["number"] = round,
             ["requests"] = current.Count,
-            ["pending"] = current.Count(m => CancelledEvent(box, m) is null && !messages.Any(r => r.ReplyTo == m.Id && r.Sender == m.To && !r.Info)),
+            ["pending"] = current.Count(m => CancelledEvent(box, m) is null && RelayExpiry.Event(box, m) is null && !messages.Any(r => r.ReplyTo == m.Id && r.Sender == m.To && !r.Info)),
             ["new_total"] = fresh,
             ["repeated_total"] = repeated,
             ["replies"] = replies,

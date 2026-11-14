@@ -43,7 +43,7 @@ public sealed class RelayRuntime : IDisposable
     public int Recover()
     {
         int count = 0;
-        foreach (string agent in new[] { "codex", "antigravity", "claude" }) foreach (var message in box.Unread(agent).Where(m => !(Reservations.Now() - AppSessions.Epoch(m.Created) >= 3600 || !NeedsWake(m) || box.RingState(m.Id)?["incident"] is not null)))
+        foreach (string agent in new[] { "codex", "antigravity", "claude" }) foreach (var message in box.Unread(agent).Where(m => !(Reservations.Now() - AppSessions.Epoch(m.Created) >= 3600 || RelayExpiry.Reason(m, Reservations.Now()) is not null || !NeedsWake(m) || box.RingState(m.Id)?["incident"] is not null)))
         {
             RecoverDelivery(message);
             pending.TryAdd(message.Id, Reservations.Now() - 2); count++;
@@ -135,6 +135,7 @@ public sealed class RelayRuntime : IDisposable
                         if (tidyOverride is not null) tidyOverride();
                         else
                         {
+                            RelayExpiry.Sweep(box);
                             WatchCodex();
                             AppLifecycle.MaintainAntigravity(box);
                             NativeCards.RefreshDue(box, () => beats[name] = Reservations.Now());
@@ -163,6 +164,7 @@ public sealed class RelayRuntime : IDisposable
             var message = box.Get(pair.Key);
             if (message is null || box.IsRead(message)) { pending.TryRemove(pair.Key, out _); continue; }
             if (message.To != agent || now - pair.Value < 2 || !NeedsWake(message)) continue;
+            if (RelayExpiry.Reason(message, now) is not null) { RelayExpiry.Expire(box, message, now); pending.TryRemove(message.Id, out _); continue; }
             if (agent == "codex") RecoverDelivery(message);
             var ring = box.RingState(message.Id);
             if (ring?["incident"] is not null) { pending.TryRemove(message.Id, out _); continue; }

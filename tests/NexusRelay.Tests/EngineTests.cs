@@ -187,6 +187,63 @@ public sealed class EngineTests : IDisposable
         Assert.Matches("^<cross-session-message from-name=\"NexusRelay\">\n[\\s\\S]*" + request.Id + "[\\s\\S]*\n</cross-session-message>$", frame["message"]!["content"]!.ToString());
     }
 
+    private static RelayMessage Aged(RelayBox box, RelayMessage message, double hours)
+    {
+        string path = Directory.EnumerateFiles(Path.Join(box.Root, "messages"), message.Id + ".*.json").Single();
+        var json = JsonNode.Parse(File.ReadAllText(path))!.AsObject();
+        json["created"] = Reservations.Iso(Reservations.Now() - hours * 3600);
+        File.WriteAllText(path, json.ToJsonString());
+        return box.Get(message.Id)!;
+    }
+
+    [Fact]
+    public void A_stale_request_expires_instead_of_being_delivered_late()
+    {
+        // 14/11: a request due on 11/11 was handed by Antigravity's sidecar three days later, in a new conversation.
+        iso.Set("NEXUS_RELAY_HOST", "all");
+        var box = new RelayBox();
+        var overdue = box.Post("claude", "antigravity", "Question périmée", "expiry-test", extra: new() { ["due"] = Reservations.Iso(Reservations.Now() - 60) });
+        var old = Aged(box, box.Post("claude", "antigravity", "Question de trois jours", "expiry-old"), 72);
+        var current = box.Post("claude", "antigravity", "Question actuelle", "expiry-current", extra: new() { ["due"] = Reservations.Iso(Reservations.Now() + 600) });
+        Assert.NotNull(RelayExpiry.Reason(overdue, Reservations.Now()));
+        Assert.NotNull(RelayExpiry.Reason(old, Reservations.Now()));
+        Assert.Null(RelayExpiry.Reason(current, Reservations.Now()));
+        Assert.Null(RelayExpiry.Reason(box.Post("claude", "antigravity", "Pour info", "expiry-info", info: true), Reservations.Now() + 86400));
+
+        // The sidecar never hands a stale request over: the agentapi command does not even exist.
+        var sidecar = new NativeSidecar(box, new NativeAgentApi([Path.Join(iso.Root, "missing-agentapi.exe")]));
+        var results = sidecar.Step();
+        foreach (var stale in new[] { overdue, old })
+        {
+            Assert.False(box.HasEvent(stale.Id, "livré") || box.HasEvent(stale.Id, "livraison ratée"), "A stale request must never reach Antigravity");
+            Assert.True(box.HasEvent(stale.Id, RelayExpiry.Kind) && box.IsRead(stale));
+            Assert.Equal(true, box.RingState(stale.Id)?["expired"]?.GetValue<bool>());
+        }
+        Assert.Single(results); Assert.True(box.HasEvent(current.Id, "livraison ratée"), "A current request is still delivered");
+        Assert.DoesNotContain(new NativeSidecar(box, new NativeAgentApi([Path.Join(iso.Root, "missing-agentapi.exe")])).Step(), r => r["status"]?.ToString() == "delivered");
+
+        // The sender sees it: track, status, wait_reply, and the recipient is told not to act on it.
+        Assert.StartsWith("expirée le ", Tool("track", new() { ["id"] = overdue.Id }, "claude")["state"]!.ToString());
+        Assert.Contains((Tool("status", new(), "claude")["incidents"] as JsonArray)!, i => i!["id"]!.ToString() == old.Id);
+        Assert.Equal("expired", Tool("wait_reply", new() { ["id"] = overdue.Id, ["timeout_s"] = 5 }, "claude")["status"]?.ToString());
+        Assert.NotNull(Tool("read", new() { ["id"] = old.Id }, "antigravity")["message"]?["expired"]);
+        Assert.Equal("error", Tool("reply", new() { ["id"] = old.Id, ["text"] = "Réponse tardive" }, "antigravity")["status"]?.ToString());
+
+        // The relay's own wakes stop too, and the sweep expires what nobody looks at any more.
+        int calls = 0;
+        using var runtime = new RelayRuntime(box, (_, _, _) => { calls++; return AppTransport.Result("started"); }, () => { });
+        var codexOld = Aged(box, box.Post("claude", "codex", "Vieille demande à Codex", "expiry-codex"), 13);
+        Assert.True(runtime.Ring(codexOld));
+        Thread.Sleep(2100);
+        Assert.Null(runtime.Step("codex"));
+        Assert.Equal(0, calls);
+        Assert.True(box.HasEvent(codexOld.Id, RelayExpiry.Kind));
+        var forgotten = Aged(box, box.Post("codex", "claude", "Demande oubliée", "expiry-sweep"), 13);
+        Assert.Equal(1, RelayExpiry.Sweep(box));
+        Assert.True(box.HasEvent(forgotten.Id, RelayExpiry.Kind));
+        Assert.Equal(0, RelayExpiry.Sweep(box));
+    }
+
     [Fact]
     public void Workers_recover_confirm_retry_and_never_replay_uncertain_deliveries()
     {

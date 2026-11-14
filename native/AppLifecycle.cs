@@ -56,15 +56,27 @@ public static partial class AppLifecycle
             }
             string conversations = Path.Join(RelayPaths.GeminiHome(), "antigravity", "conversations");
             if (!Directory.Exists(conversations)) return AppTransport.Result("unknown", "Antigravity conversation inventory unavailable");
+            double now = Reservations.Now();
             foreach (string id in Directory.EnumerateFiles(conversations, "*.db").Select(file => Path.GetFileNameWithoutExtension(file)).Where(id => RelayPaths.IsConversationId(id) && RelayPaths.ConversationAlive(id)))
             {
                 var turn = AppSessions.AntigravityError(id) ?? AppSessions.AntigravityTurn(id);
-                if (!turn.Finished) return AppTransport.Result(turn.At is null ? "unknown" : "working", "An Antigravity conversation has no durable completion; old timestamps do not establish idleness");
+                if (!turn.Finished && !Abandoned(turn, now)) return AppTransport.Result(turn.At is null ? "unknown" : "working", "An Antigravity conversation has no durable completion; old timestamps do not establish idleness");
             }
-            return AppTransport.Result("idle", "All live Antigravity conversations have durable completion records");
+            return AppTransport.Result("idle", "All live Antigravity conversations have durable completion records or were abandoned long ago");
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or RelayError) { return AppTransport.Result("unknown", e.Message); }
     }
+    /// <summary>
+    /// A step still running (a long command, an approval waiting for Julien) keeps its turn busy whatever its age. But a
+    /// last step that is itself over (DONE, ERROR) is followed by the next one within seconds: with nothing after it for
+    /// 30 minutes (the delay after which the sidecar also gives up a stalled conversation), the turn was abandoned.
+    /// 11/11: three conversations of 29/10 that stopped on a failed hook or a system message, never archived, made
+    /// "an agent is working" true for good, and every wake of Antigravity was postponed 17 times instead of restarting it
+    /// with its sidecar.
+    /// </summary>
+    public const double AbandonedTurnSeconds = 30 * 60.0;
+    public static bool Abandoned(AppTurn turn, double now)
+        => !turn.Finished && turn.Status is "DONE" or "ERROR" && turn.At is double at && now - at > AbandonedTurnSeconds;
     public static double HungFor(string key, bool observed, RelayBox? box = null, double? now = null)
     {
         box ??= new(); double at = now ?? Reservations.Now();

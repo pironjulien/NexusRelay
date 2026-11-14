@@ -66,7 +66,7 @@ public static partial class HostRewake
                 if (Superseded())
                     return 0;
                 var answered = pending.Where(m => AnswerOf(box, m) is not null).ToList();
-                var closed = pending.Where(m => !answered.Contains(m) && (box.HasEvent(m.Id, McpServer.CancelledKind) || McpServer.HaltedReason(box, m) is not null)).ToList();
+                var closed = pending.Where(m => !answered.Contains(m) && (box.HasEvent(m.Id, McpServer.CancelledKind) || box.HasEvent(m.Id, RelayExpiry.Kind) || McpServer.HaltedReason(box, m) is not null)).ToList();
                 if (answered.Any(m => !AnswerOf(box, m)!.Info))
                     firstAnswer ??= Reservations.Now();   // an info answer closes its request silently: no partial wake
                 double now = Reservations.Now();

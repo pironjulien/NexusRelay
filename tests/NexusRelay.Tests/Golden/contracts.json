@@ -216,6 +216,10 @@
         "title": "Cancelled",
         "type": "string"
        },
+       "expired": {
+        "title": "Expired",
+        "type": "string"
+       },
        "round": {
         "title": "Round",
         "type": "integer"
@@ -388,6 +392,10 @@
        },
        "cancelled": {
         "title": "Cancelled",
+        "type": "string"
+       },
+       "expired": {
+        "title": "Expired",
         "type": "string"
        },
        "round": {
@@ -674,6 +682,10 @@
         "title": "Cancelled",
         "type": "string"
        },
+       "expired": {
+        "title": "Expired",
+        "type": "string"
+       },
        "round": {
         "title": "Round",
         "type": "integer"
@@ -956,6 +968,10 @@
        },
        "cancelled": {
         "title": "Cancelled",
+        "type": "string"
+       },
+       "expired": {
+        "title": "Expired",
         "type": "string"
        },
        "round": {
@@ -1305,6 +1321,10 @@
         "title": "Cancelled",
         "type": "string"
        },
+       "expired": {
+        "title": "Expired",
+        "type": "string"
+       },
        "round": {
         "title": "Round",
         "type": "integer"
@@ -1638,6 +1658,10 @@
         "title": "Cancelled",
         "type": "string"
        },
+       "expired": {
+        "title": "Expired",
+        "type": "string"
+       },
        "round": {
         "title": "Round",
         "type": "integer"
@@ -1898,6 +1922,10 @@
        },
        "cancelled": {
         "title": "Cancelled",
+        "type": "string"
+       },
+       "expired": {
+        "title": "Expired",
         "type": "string"
        },
        "round": {

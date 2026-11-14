@@ -118,6 +118,8 @@ public sealed class NativeSidecar(RelayBox box, NativeAgentApi api)
                 if (RelayBox.ClaimLabel(claim) is "uncertain" or "submitting") return false;
                 box.RecoverDeadClaim(m.Id, attempt);
             }
+            // A stale request is expired, never delivered late into a new conversation.
+            if (RelayExpiry.Reason(m, Reservations.Now()) is not null) { RelayExpiry.Expire(box, m); return false; }
             return box.ClaimOf(m.Id, Attempt(box, m)) is null && !(Attempt(box, m) == 1 && box.HasEvent(m.Id, "livré"));
         }).GroupBy(m => m.Topic);
         var results = new List<JsonObject>();

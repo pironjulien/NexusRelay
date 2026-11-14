@@ -315,6 +315,27 @@ public sealed class CliTests : IDisposable
     }
 
     [Fact]
+    public void Antigravity_turn_stopped_on_a_finished_step_long_ago_is_not_an_agent_at_work()
+    {
+        // 11/11: conversations of 29/10 ending on a failed hook (GENERIC ERROR) or a system message (DONE) made
+        // "an agent is working" true for good: 17 wakes of Antigravity postponed instead of restarting it.
+        string root = Path.Join(iso.Gemini, "antigravity");
+        const string conversation = "12345678-1234-1234-1234-123456789abd";
+        Sqlite.Run(Path.Join(root, "conversations", conversation + ".db"), "CREATE TABLE steps(idx INTEGER,step_type INTEGER,step_payload BLOB); INSERT INTO steps VALUES(1,1,X'616374697665');");
+        string transcript = Path.Join(root, "brain", conversation, ".system_generated", "logs", "transcript.jsonl");
+        Directory.CreateDirectory(Path.GetDirectoryName(transcript)!);
+        string Step(string type, string status, DateTimeOffset at, string extra = "") => $$"""{"created_at": "{{at.UtcDateTime:yyyy-MM-ddTHH:mm:ssZ}}", "type": "{{type}}", "status": "{{status}}"{{extra}}}""" + "\n";
+        File.WriteAllText(transcript, Step("GENERIC", "ERROR", DateTimeOffset.UtcNow.AddMinutes(-5)));
+        Assert.Equal("working", Activity()["antigravity"]?["status"]?.ToString());
+        File.WriteAllText(transcript, Step("GENERIC", "ERROR", DateTimeOffset.UtcNow.AddDays(-13)));
+        Assert.Equal("idle", Activity()["antigravity"]?["status"]?.ToString());
+        File.WriteAllText(transcript, Step("SYSTEM_MESSAGE", "DONE", DateTimeOffset.UtcNow.AddDays(-13)));
+        Assert.Equal("idle", Activity()["antigravity"]?["status"]?.ToString());
+        File.WriteAllText(transcript, Step("PLANNER_RESPONSE", "DONE", DateTimeOffset.UtcNow.AddDays(-13), """, "tool_calls": [{"name": "run_command"}]"""));
+        Assert.Equal("working", Activity()["antigravity"]?["status"]?.ToString());
+    }
+
+    [Fact]
     public void Quota_reads_the_selected_family_and_observation_time()
     {
         string path = Path.Join(iso.Root, "quota.json");

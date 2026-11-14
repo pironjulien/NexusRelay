@@ -8,7 +8,8 @@ namespace NexusRelay;
 // Child: a subagent thread (spawn edge or subagent source), which runs inside its parent's turn.
 // Headless: a `codex exec` run outside the app, whose journal Codex may delete while the thread row stays.
 public sealed record AppChat(string Id, string Path, string Cwd, bool Archived, bool Child, bool Headless = false);
-public sealed record AppTurn(bool Finished, double? At, string? Error = null, double? Last = null);
+// Status: the last Antigravity step's own status (DONE, ERROR, RUNNING…; TOOL_CALLS for a response asking for tools), when known.
+public sealed record AppTurn(bool Finished, double? At, string? Error = null, double? Last = null, string? Status = null);
 
 public static partial class AppSessions
 {
@@ -153,7 +154,7 @@ public static partial class AppSessions
             if (LastLine(RelayPaths.TranscriptPath(conversation)) is not string line || Lines(line).FirstOrDefault() is not JsonObject step) return new(false, null);
             string? kind = step["type"]?.ToString();
             bool answered = kind == "PLANNER_RESPONSE" && step["status"]?.ToString() == "DONE" && (step["tool_calls"] is not JsonArray tools || tools.Count == 0);
-            return new(answered || kind == "ERROR_MESSAGE", Epoch(step["created_at"]?.ToString()), kind == "ERROR_MESSAGE" ? step["error"]?.ToString() ?? step["text"]?.ToString() : null);
+            return new(answered || kind == "ERROR_MESSAGE", Epoch(step["created_at"]?.ToString()), kind == "ERROR_MESSAGE" ? step["error"]?.ToString() ?? step["text"]?.ToString() : null, Status: kind == "PLANNER_RESPONSE" && !answered ? "TOOL_CALLS" : step["status"]?.ToString()); // Tool calls asked: the next step may wait for an approval.
         }
         catch (IOException) { return new(false, null); }
     }
