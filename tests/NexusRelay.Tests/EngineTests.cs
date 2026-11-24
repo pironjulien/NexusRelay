@@ -399,6 +399,27 @@ public sealed class EngineTests : IDisposable
     }
 
     [Fact]
+    public void A_launched_app_is_minimized_and_hands_the_foreground_back()
+    {
+        // 2026-11-24: Codex launched for a selftest stayed maximized in front of Julien because he was typing elsewhere.
+        // The decision no longer depends on his input: the relay's own windows are always minimized.
+        nint mine = 1, codex = 2, codexDialog = 3;
+        var (minimize, restore) = AppLifecycle.AfterLaunch([codex, codexDialog], codex, mine, emergencyStop: false);
+        Assert.Equal([codex, codexDialog], minimize);
+        Assert.True(restore);
+        // Julien already elsewhere (the launch did not take his foreground): minimized, focus left alone.
+        (minimize, restore) = AppLifecycle.AfterLaunch([codex], 4, mine, emergencyStop: false);
+        Assert.Equal([codex], minimize);
+        Assert.False(restore);
+        // Codex was already his foreground app before the launch: nothing to hand back.
+        Assert.False(AppLifecycle.AfterLaunch([codex], codex, codex, emergencyStop: false).Restore);
+        // The emergency stop leaves every window as it is.
+        (minimize, restore) = AppLifecycle.AfterLaunch([codex], codex, mine, emergencyStop: true);
+        Assert.Empty(minimize);
+        Assert.False(restore);
+    }
+
+    [Fact]
     public void Codex_quota_behind_the_router_is_the_pooled_one()
     {
         var now = DateTimeOffset.Parse("2026-11-02T20:30:00Z", System.Globalization.CultureInfo.InvariantCulture);

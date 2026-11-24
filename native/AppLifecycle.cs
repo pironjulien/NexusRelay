@@ -115,6 +115,11 @@ public static partial class AppLifecycle
     private static bool Responsive(string url) { try { using var page = new CdpPage(url); return page.Eval("1 + 1")?.ToString() == "2"; } catch (Exception e) when (e is IOException or RelayError or System.Net.WebSockets.WebSocketException or OperationCanceledException) { return false; } }
     public static string? RestartGuard(string app, bool frozen, bool present, bool busy, bool token)
         => present ? "Julien is using the app; restart postponed" : busy ? "An agent is working or activity is unknown; restart postponed" : !token ? "Foreground held by another agent; restart postponed" : null;
+    /// <summary>Once the windows of a launch appear: every one of them is minimized without activation (whatever Julien
+    /// is typing elsewhere), and the foreground goes back to his previous window only when the launch took it. The
+    /// emergency stop leaves everything as it is.</summary>
+    public static (IReadOnlyList<nint> Minimize, bool Restore) AfterLaunch(IReadOnlyList<nint> launched, nint foreground, nint previous, bool emergencyStop)
+        => emergencyStop ? ([], false) : (launched, previous != 0 && launched.Contains(foreground) && !launched.Contains(previous));
     public static string? PendingLaunch(JsonObject? state, bool pageReady)
         => !pageReady && state?["status"]?.ToString() is "submitting" or "uncertain" ? "Previous app launch is uncertain; no stop or duplicate submitted" : null;
     public static JsonObject Ensure(string app, bool forceFrozen = false)
@@ -169,7 +174,7 @@ public static partial class AppLifecycle
         }
         if (RestartGuard(app, frozen, AppTransport.UserPresent(app) || AppTransport.EmergencyStop(), Running(app) && Busy(app), true) is string beforeLaunch) return AppTransport.Result("deferred", beforeLaunch);
         HungFor(app, false); HungFor(app + "-page", false);
-        nint previous = GetForegroundWindow(); uint inputBefore = AppTransport.InputTick();
+        nint previous = GetForegroundWindow();
         var launchState = new RelayBox(); bool entered = false;
         void BeforeLaunch() { launchState.SetState("launch-" + app, new() { ["status"] = "submitting", ["at"] = RelayBox.NowIso() }); entered = true; }
         try
@@ -184,11 +189,13 @@ public static partial class AppLifecycle
             launchState.SetState("launch-" + app, new() { ["status"] = "submitted", ["at"] = RelayBox.NowIso() });
         }
         catch (Exception e) when (entered) { launchState.SetState("launch-" + app, new() { ["status"] = "uncertain", ["at"] = RelayBox.NowIso(), ["reason"] = e.Message }); return AppTransport.Result("deferred", "App launch outcome uncertain; no automatic duplicate"); }
-        // Restore focus only when activation took it. Never take it from another app opened by Julien meanwhile.
+        // The windows this launch opens are the relay's, not Julien's: they are minimized without activation as soon as
+        // they appear, even while Julien types elsewhere (2026-11-24: Codex launched for a selftest stayed maximized in
+        // front of him because his typing stopped this step, then every wake was deferred as "Julien is using Codex").
+        // Focus goes back to his window only when the launch took it from him.
         var visible = Stopwatch.StartNew();
-        while (visible.Elapsed.TotalSeconds < 15)
+        while (visible.Elapsed.TotalSeconds < 15 && !AppTransport.EmergencyStop())
         {
-            if (AppTransport.InputTick() != inputBefore || AppTransport.EmergencyStop()) break;
             var windows = new List<nint>();
             using (var processes = Processes(app))
             {
@@ -197,13 +204,10 @@ public static partial class AppLifecycle
             }
             if (windows.Count > 0)
             {
-                nint taken = GetForegroundWindow();
-                foreach (nint hwnd in windows)
-                {
-                    if (AppTransport.InputTick() != inputBefore || AppTransport.EmergencyStop()) break;
+                var (minimize, restore) = AfterLaunch(windows, GetForegroundWindow(), previous, AppTransport.EmergencyStop());
+                foreach (nint hwnd in minimize)
                     ShowWindowAsync(hwnd, 7);
-                }
-                if (AppTransport.InputTick() == inputBefore && !AppTransport.EmergencyStop() && windows.Contains(taken) && previous != 0) SetForegroundWindow(previous);
+                if (restore) SetForegroundWindow(previous);
                 break;
             }
             Thread.Sleep(100);

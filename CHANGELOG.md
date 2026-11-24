@@ -6,6 +6,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.15.3] - 2026-11-24
+
+### Fixed
+- An app the relay starts no longer stays in front of you. When Codex or Antigravity was closed, the relay started it
+  and minimized its window without activating it, but gave up that step as soon as you typed or moved the mouse
+  elsewhere: Codex, started for a selftest, then stayed maximized in front of you, and every later wake was postponed
+  as "Julien is using Codex". The windows of a launch are now always minimized without activation, and the
+  foreground goes back to your previous window when the launch took it; only the emergency stop leaves them alone.
+  A test checks it.
+
+### Changed
+- Dependencies: Tomlyn 2.11.1; CI actions updated (CodeQL 4.39.3, setup-dotnet 6.1.0, NexusSystem workflows 1.8.0,
+  zizmor 0.8.1). Dependabot no longer proposes a new major of the AOT compiler or trimmer alone: they follow the SDK
+  that `global.json` pins.
+
 ## [1.15.2] - 2026-11-14
 
 ### Fixed
@@ -891,7 +906,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - English tool descriptions with titles and MCP annotations; `reply` accepts `done`/`refused`/`failed` and
   `agree`/`disagree`.
 
-[Unreleased]: https://github.com/pironjulien/NexusRelay/compare/v1.15.2...HEAD
+[Unreleased]: https://github.com/pironjulien/NexusRelay/compare/v1.15.3...HEAD
+[1.15.3]: https://github.com/pironjulien/NexusRelay/compare/v1.15.2...v1.15.3
 [1.15.2]: https://github.com/pironjulien/NexusRelay/compare/v1.15.1...v1.15.2
 [1.15.1]: https://github.com/pironjulien/NexusRelay/compare/v1.15.0...v1.15.1
 [1.15.0]: https://github.com/pironjulien/NexusRelay/compare/v1.14.1...v1.15.0
