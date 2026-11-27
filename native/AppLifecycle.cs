@@ -216,17 +216,27 @@ public static partial class AppLifecycle
         return new() { ["status"] = ready ? "ready" : "failed", ["reason"] = ready ? null : $"{app} port did not become available", ["launched"] = true, ["restarted"] = restarted, ["frozen"] = frozen };
     }
     public static JsonObject? MaintainAntigravity(RelayBox box)
+        => MaintainAntigravity(box, Reservations.Now(), () => Running("antigravity"), () => AppTransport.PageUrl("antigravity") is null, () => HungWindow("antigravity"), () => Ensure("antigravity"));
+    /// <summary>
+    /// A closed Antigravity has neither a missing port nor a hung window: both counters restart from zero, otherwise the
+    /// next start of Antigravity without its port (by Julien) would already be "hung" for days and closed at once
+    /// (26/11: hung-agy-port kept its 12:04 start while Antigravity was closed). A restart attempt is recorded before it
+    /// runs, so a deferred or failed one is not repeated every minute: at most one attempt per hour.
+    /// </summary>
+    public static JsonObject? MaintainAntigravity(RelayBox box, double now, Func<bool> running, Func<bool> noPort, Func<bool> hungWindow, Func<JsonObject> ensure)
     {
-        double now = Reservations.Now(); var state = box.State("agy-port-maintenance") ?? new();
+        var state = box.State("agy-port-maintenance") ?? new();
         if (now - (state["checked"]?.GetValue<double>() ?? 0) < 60) return null;
         state["checked"] = now; box.SetState("agy-port-maintenance", state);
-        if (!Running("antigravity")) return null;
-        bool noPort = AppTransport.PageUrl("antigravity") is null;
-        bool frozen = HungFor("antigravity", HungWindow("antigravity")) >= 120;
-        if (!frozen && HungFor("agy-port", noPort) < 300) return null;
-        if (now - (state["restarted"]?.GetValue<double>() ?? 0) < 3600) return AppTransport.Result("deferred", "Antigravity restarted less than an hour ago");
-        var result = Ensure("antigravity");
-        if (AppTransport.Truth(result["launched"])) { state["restarted"] = now; HungFor("agy-port", false); }
+        if (!running()) { HungFor("antigravity", false, box, now); HungFor("agy-port", false, box, now); return null; }
+        bool missing = noPort();
+        bool frozen = HungFor("antigravity", hungWindow(), box, now) >= 120;
+        if (!frozen && HungFor("agy-port", missing, box, now) < 300) return null;
+        double last = Math.Max(state["attempted"]?.GetValue<double>() ?? 0, state["restarted"]?.GetValue<double>() ?? 0);
+        if (now - last < 3600) return AppTransport.Result("deferred", "Antigravity restart attempted less than an hour ago");
+        state["attempted"] = now; box.SetState("agy-port-maintenance", state);
+        var result = ensure();
+        if (AppTransport.Truth(result["launched"])) { state["restarted"] = now; HungFor("agy-port", false, box, now); }
         state["last"] = result.DeepClone(); box.SetState("agy-port-maintenance", state); return result;
     }
     // Native lookup, no PowerShell child: Windows creates %LOCALAPPDATA%\Packages\<family> for each package registered

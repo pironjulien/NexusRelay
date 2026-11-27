@@ -6,8 +6,13 @@ using System.Text.RegularExpressions;
 
 namespace NexusRelay;
 
-public static class NativeCards
+public static partial class NativeCards
 {
+    // A quoted value of a minified language file (up to 16 MB): each body is consumed atomically, so a value that does
+    // not close is given up at once instead of retried character by character (24/11: the backtracking form exceeded
+    // its 2 s timeout, and the uncaught timeout made /health return 503).
+    [GeneratedRegex("\"([A-Za-z][\\w.\\-]*)\":(?:`((?>(?:[^`\\\\]+|\\\\.)*))`|\"((?>(?:[^\"\\\\]+|\\\\.)*))\")", RegexOptions.None, 2000)]
+    private static partial Regex LocaleEntry();
     public static JsonObject Contracts()
     {
         using var stream = typeof(NativeCards).Assembly.GetManifestResourceStream("NexusRelay.UiContracts.json")!;
@@ -206,7 +211,7 @@ public static class NativeCards
                 if(!long.TryParse(child["offset"]!.ToString(),out long offset)||child["size"] is not JsonValue lengthNode||!lengthNode.TryGetValue<int>(out int size)||offset<0||size<0||size>16*1024*1024||offset>stream.Length-(8L+headerSize)||size>stream.Length-(8L+headerSize)-offset)throw new IOException("ASAR locale asset bounds invalid");
                 stream.Position = 8L + headerSize + offset;var asset=reader.ReadBytes(size);if(asset.Length!=size)throw new IOException("Truncated ASAR locale asset");string source = Encoding.UTF8.GetString(asset);
                 if (menu) foreach (var (entry, text) in (JsonNode.Parse(source) as JsonObject ?? new()).Select(e => (e.Key, e.Value is JsonValue v && v.TryGetValue<string>(out string? t) ? t : null)).Where(p => p.Item2 is not null)) result["menu:" + entry] = text;
-                if (locale) foreach (Match match in Regex.Matches(source, "\"([A-Za-z][\\w.\\-]*)\":(?:`((?:[^`\\\\]|\\\\.)*)`|\"((?:[^\"\\\\]|\\\\.)*)\")", RegexOptions.None, TimeSpan.FromSeconds(2))) result[match.Groups[1].Value] = Unescape(match.Groups[2].Success ? match.Groups[2].Value : match.Groups[3].Value);
+                if (locale) foreach (Match match in LocaleEntry().Matches(source)) result[match.Groups[1].Value] = Unescape(match.Groups[2].Success ? match.Groups[2].Value : match.Groups[3].Value);
             }
         }
         Walk(tree, ""); return result;
@@ -239,6 +244,7 @@ public static class NativeCards
             var saved=Save(card);var summaryMarks=new JsonObject();foreach(var pair in card["landmarks"]!.AsObject()){summaryMarks[pair.Key]=pair.Value?["path"]?.DeepClone()??pair.Value?["unverified"]?.DeepClone();}var summary=new JsonObject { ["status"]="success",["app"]=app,["version"]=version,["elements"]=card["elements"]!.AsArray().Count,["labels"]=index.Count,["live"]=card["live"]!.DeepClone(),["landmarks"]=summaryMarks };
             foreach(var entry in saved){summary[entry.Key]=entry.Value?.DeepClone();}summary["path"]=saved["card"]?.DeepClone();return summary;
         }
+        catch (RegexMatchTimeoutException e) { return Deferred(e); }
         catch (Exception e) when (e is IOException or RelayError or System.Net.WebSockets.WebSocketException or OperationCanceledException or System.Text.Json.JsonException) { return AppTransport.Result("failed", e.Message); }
         finally { AppTransport.Locks[app].Release(); }
     }
@@ -362,15 +368,20 @@ public static class NativeCards
         var package = Regex.Match(executable, @"\\WindowsApps\\[^\\_]+_(\d+(?:\.\d+){1,3})_[^\\]*__[^\\]+\\", RegexOptions.IgnoreCase, TimeSpan.FromSeconds(1));
         return package.Success ? package.Groups[1].Value : FileVersionInfo.GetVersionInfo(executable).ProductVersion;
     }
-    public static void RefreshDue(RelayBox box, Action? heartbeat = null)
+    // A scan that runs out of time is retried later; it is never a failure of the tidy-up worker (nor of /health).
+    private static JsonObject Deferred(RegexMatchTimeoutException e) => AppTransport.Result("deferred", $"Label scan exceeded {e.MatchTimeout.TotalSeconds:0.#} s; retried later");
+    public static void RefreshDue(RelayBox box, Action? heartbeat = null, Func<string, string?>? executable = null, Func<string, Action?, JsonObject>? survey = null)
     {
+        executable ??= AppTransport.Executable; survey ??= Survey;
         var state = box.State("native-cards-check") ?? new(); double now = Reservations.Now();
         foreach (string app in Lists.Peers.Where(a => now - (state[a]?.GetValue<double>() ?? 0) >= 1800))
         {
-            string? exe = AppTransport.Executable(app); if (exe is null) continue;
+            string? exe = executable(app); if (exe is null) continue;
             string? version = AppVersion(exe); var last = Cards(app).FirstOrDefault();
             if (version is not null && Fresh(last,version)) { state[app] = now; continue; }
-            heartbeat?.Invoke();var result = Survey(app,heartbeat); state[app] = result["live"]?["status"]?.ToString() == "complet" && AppTransport.Truth(result["live"]?["view_restored"]) ? now : now - 1500;
+            heartbeat?.Invoke();
+            JsonObject result; try { result = survey(app,heartbeat); } catch (RegexMatchTimeoutException e) { result = Deferred(e); }
+            state[app] = result["live"]?["status"]?.ToString() == "complet" && AppTransport.Truth(result["live"]?["view_restored"]) ? now : now - 1500;
         }
         box.SetState("native-cards-check", state);
     }

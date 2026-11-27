@@ -6,6 +6,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.15.4] - 2026-11-27
+
+### Fixed
+- Codex closed while relay chats wait to be archived no longer fills the log with errors. The tidy-up threw
+  "Codex debug port unavailable" and wrote a full stack trace every 14 seconds (38 times on 24/11, 427 since 06/11);
+  it now waits for Codex's port quietly, as it already did for Antigravity. A test checks it.
+- A closed Antigravity no longer counts as "running without its port". The counter kept running while Antigravity was
+  closed (since 26/11 12:04), so the next time you opened Antigravity without its debugging port the relay would have
+  closed that window at once to restart it. The counter now restarts from zero whenever Antigravity is closed, and a
+  restart attempt, even a postponed one, is made at most once an hour instead of every minute. A test checks it.
+- Reading Codex's labels from a large minified language file no longer times out. The pattern retried each character
+  of a quoted value; it now reads each value in one pass (16 MB in well under a second), and a scan that still runs
+  out of time is postponed instead of failing the tidy-up worker, which had made `/health` answer 503 on 24/11. Tests
+  check both.
+- The map-survey tests no longer fail on a busy PC after their checks have passed: they killed Chrome's whole process
+  tree from outside, and a Chrome child already exiting at that moment refused it ("Access denied"). Chrome is now
+  asked to close itself and the test waits for it; the forced stop remains only for a browser that does not close.
+
+### Changed
+- Test dependencies: xunit.v3 4.0.3 (Microsoft.Testing.Platform 2.5.2, xunit.analyzers 2.3.0).
+
 ## [1.15.3] - 2026-11-24
 
 ### Fixed
@@ -906,7 +927,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - English tool descriptions with titles and MCP annotations; `reply` accepts `done`/`refused`/`failed` and
   `agree`/`disagree`.
 
-[Unreleased]: https://github.com/pironjulien/NexusRelay/compare/v1.15.3...HEAD
+[Unreleased]: https://github.com/pironjulien/NexusRelay/compare/v1.15.4...HEAD
+[1.15.4]: https://github.com/pironjulien/NexusRelay/compare/v1.15.3...v1.15.4
 [1.15.3]: https://github.com/pironjulien/NexusRelay/compare/v1.15.2...v1.15.3
 [1.15.2]: https://github.com/pironjulien/NexusRelay/compare/v1.15.1...v1.15.2
 [1.15.1]: https://github.com/pironjulien/NexusRelay/compare/v1.15.0...v1.15.1

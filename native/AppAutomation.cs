@@ -240,7 +240,11 @@ public static partial class AppAutomation
         {
             var chats = AppSessions.CodexChats().Where(c => !c.Archived && CodexSpace.Owns(c, box)).ToList();
             if (chats.Count == 0) return AppTransport.Result("nothing");
-            using var page = new CdpPage(AppTransport.PageUrl("codex") ?? throw new RelayError("Codex debug port unavailable"));
+            // Codex closed (or started without its port) while relay chats wait for archiving is an ordinary state, not
+            // a failure: the tidy-up waits for the port like Antigravity's (24/11: 38 stack traces, one every 14 s).
+            string? url = AppTransport.PageUrl("codex");
+            if (url is null) return AppTransport.Result("deferred", "Codex debug port unavailable");
+            using var page = new CdpPage(url);
             int archived = 0;
             foreach (var chat in chats)
             {

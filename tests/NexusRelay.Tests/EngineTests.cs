@@ -420,6 +420,86 @@ public sealed class EngineTests : IDisposable
     }
 
     [Fact]
+    public void Codex_tidy_waits_for_the_debug_port_without_an_error()
+    {
+        // 24/11: Codex closed while a relay chat waited for archiving threw "Codex debug port unavailable" every 14 s,
+        // a full stack trace each time (427 since 06/11). No port is an ordinary state: deferred, nothing on stderr.
+        var box = iso.Box();
+        string workspace = Path.Join(iso.Root, "Documents"); Directory.CreateDirectory(workspace);
+        string log = Path.Join(iso.Root, "relay-chat.jsonl"); File.WriteAllText(log, "");
+        Sqlite.Run(Path.Join(iso.CodexHome, "state_5.sqlite"), "CREATE TABLE threads(id TEXT,rollout_path TEXT,cwd TEXT,archived INTEGER,source TEXT DEFAULT 'vscode'); CREATE TABLE thread_spawn_edges(parent_thread_id TEXT,child_thread_id TEXT);" +
+            $"INSERT INTO threads(id,rollout_path,cwd,archived) VALUES('relay-chat',{Sqlite.Q(log)},{Sqlite.Q(workspace)},0);");
+        box.SetState("codex-owned", new() { ["threads"] = new JsonObject { ["relay-chat"] = new JsonObject { ["verified"] = true, ["topic"] = "tidy", ["workspace"] = workspace } } });
+        Assert.Single(AppSessions.CodexChats(), c => !c.Archived && CodexSpace.Owns(c, box));
+        var previous = Console.Error; var error = new StringWriter();
+        Console.SetError(error);
+        JsonObject result;
+        try { result = AppAutomation.TidyCodex(box); } finally { Console.SetError(previous); }
+        Assert.Equal("deferred", result["status"]?.ToString());
+        Assert.Equal("", error.ToString());
+    }
+
+    [Fact]
+    public void Antigravity_port_maintenance_forgets_a_closed_app_and_tries_at_most_once_an_hour()
+    {
+        var box = iso.Box();
+        double now = 1_000_000; bool running = true; int ensured = 0;
+        JsonObject? Check(double at) => AppLifecycle.MaintainAntigravity(box, at, () => running, () => true, () => false, () => { ensured++; return AppTransport.Result("deferred", "Julien is using the app; restart postponed"); });
+        // Antigravity runs without its port: the counter starts.
+        Assert.Null(Check(now));
+        Assert.Equal(now, box.State("hung-agy-port")?["since"]?.GetValue<double>());
+        // Antigravity closed: the counter is forgotten (26/11: it kept its start for days while Antigravity was closed).
+        running = false;
+        Assert.Null(Check(now + 120));
+        Assert.Null(box.State("hung-agy-port")?["since"]);
+        // Julien starts it again without the port: a fresh 300 s, not an immediate restart of the window he just opened.
+        running = true;
+        Assert.Null(Check(now + 86_400));
+        Assert.Null(Check(now + 86_400 + 120));
+        Assert.Equal(0, ensured);
+        // Past 300 s, one attempt; deferred, it is not repeated every minute but after an hour.
+        Assert.Equal("deferred", Check(now + 86_400 + 360)?["status"]?.ToString());
+        Assert.Equal(1, ensured);
+        for (int minute = 1; minute < 60; minute++) Check(now + 86_400 + 360 + minute * 60);
+        Assert.Equal(1, ensured);
+        Check(now + 86_400 + 360 + 3600);
+        Assert.Equal(2, ensured);
+    }
+
+    [Fact]
+    public void Codex_label_index_scans_a_16_mb_language_file_in_under_a_second()
+    {
+        // 24/11: a minified language file made the backtracking pattern exceed its 2 s timeout.
+        var source = new StringBuilder("export default {\"archive\":\"Archiver\",\"mode\":`Changer de mode {mode}`,");
+        string filler = "\"k\":`" + new string('x', 400) + "\\`" + "`,\"open\":\"unterminated \\\"" + new string('y', 200) + ",";
+        // Plus one template literal of 4 MB: the old form kept a backtracking position for each of its characters.
+        string template = "\"long\":`" + string.Concat(Enumerable.Repeat("ab\\ncd ${x} ", 4 * 1024 * 1024 / 12)) + "`,";
+        while (source.Length < 16 * 1024 * 1024 - template.Length - 2 * filler.Length) source.Append(filler);
+        source.Append(template).Append("\"last\":\"Dernier\"}");
+        string asar = ContractTests.Asar(Path.Join(iso.Root, "app.asar"), [("webview/assets/fr-FR-big.js", Encoding.UTF8.GetBytes(source.ToString()))]);
+        var timer = System.Diagnostics.Stopwatch.StartNew();
+        var index = NativeCards.CodexIndex(asar, "fr-FR");
+        timer.Stop();
+        Assert.True(timer.Elapsed < TimeSpan.FromSeconds(1), $"{timer.Elapsed.TotalMilliseconds:0} ms");
+        Assert.Equal("Archiver", index["archive"]?.ToString());
+        Assert.Equal("Changer de mode {mode}", index["mode"]?.ToString());
+        Assert.Equal("Dernier", index["last"]?.ToString());
+    }
+
+    [Fact]
+    public void A_label_scan_timeout_defers_the_map_and_keeps_health_ok()
+    {
+        // 24/11 09:42: the uncaught RegexMatchTimeoutException failed the tidy-up worker and /health answered 503.
+        var box = iso.Box(); int surveys = 0;
+        void Refresh() => NativeCards.RefreshDue(box, null, _ => Environment.ProcessPath, (_, _) => { surveys++; throw new System.Text.RegularExpressions.RegexMatchTimeoutException("x", "y", TimeSpan.FromSeconds(2)); });
+        using var runtime = new RelayRuntime(box, (_, _, _) => AppTransport.Result("deferred", "isolated test adapter"), Refresh);
+        runtime.Start();
+        Assert.True(AppTransport.Wait(() => box.State("native-cards-check") is JsonObject state && state.Count == 2, 20));
+        Assert.True(surveys >= 1);
+        Assert.True(AppTransport.Wait(() => runtime.HealthResponse()["status"]?.ToString() == "ok", 10), runtime.HealthResponse().ToJsonString());
+    }
+
+    [Fact]
     public void Codex_quota_behind_the_router_is_the_pooled_one()
     {
         var now = DateTimeOffset.Parse("2026-11-02T20:30:00Z", System.Globalization.CultureInfo.InvariantCulture);

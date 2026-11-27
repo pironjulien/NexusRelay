@@ -254,7 +254,29 @@ public sealed class ContractTests : IDisposable
             catch (RelayError error) { refusal = error.Message; }
             return new() { ["card"] = card, ["events"] = cdp.Eval("window.__events")?.DeepClone(), ["view"] = cdp.Eval("({hash:location.hash,menu:document.getElementById('menu').hidden})")?.DeepClone(), ["refusal"] = refusal };
         }
-        finally { if (!process.HasExited) { process.Kill(entireProcessTree: true); process.WaitForExit(5000); } }
+        finally { CloseChrome(process, port); }
+    }
+
+    /// <summary>
+    /// Chrome closes itself and its own children (Browser.close); the test then waits for the browser process. Killing
+    /// the whole tree from outside raced with children already on their way out: a renderer exiting at that instant
+    /// refuses TerminateProcess ("Access denied"), and the test failed after its assertions had passed (27/11, the draft
+    /// case on a loaded PC). The tree kill remains only for a browser that did not close by itself.
+    /// </summary>
+    private static void CloseChrome(Process process, int port)
+    {
+        if (process.HasExited) return;
+        try
+        {
+            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+            string browser = JsonNode.Parse(http.GetStringAsync($"http://127.0.0.1:{port}/json/version").GetAwaiter().GetResult())!["webSocketDebuggerUrl"]!.ToString();
+            using var cdp = new CdpPage(browser);
+            cdp.Call("Browser.close");
+        }
+        catch (Exception e) when (e is HttpRequestException or TaskCanceledException or IOException or System.Net.WebSockets.WebSocketException or RelayError) { /* Closing drops the connection before any answer; the exit below is the proof. */ }
+        if (process.WaitForExit(30_000)) return;
+        process.Kill(entireProcessTree: true);
+        process.WaitForExit(5000);
     }
 
     private sealed class ActualPage(CdpPage page, string scenario) : NativeCards.ICardPage

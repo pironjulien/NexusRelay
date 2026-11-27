@@ -8,7 +8,7 @@
     <TestingPlatformDotnetTestSupport>true</TestingPlatformDotnetTestSupport>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="xunit.v3" Version="4.0.2" />
+    <PackageReference Include="xunit.v3" Version="4.0.3" />
     <PackageReference Include="JsonSchema.Net" Version="9.7.0" />
   </ItemGroup>
   <ItemGroup>
