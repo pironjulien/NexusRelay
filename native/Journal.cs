@@ -25,6 +25,8 @@ public static partial class Journal
     // Known causes, from the most precise to the most general (wake and turn-watch reasons), French or English.
     private static readonly (Regex Pattern, string Label)[] Causes =
     [
+        (new(@"held by the claude|retenu par la session", RegexOptions.IgnoreCase), "retenu"),
+        (new(@"refused by the claude|refusé par la session", RegexOptions.IgnoreCase), "refusé"),
         (new(@"flagged|filtre|content policy|cybersecurity", RegexOptions.IgnoreCase), "filtre"),
         (new(@"quota|utilisés|épuisé|% used|exhausted|usage limit|rate limit", RegexOptions.IgnoreCase), "quota"),
         (new(@"déjà pilotée|interface .*occupée|already driven|interface .*busy", RegexOptions.IgnoreCase), "interface occupée"),

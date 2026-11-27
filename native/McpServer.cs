@@ -494,6 +494,8 @@ public sealed partial class McpServer
         var claims = box.Claims(message.Id);
         if (ring?["incident"]?.GetValue<string>() is string inc && !string.IsNullOrEmpty(inc))
             return RelayPaths.Tr($"incident: {inc}", $"incident : {inc}");
+        if (ClaudeVerdict(box, message) is string verdict)
+            return verdict;
         if (claims.Any(c => RelayBox.ClaimLabel(c.Claim) == "uncertain"))
         {
             return RelayPaths.Tr(
@@ -518,6 +520,15 @@ public sealed partial class McpServer
             return RelayPaths.Tr($"{done} (ring {attempt}/3)", $"{done} (sonnette {attempt}/3)");
         }
         return RelayPaths.Tr("posted, wake in progress", "déposé, réveil en cours");
+    }
+
+    /// <summary>What the Claude session itself answered to the last wake when it held or refused it (ClaudeReceipts):
+    /// the message is not delivered, whatever the ring count says.</summary>
+    private static string? ClaudeVerdict(RelayBox box, RelayMessage message)
+    {
+        if (message.To != "claude") return null;
+        var last = box.Events(message.Id).LastOrDefault(e => e["kind"]?.ToString() == "réveil");
+        return last?["status"]?.ToString() is "held" or "refused" ? last["reason"]?.ToString() ?? last["status"]!.ToString() : null;
     }
 
     private static JsonObject BuildTrackData(RelayBox box, RelayMessage message)
@@ -592,8 +603,8 @@ public sealed partial class McpServer
         if (message.To == "claude")
         {
             return RelayPaths.Tr(
-                "claude: wake queued in its relay session (Claude app, folder .nexus\\relay\\NexusRelay); track(id) confirms the pickup",
-                "claude : réveil demandé dans sa session relais (appli Claude, dossier .nexus\\relay\\NexusRelay) ; track(id) confirme la prise en charge");
+                "claude: wake queued in its relay session (Claude app, folder .nexus\\relay\\NexusRelay); track(id) confirms the pickup, or says that the session holds or refuses it",
+                "claude : réveil demandé dans sa session relais (appli Claude, dossier .nexus\\relay\\NexusRelay) ; track(id) confirme la prise en charge, ou dit que la session le retient ou le refuse");
         }
         return RelayPaths.Tr(
             $"{message.To}: wake queued; track(id) confirms the actual delivery",
@@ -1162,6 +1173,7 @@ public sealed partial class McpServer
         if (ToolErrors(box, message) is JsonObject blocked && AppTransport.Truth(blocked["ended"])) return blocked["hint"]?.ToString() ?? blocked["reason"]?.ToString();
         var ring = box.RingState(message.Id);
         if (!AppTransport.Truth(ring?["halt"]) && ring?["incident"]?.ToString() is string incident) return incident;
+        if (!box.IsRead(message) && ClaudeVerdict(box, message) is string verdict) return verdict;
         if (!box.IsRead(message) && !events.Any(e => e["kind"]?.ToString() == "en cours")) return message.To == "codex" ? AppSessions.CodexQuota(100) : message.To == "antigravity" ? AppSessions.AntigravityQuota(box, 0) : null;
         return null;
     }

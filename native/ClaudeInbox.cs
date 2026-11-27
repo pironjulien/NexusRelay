@@ -8,7 +8,8 @@ namespace NexusRelay;
 /// through Claude Code's documented per-session inbox: a local named pipe, never Anthropic's servers. The session
 /// publishes its pipe in ~\.claude\sessions\&lt;pid&gt;.json and the peer key in &lt;pid&gt;.&lt;sha256&gt;.key; a connection
 /// sends {"type":"auth","token":peerToken} then one {"type":"user"} line. Delivery needs the receiving session to run
-/// in a prompting mode (Auto): a bypass session holds peer messages that assert no permission class.</summary>
+/// in a prompting mode (Auto): a bypass session holds peer messages that assert no permission class. A session that
+/// holds or refuses the wake says so on the reply pipe (ClaudeReceipts); an accepted wake gets no answer.</summary>
 public static class ClaudeInbox
 {
     public static string ProjectDirectory()
@@ -61,6 +62,7 @@ public static class ClaudeInbox
             try
             {
                 if (JsonNode.Parse(File.ReadAllText(file)) is not JsonObject key || key["peerToken"]?.ToString() is not string token || !System.Text.RegularExpressions.Regex.IsMatch(token, "^[0-9a-f]{32}$")) continue;
+                if (key["owner"]?.ToString() == ClaudeReceipts.Owner) continue; // The relay's own reply-pipe key, never a session's.
                 if (procStart is not null && key["procStartFt"]?.ToString() is string ft && ft != procStart) continue; // Reused pid: the key belongs to an older process.
                 return token;
             }
@@ -79,32 +81,57 @@ public static class ClaudeInbox
     }
 
     /// <summary>The two lines written to the inbox; the body is wrapped as Claude Code wraps a peer message, without
-    /// a reply address (answers go through Relay) nor a permission class.</summary>
-    public static string Frames(string token, string text)
+    /// a permission class. <paramref name="from"/> and <paramref name="wakeId"/> name the pipe where the session reports
+    /// a held or refused message (ClaudeReceipts); the text Claude reads is the same with or without them, and answers
+    /// still go through Relay.</summary>
+    public static string Frames(string token, string text, string? from = null, string? wakeId = null)
     {
         string content = $"<cross-session-message from-name=\"NexusRelay\">\n{text}\n</cross-session-message>";
-        return new JsonObject { ["type"] = "auth", ["token"] = token }.ToJsonString() + "\n"
-            + new JsonObject { ["type"] = "user", ["message"] = new JsonObject { ["role"] = "user", ["content"] = content } }.ToJsonString() + "\n";
+        var user = new JsonObject { ["type"] = "user", ["message"] = new JsonObject { ["role"] = "user", ["content"] = content } };
+        if (from is not null && wakeId is not null) { user["from"] = from; user["msg_id"] = wakeId; }
+        return new JsonObject { ["type"] = "auth", ["token"] = token }.ToJsonString() + "\n" + user.ToJsonString() + "\n";
     }
 
-    public static JsonObject Wake(List<RelayMessage> messages)
+    /// <summary>The wake result for what the session answered: nothing (written, pickup unconfirmed as before), held
+    /// for the user's approval, or refused. A held or refused wake is never reported as started.</summary>
+    public static JsonObject Outcome(ClaudeReceipts.Verdict? verdict, string? conversation)
+    {
+        JsonObject result = verdict?.Status switch
+        {
+            "held" => AppTransport.Result("held", RelayPaths.Tr(
+                "Held by the Claude relay session: not delivered, it waits there for the user's approval (never replayed)",
+                "Retenu par la session relais de Claude : non livré, il y attend l'accord de l'utilisateur (jamais rejoué)")),
+            "refused" => AppTransport.Result("refused", RelayPaths.Tr(
+                $"Refused by the Claude relay session ({verdict.Detail}): not delivered",
+                $"Refusé par la session relais de Claude ({verdict.Detail}) : non livré")),
+            "delivered" => new() { ["status"] = "started", ["confirmed"] = true, ["proof"] = "claude receipt", ["note"] = "The Claude session reported the held message as delivered" },
+            _ => new() { ["status"] = "started", ["confirmed"] = false, ["note"] = "Written to the Claude session's local inbox, which reported neither a hold nor a refusal; read(id) confirms pickup" },
+        };
+        result["via"] = "claude-inbox"; result["conversation"] = conversation;
+        if (verdict?.Status is "held" or "refused" && verdict.Reason is not null) result["detail"] = verdict.Reason;
+        return result;
+    }
+
+    public static JsonObject Wake(List<RelayMessage> messages, ClaudeReceipts? receipts = null)
     {
         var session = Find();
         if (session is null)
             return AppTransport.Result("deferred", RelayPaths.Tr(
                 "Claude's relay session is not open (Claude app, folder .nexus\\relay\\NexusRelay); the message waits in inbox",
                 "session relais de Claude pas ouverte (appli Claude, dossier .nexus\\relay\\NexusRelay) ; le message attend dans inbox"));
+        string? wakeId = receipts?.Expect(messages.Select(m => m.Id));
         try
         {
             using var pipe = new NamedPipeClientStream(".", session.Pipe, PipeDirection.Out);
             pipe.Connect(5000);
-            byte[] bytes = new UTF8Encoding(false).GetBytes(Frames(session.Token, WakeText(messages.Select(m => m.Id))));
+            byte[] bytes = new UTF8Encoding(false).GetBytes(Frames(session.Token, WakeText(messages.Select(m => m.Id)), receipts?.Address, wakeId));
             pipe.Write(bytes); pipe.Flush(); pipe.WaitForPipeDrain();
         }
         catch (Exception e) when (e is IOException or TimeoutException or UnauthorizedAccessException)
         {
+            if (wakeId is not null) receipts!.Forget(wakeId);
             return AppTransport.Result("deferred", $"Claude inbox unreachable: {e.Message}");
         }
-        return new() { ["status"] = "started", ["via"] = "claude-inbox", ["confirmed"] = false, ["conversation"] = session.HostSessionId, ["note"] = "Written to the Claude session's local inbox; read(id) confirms pickup" };
+        return Outcome(wakeId is null ? null : receipts!.Wait(wakeId), session.HostSessionId);
     }
 }

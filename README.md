@@ -143,7 +143,8 @@ the effective setting.
 > the folder `~\.nexus\relay\NexusRelay` and set it to **Auto** mode. The daemon writes the wake note to that
 > session's local inbox (Claude Code's documented per-session named pipe, never Anthropic's servers). A session in
 > *Bypass permissions* holds such messages, so keep the relay session in Auto, and pin it so that tidying up chats
-> never archives it. Turn **Remote Control** on for it: the app otherwise stops an idle session's process after its
+> never archives it. If the session holds or refuses a wake anyway, it tells the relay: `track`, `wait_reply` and
+> `status` then say "held" or "refused" instead of "woken", and a held wake is never sent twice. Turn **Remote Control** on for it: the app otherwise stops an idle session's process after its
 > turn, and with it the inbox (`status()` then shows `relay_session.open: false`). Never clear it: clearing stops its
 > process, and with it the inbox the daemon wakes it through.
 

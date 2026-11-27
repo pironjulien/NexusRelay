@@ -31,6 +31,8 @@ public sealed class RelayRuntime : IDisposable
     private readonly ConcurrentDictionary<string, double> pending = new();
     private readonly Func<string, List<RelayMessage>, Action, JsonObject> waker;
     private readonly Action? tidyOverride;
+    private readonly Lock receiptsGate = new();
+    private ClaudeReceipts? receipts;
     private int disposed;
     public RelayRuntime(RelayBox? box = null, Func<string, List<RelayMessage>, Action, JsonObject>? waker = null, Action? tidy = null)
     { this.box = box ?? new(); this.waker = waker ?? Wake; tidyOverride = tidy; }
@@ -169,7 +171,7 @@ public sealed class RelayRuntime : IDisposable
             var ring = box.RingState(message.Id);
             if (ring?["incident"] is not null) { pending.TryRemove(message.Id, out _); continue; }
             int attempt = ring?["attempt"]?.GetValue<int>() ?? 0;
-            if (ring?["status"]?.ToString() == "uncertain") continue; // Unknown send outcome is never replayed.
+            if (ring?["status"]?.ToString() is "uncertain" or "held") continue; // Unknown send outcome is never replayed; neither is a wake Claude holds (each replay would show the user one more held message).
             if (attempt > 0 && (ring?["recheck_at"]?.GetValue<double>() ?? now + 300) > now) continue;
             if (attempt >= 3 || now - (AppSessions.Epoch(message.Created) ?? now) > 3600)
             {
@@ -183,7 +185,7 @@ public sealed class RelayRuntime : IDisposable
         var group = ready.GroupBy(m => m.Topic).OrderBy(g => g.Min(m => m.Created)).FirstOrDefault(g =>
         {
             var hold = holds[g.Key] as JsonObject;
-            if (hold?["status"]?.ToString() is not ("deferred" or "failed")) return true;
+            if (hold?["status"]?.ToString() is not ("deferred" or "failed" or "refused")) return true;
             int streak = hold["streak"]?.GetValue<int>() ?? 1;
             double delay = Math.Min(300, 20 * Math.Pow(1.618, Math.Clamp(streak - 1, 0, 20)));
             return now - (hold["tried"]?.GetValue<double>() ?? 0) >= delay;
@@ -228,16 +230,16 @@ public sealed class RelayRuntime : IDisposable
         string? status = result["status"]?.ToString();
         Journal.Note(messages[0].Sender, "wake", agent, Journal.WakeIssues.GetValueOrDefault(status ?? "", "✗"), (Reservations.Now() - now) * 1000,
             status is "started" ? null : result["reason"]?.ToString(), messages[0].Id, result["via"]?.ToString(), AppTransport.Truth(result["activated"]));
-        int failed = status is "deferred" or "failed" ? (holds[group.Key]?["streak"]?.GetValue<int>() ?? 0) + 1 : 0;
+        int failed = status is "deferred" or "failed" or "refused" ? (holds[group.Key]?["streak"]?.GetValue<int>() ?? 0) + 1 : 0;
         holds[group.Key] = new JsonObject { ["status"] = status, ["streak"] = failed, ["tried"] = now, ["reason"] = result["reason"]?.DeepClone() };
         result["at"] = RelayBox.NowIso(); result["tried"] = now; result["topic"] = group.Key; result["holds"] = holds.DeepClone(); result["streak"] = failed;
         result["messages"] = new JsonArray(messages.Select(m => JsonValue.Create(m.Id)).ToArray()); box.SetState($"wake-{agent}", result);
         foreach (var message in messages)
         {
             var last = box.Events(message.Id).LastOrDefault(e => e["kind"]?.ToString() == "réveil");
-            if (status is not ("deferred" or "failed") || last is null || last["status"]?.ToString() != status || last["reason"]?.ToString() != result["reason"]?.ToString())
+            if (status is not ("deferred" or "failed" or "refused") || last is null || last["status"]?.ToString() != status || last["reason"]?.ToString() != result["reason"]?.ToString())
                 box.Event(message.Id, "réveil", new() { ["status"] = status, ["reason"] = result["reason"]?.DeepClone(), ["via"] = result["via"]?.DeepClone(), ["conversation"] = result["conversation"]?.DeepClone(), ["tried_at"] = now });
-            if (status is "started" or "uncertain")
+            if (status is "started" or "uncertain" or "held")
             {
                 var old = box.RingState(message.Id);
                 box.SetRingState(message.Id, new() { ["agent"] = agent, ["attempt"] = (old?["attempt"]?.GetValue<int>() ?? 0) + 1, ["max"] = 3, ["rung_at"] = RelayBox.NowIso(), ["recheck_at"] = now + 300, ["via"] = result["via"]?.DeepClone(), ["status"] = status });
@@ -247,7 +249,7 @@ public sealed class RelayRuntime : IDisposable
     }
     private JsonObject Wake(string agent, List<RelayMessage> messages, Action beforeSubmit)
     {
-        if (agent == "claude") return ClaudeInbox.Wake(messages);
+        if (agent == "claude") return ClaudeInbox.Wake(messages, Receipts());
         if (agent == "codex") return AppSessions.CodexQuota() is string codexQuota ? AppTransport.Result("deferred", codexQuota) : AppAutomation.WakeCodex(box, messages, beforeSubmit);
         if (AppSessions.AntigravityQuota(box) is string quota) return AppTransport.Result("deferred", quota);
         var sidecar = SidecarHealth(box);
@@ -255,6 +257,39 @@ public sealed class RelayRuntime : IDisposable
         if (AppTransport.PageUrl("antigravity") is not null) return AppTransport.Result("deferred", "Antigravity open but sidecar heartbeat is stale");
         var launch = AppTransport.EnsureApp("antigravity");
         return AppTransport.Result("deferred", launch["status"]?.ToString() == "ready" ? "Antigravity started; waiting for its registered sidecar" : launch["reason"]?.ToString());
+    }
+    /// <summary>The pipe where a Claude session reports a held or refused wake, opened at the first Claude wake.</summary>
+    private ClaudeReceipts? Receipts()
+    {
+        lock (receiptsGate) return disposed != 0 ? null : receipts ??= ClaudeReceipts.Start(ClaudeInbox.SessionsDirectory(), ClaudeReceipt);
+    }
+    /// <summary>
+    /// A receipt that arrives after the wake was reported: the session held it late, the user let a held message through
+    /// (delivered), or a held message was denied, expired or dropped. A held wake that ends undelivered is an incident,
+    /// never a new wake: the user saw it and did not let it through. A late refusal allows the bounded retry.
+    /// </summary>
+    public void ClaudeReceipt(IReadOnlyList<string> ids, ClaudeReceipts.Verdict verdict)
+    {
+        var result = ClaudeInbox.Outcome(verdict, null);
+        string status = result["status"]!.ToString(); string? reason = result["reason"]?.ToString(); double now = Reservations.Now();
+        foreach (string id in ids)
+        {
+            var message = box.Get(id);
+            if (message is null || box.IsRead(message)) continue;
+            var ring = box.RingState(id) ?? new();
+            bool wasHeld = ring["status"]?.ToString() == "held";
+            box.Event(id, "réveil", new() { ["status"] = status, ["reason"] = reason, ["via"] = "claude-inbox", ["proof"] = "claude receipt", ["tried_at"] = now });
+            ring["agent"] = "claude"; ring["status"] = status; ring["proof"] = "claude receipt";
+            if (status == "started") ring["recheck_at"] = now + 300;
+            else if (status == "refused" && wasHeld) { ring["incident"] = reason; ring["incident_at"] = RelayBox.NowIso(); pending.TryRemove(id, out _); }
+            else if (status == "refused") ring["recheck_at"] = now;
+            box.SetRingState(id, ring);
+            if (status != "started") Journal.Note(message.Sender, "wake", "claude", "✗", null, reason, id, "claude-inbox");
+        }
+        if (box.State("wake-claude") is JsonObject last && last["messages"] is JsonArray listed && listed.Any(m => ids.Contains(m?.ToString())))
+        {
+            last["status"] = status; last["reason"] = reason; last["receipt_at"] = RelayBox.NowIso(); box.SetState("wake-claude", last);
+        }
     }
     public static JsonObject SidecarHealth(RelayBox box)
     {
@@ -304,5 +339,5 @@ public sealed class RelayRuntime : IDisposable
         var health = Health(); bool ok = (health["missing"] as JsonArray)?.Count == 0 && (health["stuck"] as JsonArray)?.Count == 0 && (health["errors"] as JsonObject)?.Count == 0;
         return new() { ["status"] = ok ? "ok" : "degraded", ["service"] = "nexus-relay", ["runtime"] = "native", ["version"] = RelayPaths.Version, ["pid"] = Environment.ProcessId, ["host"] = RelayPaths.RelayHost(), ["workers"] = health, ["activities"] = RelayActivity.Snapshot() };
     }
-    public void Dispose() { if (Interlocked.Exchange(ref disposed, 1) != 0) return; stop.Cancel(); try { Task.WaitAll(workers.Values.ToArray(), 15_000); } catch (AggregateException) { /* Workers end on cancellation; disposal goes on. */ } stop.Dispose(); }
+    public void Dispose() { if (Interlocked.Exchange(ref disposed, 1) != 0) return; stop.Cancel(); try { Task.WaitAll(workers.Values.ToArray(), 15_000); } catch (AggregateException) { /* Workers end on cancellation; disposal goes on. */ } lock (receiptsGate) { receipts?.Dispose(); receipts = null; } stop.Dispose(); }
 }

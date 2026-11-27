@@ -29,6 +29,12 @@ These rules apply to Claude, Codex and Antigravity alike.
 - Claude is woken through the local per-session inbox of Claude Code (named pipe, `~\.claude\sessions\<pid>.json` and
   peer key). The receiving session must run in Auto mode: in Bypass, Claude Code holds messages from a sender that does
   not declare Bypass, and `crossSessionInbound: accept` is not read from project settings (user, policy or flag only).
+  Claude Code answers nothing on the wake's own connection and nothing for an accepted message; it reports a held or
+  refused one (`peer_message_status`) to the reply address the wake names, which it reaches only if that pipe's key
+  sits in `~\.claude\sessions` under `<pid>.<sha256 of "\\.\pipe\" + lower-cased name>.key` (`ClaudeReceipts`). To test
+  it without any account: `claude.exe -p --input-format stream-json` with an empty `CLAUDE_CONFIG_DIR`, a made-up
+  `ANTHROPIC_API_KEY` and `ANTHROPIC_BASE_URL=http://127.0.0.1:9`; `--settings {"crossSessionInbound":"refuse"}`
+  refuses, `--permission-mode bypassPermissions` holds.
 - The Claude desktop app stops a session's process after its first turn unless Remote Control is on for it
   (`set_remote_control`); `clear_session` also stops the process, and with it the inbox. Pin the relay session so a
   tidy-up does not archive or delete it.

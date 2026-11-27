@@ -28,7 +28,8 @@ A received request is answered through `read(id)` then `reply(id, text)` to its 
   relay's Stop hook waits in the background for the answers to the requests this conversation still has open and
   wakes you with them (up to 55 min; past it, you are woken with what is still missing). While you wait with
   `wait_reply`, the answer is reserved for you. `track(id)` says
-  where the message stands (delivered, wake-ups and their reasons, read, in progress with the peer's note, answered with
+  where the message stands (delivered, wake-ups and their reasons, held or refused by Claude's relay session: not
+  delivered, tell the user rather than sending again; read, in progress with the peer's note, answered with
   its outcome: done, refused, failed; "late" once `send(…, due_min=N)` is exceeded without an answer). A request
   still undelivered past its `due_min`, or after 12 hours, expires: never delivered late, `track` says "expired".
 - Both peers at once: `send(to=["codex", "antigravity"], …)` returns `ids`; `wait_reply(id=ids)` waits for all the

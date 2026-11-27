@@ -6,6 +6,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.17.0] - 2026-11-28
+
+### Added
+- The relay now knows when Claude holds or refuses a wake, and says so. Until now a wake written to Claude's relay
+  session was reported as "woken" whatever the session did with it, while Claude Code holds a message for your
+  approval when the session runs in *Bypass permissions*, and drops it when a setting refuses messages from other
+  sessions. The wake now carries a reply address, and Claude Code answers there when it holds or refuses the message:
+  `track`, `wait_reply` and `status` then say "held by the Claude relay session" or "refused by the Claude relay
+  session" instead of "woken", and `wait_reply` returns at once with that reason instead of waiting for its timeout.
+  A held wake is never sent again (each new one would show you one more held message); it becomes "woken" when you
+  let it through, and an incident if it is denied or expires. A refused wake is retried later like any failed wake.
+  Nothing changes for a wake Claude accepts: Claude Code answers nothing then, and `read` still confirms the pickup.
+  Checked against Claude Code 2.1.330 on test sessions without any account: refused and held are both known within
+  20 ms. The reply address is a local named pipe with its key next to Claude Code's session registry, removed when the
+  relay stops; nothing leaves the PC.
+
 ### Changed
 - CI actions updated (CodeQL 4.39.4, Scorecard 2.6.0).
 
@@ -936,7 +952,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - English tool descriptions with titles and MCP annotations; `reply` accepts `done`/`refused`/`failed` and
   `agree`/`disagree`.
 
-[Unreleased]: https://github.com/pironjulien/NexusRelay/compare/v1.16.0...HEAD
+[Unreleased]: https://github.com/pironjulien/NexusRelay/compare/v1.17.0...HEAD
+[1.17.0]: https://github.com/pironjulien/NexusRelay/compare/v1.16.0...v1.17.0
 [1.16.0]: https://github.com/pironjulien/NexusRelay/compare/v1.15.4...v1.16.0
 [1.15.4]: https://github.com/pironjulien/NexusRelay/compare/v1.15.3...v1.15.4
 [1.15.3]: https://github.com/pironjulien/NexusRelay/compare/v1.15.2...v1.15.3
