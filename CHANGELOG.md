@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
-- CI actions updated (CodeQL 4.39.5, Scorecard 2.6.0).
+- CI actions updated (CodeQL 4.39.4, Scorecard 2.6.0).
 
 ## [1.16.0] - 2026-11-27
 
