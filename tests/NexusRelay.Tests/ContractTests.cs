@@ -213,19 +213,31 @@ public sealed class ContractTests : IDisposable
     private JsonObject Browser(string scenario = "normal")
     {
         string chrome = Chrome() ?? throw new InvalidOperationException("Chrome is required for the card survey tests");
-        int port = Native.FreePort();
         string profile = Path.Join(iso.Root, "browser", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(profile);
         var start = new ProcessStartInfo(chrome) { UseShellExecute = false, CreateNoWindow = true, WindowStyle = ProcessWindowStyle.Hidden };
         // Chromium's Windows sandbox needs the real OS profile identity; its data still goes only to --user-data-dir.
         start.Environment["USERPROFILE"] = Isolation.RealProfile;
-        foreach (string arg in new[] { "--headless=new", "--disable-gpu", "--no-first-run", "--no-default-browser-check", "--disable-background-networking", "--disable-component-update", "--disable-sync", "--disable-default-apps", "--remote-debugging-address=127.0.0.1", "--remote-debugging-port=" + port, "--user-data-dir=" + profile, new Uri(Paths.Fixture("cards.html")).AbsoluteUri })
+        // Port 0: Chrome binds a port of its own and writes it to DevToolsActivePort in its profile. A port picked free
+        // beforehand could be taken before Chrome bound it, leaving a browser without debugger (27/11, CI: no answer for
+        // 45 s while Chrome kept running).
+        foreach (string arg in new[] { "--headless=new", "--disable-gpu", "--no-first-run", "--no-default-browser-check", "--disable-background-networking", "--disable-component-update", "--disable-sync", "--disable-default-apps", "--remote-debugging-address=127.0.0.1", "--remote-debugging-port=0", "--user-data-dir=" + profile, new Uri(Paths.Fixture("cards.html")).AbsoluteUri })
             start.ArgumentList.Add(arg);
         using var process = Process.Start(start)!;
+        int port = 0;
         try
         {
+            var until = DateTime.UtcNow.AddSeconds(45);
+            string active = Path.Join(profile, "DevToolsActivePort");
+            while (port == 0 && !process.HasExited && DateTime.UtcNow < until)
+            {
+                try { if (File.Exists(active) && File.ReadAllLines(active) is [var first, ..] && int.TryParse(first, out int bound) && bound > 0) port = bound; }
+                catch (IOException) { /* Chrome is still writing the file: read again below. */ }
+                if (port == 0) Thread.Sleep(50);
+            }
+            Assert.True(port > 0, process.HasExited ? $"Chrome exited with code {process.ExitCode} before opening its debugger" : "Chrome did not open its debugger within 45 seconds");
             using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(1) };
-            string? url = null; var until = DateTime.UtcNow.AddSeconds(45);
+            string? url = null;
             while (DateTime.UtcNow < until && url is null)
             {
                 try { url = JsonNode.Parse(http.GetStringAsync($"http://127.0.0.1:{port}/json/list").GetAwaiter().GetResult())!.AsArray().OfType<JsonObject>().FirstOrDefault(t => t["type"]?.ToString() == "page" && t["url"]?.ToString().StartsWith("file:", StringComparison.Ordinal) == true)?["webSocketDebuggerUrl"]?.ToString(); }
@@ -266,15 +278,18 @@ public sealed class ContractTests : IDisposable
     private static void CloseChrome(Process process, int port)
     {
         if (process.HasExited) return;
-        try
+        if (port > 0)
         {
-            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
-            string browser = JsonNode.Parse(http.GetStringAsync($"http://127.0.0.1:{port}/json/version").GetAwaiter().GetResult())!["webSocketDebuggerUrl"]!.ToString();
-            using var cdp = new CdpPage(browser);
-            cdp.Call("Browser.close");
+            try
+            {
+                using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+                string browser = JsonNode.Parse(http.GetStringAsync($"http://127.0.0.1:{port}/json/version").GetAwaiter().GetResult())!["webSocketDebuggerUrl"]!.ToString();
+                using var cdp = new CdpPage(browser);
+                cdp.Call("Browser.close");
+            }
+            catch (Exception e) when (e is HttpRequestException or TaskCanceledException or IOException or System.Net.WebSockets.WebSocketException or RelayError) { /* Closing drops the connection before any answer; the exit below is the proof. */ }
+            if (process.WaitForExit(30_000)) return;
         }
-        catch (Exception e) when (e is HttpRequestException or TaskCanceledException or IOException or System.Net.WebSockets.WebSocketException or RelayError) { /* Closing drops the connection before any answer; the exit below is the proof. */ }
-        if (process.WaitForExit(30_000)) return;
         process.Kill(entireProcessTree: true);
         process.WaitForExit(5000);
     }
