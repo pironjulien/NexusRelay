@@ -34,7 +34,7 @@ public sealed class ContractTests : IDisposable
         foreach (var (name, field, scalar, group) in new[] { ("send", "to", "codex", new[] { "codex", "antigravity" }), ("wait_reply", "id", "id-a", new[] { "id-a", "id-b" }) })
         {
             var schema = JsonSchema.FromText(byName[name]!["inputSchema"]!["properties"]![field]!.ToJsonString());
-            bool Valid(string json) => schema.Evaluate(JsonDocument.Parse(json).RootElement).IsValid;
+            bool Valid(string json) => schema.Evaluate(JsonElement.Parse(json)).IsValid;
             Assert.True(Valid(JsonSerializer.Serialize(scalar)) && Valid(JsonSerializer.Serialize(group)));
             Assert.False(Valid("[1]") || Valid("17"));
         }
@@ -59,7 +59,7 @@ public sealed class ContractTests : IDisposable
         {
             var data = Native.Data(response);
             Assert.True(data["status"]?.ToString() == "success", name + data.ToJsonString());
-            var evaluation = JsonSchema.FromText(schemas[name]!["outputSchema"]!.ToJsonString()).Evaluate(JsonDocument.Parse(data.ToJsonString()).RootElement, new EvaluationOptions { OutputFormat = OutputFormat.List });
+            var evaluation = JsonSchema.FromText(schemas[name]!["outputSchema"]!.ToJsonString()).Evaluate(JsonElement.Parse(data.ToJsonString()), new EvaluationOptions { OutputFormat = OutputFormat.List });
             Assert.True(evaluation.IsValid, name + " " + JsonSerializer.Serialize(evaluation));
         }
     }

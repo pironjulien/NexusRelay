@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.16.0] - 2026-11-27
+
+### Changed
+- Runs on .NET 11. The engine is still one `NexusRelay.exe` compiled ahead of time with Native AOT, so there is
+  nothing to install or update on your side: the next update brings it like any other version.
+
 ## [1.15.4] - 2026-11-27
 
 ### Fixed
@@ -927,7 +933,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - English tool descriptions with titles and MCP annotations; `reply` accepts `done`/`refused`/`failed` and
   `agree`/`disagree`.
 
-[Unreleased]: https://github.com/pironjulien/NexusRelay/compare/v1.15.4...HEAD
+[Unreleased]: https://github.com/pironjulien/NexusRelay/compare/v1.16.0...HEAD
+[1.16.0]: https://github.com/pironjulien/NexusRelay/compare/v1.15.4...v1.16.0
 [1.15.4]: https://github.com/pironjulien/NexusRelay/compare/v1.15.3...v1.15.4
 [1.15.3]: https://github.com/pironjulien/NexusRelay/compare/v1.15.2...v1.15.3
 [1.15.2]: https://github.com/pironjulien/NexusRelay/compare/v1.15.1...v1.15.2

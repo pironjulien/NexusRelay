@@ -1,6 +1,6 @@
 ﻿# Installe NexusRelay sur ce PC depuis ce dossier (idempotent : à relancer sans risque après une mise à jour du dépôt).
 # Un amorceur : toute l'installation est dans le moteur (NexusRelay.exe --install, native\Installer.cs).
-#  - clone (native\NexusRelay.csproj) : moteur compilé par dotnet publish (.NET 10 SDK, sorties de compilation dans
+#  - clone (native\NexusRelay.csproj) : moteur compilé par dotnet publish (.NET 11 SDK, sorties de compilation dans
 #    ~\.nexus\build\nexusrelay) dans sa copie immuable %LOCALAPPDATA%\NexusRelay\versions\<empreinte des sources>, puis
 #    tests hors ligne (test.ps1, sauf -SkipTests) avant toute installation ;
 #  - release décompressée (bin\NexusRelay.exe, autonome) : le moteur de bin\ (une installation lancée par le get.ps1
@@ -42,7 +42,7 @@ function Invoke-Engine([string]$Exe, [string[]]$Arguments) {
 $project = $PSScriptRoot
 $nativeCsproj = Join-Path $project 'native\NexusRelay.csproj'
 if (Test-Path -LiteralPath $nativeCsproj) {
-    if (-not (Get-Command dotnet.exe -ErrorAction SilentlyContinue)) { throw (Tr '.NET 10 SDK required to build the native engine (native\).' '.NET 10 SDK requis pour compiler le moteur natif (native\).') }
+    if (-not (Get-Command dotnet.exe -ErrorAction SilentlyContinue)) { throw (Tr '.NET 11 SDK required to build the native engine (native\).' '.NET 11 SDK requis pour compiler le moteur natif (native\).') }
     # Copie immuable par empreinte des sources : une publication n'écrase jamais une DLL en service.
     $sources = @(Get-ChildItem (Join-Path $project 'native') -File | Where-Object Extension -in @('.cs', '.csproj', '.json')) + @(Get-Item (Join-Path $project 'Directory.Build.props'))
     $hashes = $sources.FullName | Sort-Object | ForEach-Object { (Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash }

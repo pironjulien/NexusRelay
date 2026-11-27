@@ -12,7 +12,7 @@
 # NEXUS_PACK=1 (the Nexus pack): no question, no wait, no window; exit code 0 on success; a last
 # "NEXUS_PACK_RESULT ..." line (one word per AI client).
 # NEXUS_RELAY_SOURCE: a local folder instead of a download, an unpacked release (bin\NexusRelay.exe) or a checkout
-# (built by its install.ps1 with the .NET 10 SDK). NEXUS_RELAY_ROOT: another folder than %LOCALAPPDATA%\NexusRelay for
+# (built by its install.ps1 with the .NET 11 SDK). NEXUS_RELAY_ROOT: another folder than %LOCALAPPDATA%\NexusRelay for
 # the app copy and the download.
 $ErrorActionPreference = 'Stop'
 # A Windows PowerShell child of PowerShell 7 inherits Core-only module folders ahead of its own modules.

@@ -54,7 +54,7 @@ jobs:
 
   install-windows:
     # The one-line install on a clean Windows runner, as the Nexus pack runs it (Windows PowerShell 5.1, NEXUS_PACK=1),
-    # from this checkout (built by the .NET 10 SDK): daemon up behind its token, Claude Code and Codex declared, token never
+    # from this checkout (built by the .NET 11 SDK): daemon up behind its token, Claude Code and Codex declared, token never
     # in their files.
     runs-on: windows-latest
     timeout-minutes: 20

@@ -14,7 +14,7 @@ one agent to another and the answers come back, without you copy-pasting between
 [![OpenSSF Scorecard](https://img.shields.io/ossf-scorecard/github.com/pironjulien/NexusRelay?style=flat-square&label=scorecard)](https://scorecard.dev/viewer/?uri=github.com/pironjulien/NexusRelay)
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/16435/badge)](https://www.bestpractices.dev/projects/16435)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
-[![.NET 10](https://img.shields.io/badge/.NET-10-512BD4?style=flat-square)](native/NexusRelay.csproj)
+[![.NET 11](https://img.shields.io/badge/.NET-11-512BD4?style=flat-square)](native/NexusRelay.csproj)
 [![Windows 10 | 11](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?style=flat-square)](#requirements)
 [![MCP](https://img.shields.io/badge/MCP-server-7ee2a8?style=flat-square)](https://registry.modelcontextprotocol.io/)
 
@@ -48,7 +48,7 @@ one agent to another and the answers come back, without you copy-pasting between
 <tr>
 <td width="33%" valign="top">🏠 <b>Local by design</b><br>Everything listens on 127.0.0.1 behind a bearer token; messages are plain JSON files on your PC.</td>
 <td width="33%" valign="top">🛡️ <b>Opinions, not orders</b><br>A peer's message is framed as an opinion to examine, never as an instruction from you.</td>
-<td width="33%" valign="top">⚡ <b>Native and self-contained</b><br>One .NET 10 program for x64 or ARM64, no administrator rights, nothing else to install.</td>
+<td width="33%" valign="top">⚡ <b>Native and self-contained</b><br>One .NET 11 program for x64 or ARM64, no administrator rights, nothing else to install.</td>
 </tr>
 </table>
 
@@ -160,7 +160,7 @@ other chats in that same workspace, child chats and the current conversation rem
 workspace, the compatibility default remains the dedicated `NexusRelay` project (a project named `Nexus Relay`, as
 created before 1.13.2, is still recognized).
 
-The daemon, the Antigravity sidecar and the hooks are one native program, `NexusRelay.exe` (.NET 10, compiled ahead of time with Native AOT: a single file, no .NET
+The daemon, the Antigravity sidecar and the hooks are one native program, `NexusRelay.exe` (.NET 11, compiled ahead of time with Native AOT: a single file, no .NET
 runtime, no JIT at start-up). Each installed
 version is immutable under `%LOCALAPPDATA%\NexusRelay\versions`; `~\.nexus\nexus-relay\bin` always holds a copy of the
 one in service.
@@ -214,7 +214,7 @@ JSON stays in the text block); an error comes back with `isError`.
    with `install.ps1 -Register` otherwise uses `%USERPROFILE%\.nexus\mcp-token.txt`, shared by Relay, Android and Browser.
    An existing token is reused; a missing one is created once, including when installers run together.
 
-2. **Install** — builds the engine (.NET 10 SDK and the Visual Studio C++ build tools for Native AOT; in a release folder, takes
+2. **Install** — builds the engine (.NET 11 SDK and the Visual Studio C++ build tools for Native AOT; in a release folder, takes
    its self-contained `bin\`), registers the
    daemon, installs the Antigravity plugin, sidecar and edit guards, and runs the tests:
 
