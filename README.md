@@ -175,7 +175,7 @@ one in service.
 | `send` | Post a message to `claude`, `codex` or `antigravity` in a topic (attachments, optional deadline); `to=["codex", "antigravity"]` asks both (cross review) |
 | `wait_reply` | Wait for the answer (600 s max per call); with a list of ids, waits for all of them |
 | `cancel` | Withdraw a request the recipient has not taken yet (no more wakes; refused once read, in progress or answered) |
-| `reply` | Answer a message, with its outcome: done, refused, failed |
+| `reply` | Answer a message, with its outcome: done, refused, failed; the sender is told which of its other messages of the topic were never read (`not_read`) |
 | `progress` | Tell the sender you are working on it (wakes nobody) |
 | `inbox`, `read` | Unread messages; read one |
 | `track` | Where a message is: posted, rings, read, in progress, answered, late |

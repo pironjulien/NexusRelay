@@ -6,6 +6,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.18.0] - 2026-11-28
+
+### Added
+- An answer now says which of your other messages the peer never read. When Claude, Codex or Antigravity answers a
+  request with `reply`, the relay looks at the other messages the requester sent it in the same topic (follow-ups,
+  notes sent "for information", earlier requests) and attaches the ids of those it never opened: the answer carries
+  `not_read`, shown by `wait_reply`, `read`, `inbox` and by the Stop hook that brings an answer back to a Claude
+  conversation. Until now the requester had to call `track` on each message to find out that an answer had been
+  written without a follow-up. The list is short (the 8 newest), absent when everything was read, and starts again
+  from nothing when the topic is closed; a cancelled or expired message is not listed (`track` already says so).
+
 ## [1.17.0] - 2026-11-28
 
 ### Added
@@ -952,7 +963,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - English tool descriptions with titles and MCP annotations; `reply` accepts `done`/`refused`/`failed` and
   `agree`/`disagree`.
 
-[Unreleased]: https://github.com/pironjulien/NexusRelay/compare/v1.17.0...HEAD
+[Unreleased]: https://github.com/pironjulien/NexusRelay/compare/v1.18.0...HEAD
+[1.18.0]: https://github.com/pironjulien/NexusRelay/compare/v1.17.0...v1.18.0
 [1.17.0]: https://github.com/pironjulien/NexusRelay/compare/v1.16.0...v1.17.0
 [1.16.0]: https://github.com/pironjulien/NexusRelay/compare/v1.15.4...v1.16.0
 [1.15.4]: https://github.com/pironjulien/NexusRelay/compare/v1.15.3...v1.15.4

@@ -129,6 +129,60 @@ public sealed class ReviewTests : IDisposable
         Assert.Empty(HostRewake.Pending(box, "claude", [id], new HashSet<string> { box.Replies(id)[0].Id }));   // seen in the wake: nothing left to wait for
     }
 
+    [Fact]
+    public void A_reply_names_the_requesters_other_messages_of_the_topic_the_peer_never_read()
+    {
+        var box = iso.Box();
+        string Send(string text, string topic = "non-lus", string to = "codex", bool info = false)
+            => Tool("send", new() { ["to"] = to, ["text"] = text, ["topic"] = topic, ["info"] = info }, "claude")["id"]!.ToString();
+        string[] Listed(JsonNode? node) => (node as JsonArray ?? []).Select(n => n!.ToString()).Order(StringComparer.Ordinal).ToArray();
+
+        string first = Send("Première demande, jamais ouverte");
+        string note = Send("Précision pour info, jamais ouverte", info: true);
+        string opened = Send("Demande ouverte");
+        Tool("read", new() { ["id"] = opened }, "codex");
+        string withdrawn = Send("Demande retirée");
+        Tool("cancel", new() { ["id"] = withdrawn }, "claude");
+        Send("Autre sujet", topic: "ailleurs");
+        Send("Pour l'autre pair", to: "antigravity");
+        string ask = Send("La question à laquelle codex répond");
+        string[] expected = new[] { first, note }.Order(StringComparer.Ordinal).ToArray();
+
+        var reply = Tool("reply", new() { ["id"] = ask, ["text"] = "Réponse sans avoir lu le reste" }, "codex");
+        Assert.Equal(expected, Listed(box.Get(reply["id"]!.ToString())!.ExtraObj["not_read"]));
+        // Brought by the Stop hook, then by wait_reply and read: every way the requester gets the answer.
+        var woken = Native.Run(["--await-replies", "claude"], Transcript(ask));
+        Assert.Equal(2, woken.Code);
+        Assert.Contains("codex n'a jamais lus", woken.Err);
+        Assert.Contains(first, woken.Err);
+        Assert.Contains(note, woken.Err);
+        Assert.DoesNotContain(opened, woken.Err);
+        Assert.Equal(expected, Listed(Tool("wait_reply", new() { ["id"] = ask, ["timeout_s"] = 1 }, "claude")["reply"]!["not_read"]));
+        Assert.Equal(expected, Listed(Tool("read", new() { ["id"] = reply["id"]!.ToString() }, "claude")["message"]!["not_read"]));
+
+        // Everything read: the next answer says nothing.
+        Tool("read", new() { ["id"] = first }, "codex");
+        Tool("inbox", new(), "codex");   // lists the info note: marked read
+        string again = Send("Deuxième question");
+        var clean = Tool("reply", new() { ["id"] = again, ["text"] = "Tout lu" }, "codex");
+        Assert.Null(box.Get(clean["id"]!.ToString())!.ExtraObj["not_read"]);
+        Assert.Null(Tool("wait_reply", new() { ["id"] = again, ["timeout_s"] = 1 }, "claude")["reply"]!["not_read"]);
+
+        // A short list: the newest ones only.
+        var many = Enumerable.Range(1, McpServer.NotReadLimit + 2).Select(i => { Thread.Sleep(2); return Send($"Note {i}", info: true); }).ToList();
+        string third = Send("Troisième question");
+        var capped = Tool("reply", new() { ["id"] = third, ["text"] = "Réponse" }, "codex");
+        Assert.Equal(many.TakeLast(McpServer.NotReadLimit).Order(StringComparer.Ordinal), Listed(box.Get(capped["id"]!.ToString())!.ExtraObj["not_read"]));
+
+        // A closed topic starts again from nothing: what was left unread before the close is not brought up again.
+        Thread.Sleep(1100);
+        Tool("close", new() { ["topic"] = "non-lus" }, "claude");
+        Thread.Sleep(1100);
+        string reopened = Send("Question après la clôture");
+        var after = Tool("reply", new() { ["id"] = reopened, ["text"] = "Réponse" }, "codex");
+        Assert.Null(box.Get(after["id"]!.ToString())!.ExtraObj["not_read"]);
+    }
+
     private string Transcript(string id)
     {
         string path = Path.Join(iso.Root, $"conversation-{id}.jsonl");

@@ -20,7 +20,8 @@ description: "Exchange messages, reviews and task results with Claude and Antigr
   Include the context, question and relevant files. The relay wakes the recipient in its official app.
 - `wait_reply(id)` waits for the correlated answer (600 s maximum); `track(id)` reports progress and delivery.
   A wake that Claude's relay session holds or refuses is reported as such by both, not as woken: it is not delivered,
-  so tell the user instead of sending again.
+  so tell the user instead of sending again. An answer carries `not_read` when the peer had never read some of your
+  other messages of the topic (their ids): it was written without them.
   `cancel(id)` withdraws an unread request. `info=True` is informational and wakes nobody.
 - A received message identifies the IDs to read. Use `read(id)`, then `reply(id, text, state=...)` to close each
   request with `done`, `refused` or `failed`. Address the requesting peer; do not assume it is Claude.

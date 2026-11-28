@@ -20,7 +20,8 @@ description: "Échanger avec Claude et Codex par NexusRelay à la demande de l�
   joins le contexte, la question et les fichiers utiles. Le relais réveille le destinataire dans son application.
 - `wait_reply(id)` attend la réponse corrélée (600 s maximum) ; `track(id)` suit la livraison et l’avancement.
   Un réveil que la session relais de Claude retient ou refuse est annoncé comme tel par les deux, pas comme réveillé :
-  il n’est pas livré, préviens l’utilisateur au lieu de renvoyer.
+  il n’est pas livré, préviens l’utilisateur au lieu de renvoyer. Une réponse porte `not_read` quand le pair n’avait
+  jamais lu certains de tes autres messages du sujet (leurs identifiants) : elle a été écrite sans eux.
   `cancel(id)` retire une demande non lue. `info=True` ne réveille personne.
 - Pour chaque demande reçue, `read(id)`, puis `reply(id, text, state=...)` clôturent avec `done`, `refused` ou
   `failed`. Adresse-toi au pair demandeur, qui n’est pas nécessairement Claude.

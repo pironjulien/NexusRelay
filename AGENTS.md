@@ -34,7 +34,10 @@ These rules apply to Claude, Codex and Antigravity alike.
   sits in `~\.claude\sessions` under `<pid>.<sha256 of "\\.\pipe\" + lower-cased name>.key` (`ClaudeReceipts`). To test
   it without any account: `claude.exe -p --input-format stream-json` with an empty `CLAUDE_CONFIG_DIR`, a made-up
   `ANTHROPIC_API_KEY` and `ANTHROPIC_BASE_URL=http://127.0.0.1:9`; `--settings {"crossSessionInbound":"refuse"}`
-  refuses, `--permission-mode bypassPermissions` holds.
+  refuses, `--permission-mode bypassPermissions` holds. A whole turn (tool call, final reply, Stop hook) runs the same
+  way against a local stand-in for the Messages API (`ANTHROPIC_BASE_URL=http://127.0.0.1:<port>`, an SSE answer with
+  a `tool_use` then one with text) and a Stop hook given by `--settings`: that is how the transcript was read at the
+  moment the hook starts (28/11/2026).
 - The Claude desktop app stops a session's process after its first turn unless Remote Control is on for it
   (`set_remote_control`); `clear_session` also stops the process, and with it the inbox. Pin the relay session so a
   tidy-up does not archive or delete it.

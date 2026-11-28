@@ -243,6 +243,13 @@
               "title": "Round",
               "type": "integer"
             },
+            "not_read": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Not Read",
+              "type": "array"
+            },
             "bad_citations": {
               "items": {
                 "type": "string"
@@ -430,6 +437,13 @@
               "title": "Round",
               "type": "integer"
             },
+            "not_read": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Not Read",
+              "type": "array"
+            },
             "bad_citations": {
               "items": {
                 "type": "string"
@@ -498,7 +512,7 @@
   },
   {
     "name": "reply",
-    "description": "Answer a message addressed to you, in the same topic; the original is marked read and the sender is woken.\nA reply closes the request: to say you are still working on it, use progress.\n\nArgs:\n    id: id of the message you answer.\n    text: your complete answer (for refused or failed: the reason).\n    info: True if your answer expects nothing back (final agreement, closing note): the other agent is not woken.\n    vote: \"agree\" or \"disagree\" (review), optional.\n    state: outcome of the request: \"done\" (default), \"refused\" (you will not do it) or \"failed\" (tried, did not\n        work).\n    files: attachments, absolute paths (screenshots, logs); copied into the room.\n",
+    "description": "Answer a message addressed to you, in the same topic; the original is marked read and the sender is woken.\nA reply closes the request: to say you are still working on it, use progress. The sender is told with your answer\nwhich of its other messages of the topic you never read (not_read): read them first when they matter.\n\nArgs:\n    id: id of the message you answer.\n    text: your complete answer (for refused or failed: the reason).\n    info: True if your answer expects nothing back (final agreement, closing note): the other agent is not woken.\n    vote: \"agree\" or \"disagree\" (review), optional.\n    state: outcome of the request: \"done\" (default), \"refused\" (you will not do it) or \"failed\" (tried, did not\n        work).\n    files: attachments, absolute paths (screenshots, logs); copied into the room.\n",
     "inputSchema": {
       "properties": {
         "id": {
@@ -617,7 +631,7 @@
   },
   {
     "name": "wait_reply",
-    "description": "Wait for the answer to a message you sent (600 s max) and return it; it is marked read. While you wait, the\nanswer is reserved for you: no other session is woken for it or sees it in its inbox.\nStatus \"restarting\": the relay is switching to new code; call again (the answer is kept for you). Returned\nwithout an answer (timeout, unavailable): the one that arrives later is attached (late_replies) to your next call,\nthen marked read. Status \"cancelled\": you cancelled the request.\nSeveral ids (send to a list): waits for all of them; status \"success\" once all answered, otherwise \"partial\"\n(or the common status); `replies` gives each one's result in order. stale: the request's files changed\nbefore the answer (it may be about an outdated state).\n\nArgs:\n    id: id returned by send, or the list of ids (send to several recipients).\n    timeout_s: maximum wait in seconds (1 to 600, default 300).\n",
+    "description": "Wait for the answer to a message you sent (600 s max) and return it; it is marked read. While you wait, the\nanswer is reserved for you: no other session is woken for it or sees it in its inbox.\nStatus \"restarting\": the relay is switching to new code; call again (the answer is kept for you). Returned\nwithout an answer (timeout, unavailable): the one that arrives later is attached (late_replies) to your next call,\nthen marked read. Status \"cancelled\": you cancelled the request.\nSeveral ids (send to a list): waits for all of them; status \"success\" once all answered, otherwise \"partial\"\n(or the common status); `replies` gives each one's result in order. stale: the request's files changed\nbefore the answer (it may be about an outdated state). not_read (on the reply): your other messages of the topic\nthat the peer had never read when it answered (their ids, the 8 newest; absent when it read them all): its answer\ndoes not take them into account.\n\nArgs:\n    id: id returned by send, or the list of ids (send to several recipients).\n    timeout_s: maximum wait in seconds (1 to 600, default 300).\n",
     "inputSchema": {
       "properties": {
         "id": {
@@ -762,6 +776,13 @@
             "round": {
               "title": "Round",
               "type": "integer"
+            },
+            "not_read": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Not Read",
+              "type": "array"
             },
             "bad_citations": {
               "items": {
@@ -1077,6 +1098,13 @@
             "round": {
               "title": "Round",
               "type": "integer"
+            },
+            "not_read": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Not Read",
+              "type": "array"
             },
             "bad_citations": {
               "items": {
@@ -1456,6 +1484,13 @@
               "title": "Round",
               "type": "integer"
             },
+            "not_read": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Not Read",
+              "type": "array"
+            },
             "bad_citations": {
               "items": {
                 "type": "string"
@@ -1802,6 +1837,13 @@
               "title": "Round",
               "type": "integer"
             },
+            "not_read": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Not Read",
+              "type": "array"
+            },
             "bad_citations": {
               "items": {
                 "type": "string"
@@ -2076,6 +2118,13 @@
             "round": {
               "title": "Round",
               "type": "integer"
+            },
+            "not_read": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Not Read",
+              "type": "array"
             },
             "bad_citations": {
               "items": {

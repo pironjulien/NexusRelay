@@ -27,7 +27,8 @@ A received request is answered through `read(id)` then `reply(id, text)` to its 
 - `wait_reply(id)`: waits for the answer (600 s max) when you need it within the turn. Otherwise end your turn: the
   relay's Stop hook waits in the background for the answers to the requests this conversation still has open and
   wakes you with them (up to 55 min; past it, you are woken with what is still missing). While you wait with
-  `wait_reply`, the answer is reserved for you. `track(id)` says
+  `wait_reply`, the answer is reserved for you. An answer carries `not_read` when the peer had never read some of
+  your other messages of the topic (their ids): it was written without them. `track(id)` says
   where the message stands (delivered, wake-ups and their reasons, held or refused by Claude's relay session: not
   delivered, tell the user rather than sending again; read, in progress with the peer's note, answered with
   its outcome: done, refused, failed; "late" once `send(…, due_min=N)` is exceeded without an answer). A request

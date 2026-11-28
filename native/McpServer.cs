@@ -19,6 +19,7 @@ public sealed partial class McpServer
     public const int ProgressMax = 500;
     public const int SummaryAnsweredLimit = 6;
     public const int SummaryOpenLimit = 10;
+    public const int NotReadLimit = 8;
     public const double LateKeepSeconds = 24 * 3600.0;
     public const double IncidentKeepSeconds = 72 * 3600.0;
     public const string CancelledKind = "annulé";
@@ -938,6 +939,8 @@ public sealed partial class McpServer
             }
             if (ReviewChecks.Changes(snapshot) is JsonObject stale)
                 extra["stale"] = stale;
+            if (NotRead(box, original, me) is { Count: > 0 } notRead)
+                extra["not_read"] = new JsonArray(notRead.Select(n => (JsonNode)n).ToArray());
 
             var message = box.Post(
                 me,
@@ -968,6 +971,17 @@ public sealed partial class McpServer
             AddAttached(res, message);
             return res;
         }
+    }
+
+    /// <summary>The requester's other messages of the topic, since its last close, that the answering peer never opened
+    /// (no read mark: not read, answered, cancelled or expired): the newest ones, carried by the answer. track(id) says
+    /// it for one message when asked; the answer says it for the topic without a call per message.</summary>
+    public static List<string> NotRead(RelayBox box, RelayMessage original, string me)
+    {
+        string since = box.TopicState(original.Topic, "settled")?["at"]?.ToString() ?? "";
+        return box.TopicMessages(original.Topic)
+            .Where(m => m.Sender == original.Sender && m.To == me && m.Id != original.Id && string.CompareOrdinal(m.Created, since) >= 0 && !box.IsRead(m))
+            .Select(m => m.Id).Order(StringComparer.Ordinal).TakeLast(NotReadLimit).ToList();
     }
 
     private static JsonObject ToolProgress(JsonObject args, string me, RelayBox box)

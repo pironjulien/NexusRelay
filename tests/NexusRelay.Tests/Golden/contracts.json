@@ -224,6 +224,13 @@
         "title": "Round",
         "type": "integer"
        },
+       "not_read": {
+        "items": {
+         "type": "string"
+        },
+        "title": "Not Read",
+        "type": "array"
+       },
        "bad_citations": {
         "items": {
          "type": "string"
@@ -401,6 +408,13 @@
        "round": {
         "title": "Round",
         "type": "integer"
+       },
+       "not_read": {
+        "items": {
+         "type": "string"
+        },
+        "title": "Not Read",
+        "type": "array"
        },
        "bad_citations": {
         "items": {
@@ -690,6 +704,13 @@
         "title": "Round",
         "type": "integer"
        },
+       "not_read": {
+        "items": {
+         "type": "string"
+        },
+        "title": "Not Read",
+        "type": "array"
+       },
        "bad_citations": {
         "items": {
          "type": "string"
@@ -977,6 +998,13 @@
        "round": {
         "title": "Round",
         "type": "integer"
+       },
+       "not_read": {
+        "items": {
+         "type": "string"
+        },
+        "title": "Not Read",
+        "type": "array"
        },
        "bad_citations": {
         "items": {
@@ -1329,6 +1357,13 @@
         "title": "Round",
         "type": "integer"
        },
+       "not_read": {
+        "items": {
+         "type": "string"
+        },
+        "title": "Not Read",
+        "type": "array"
+       },
        "bad_citations": {
         "items": {
          "type": "string"
@@ -1666,6 +1701,13 @@
         "title": "Round",
         "type": "integer"
        },
+       "not_read": {
+        "items": {
+         "type": "string"
+        },
+        "title": "Not Read",
+        "type": "array"
+       },
        "bad_citations": {
         "items": {
          "type": "string"
@@ -1931,6 +1973,13 @@
        "round": {
         "title": "Round",
         "type": "integer"
+       },
+       "not_read": {
+        "items": {
+         "type": "string"
+        },
+        "title": "Not Read",
+        "type": "array"
        },
        "bad_citations": {
         "items": {

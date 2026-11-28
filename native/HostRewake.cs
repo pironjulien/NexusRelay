@@ -46,6 +46,10 @@ public static partial class HostRewake
             bool Superseded() => RelayBox.ReadJson(lease)?["turn"]?.ToString() != turn;
 
             // The transcript is written asynchronously: the last sends of the turn may land a moment after Stop.
+            // Kept on 28/11/2026: Claude Code 2.1.331 makes Claude Desktop write the last reply before Stop hooks run,
+            // but no minimum Claude Code version is required and the desktop app still ships 2.1.330. Measured on
+            // 2.1.330 (26 isolated SDK turns, a tool call then a final reply): the transcript already held both when
+            // the hook started, which proves nothing for the desktop app's own writes or under load.
             var (sent, seen) = Conversation(transcript);
             seen.UnionWith(delivered);
             var pending = Pending(box, me, sent, seen);
@@ -186,6 +190,8 @@ public static partial class HostRewake
             text.AppendLine(")");
             if (answer.ExtraObj["bad_citations"] is JsonArray bad && bad.Count > 0)
                 text.AppendLine(RelayPaths.Tr("citations not found: ", "citations introuvables : ") + string.Join("; ", bad.Select(b => b?.ToString())));
+            if (answer.ExtraObj["not_read"] is JsonArray notRead && notRead.Count > 0)
+                text.AppendLine(RelayPaths.Tr($"your earlier messages of this topic that {answer.Sender} never read: ", $"tes messages précédents de ce sujet que {answer.Sender} n'a jamais lus : ") + string.Join(", ", notRead.Select(n => n?.ToString())));
             if (answer.ExtraObj["stale"] is JsonObject stale)
                 text.AppendLine($"{stale["note"]} {string.Join(", ", (stale["changed"] as JsonArray ?? []).Select(c => c?.ToString()))}".TrimEnd());
             text.AppendLine(System.Globalization.CultureInfo.InvariantCulture, $"⟦relay:{nonce} …⟧\n{body}\n⟦/relay:{nonce}⟧");
